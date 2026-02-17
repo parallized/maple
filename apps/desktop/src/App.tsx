@@ -5,7 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useState } from "react";
 import { PopoverMenu, type PopoverMenuItem } from "./components/PopoverMenu";
 
-type ViewKey = "overview" | "board" | "settings";
+type ViewKey = "overview" | "board" | "progress";
 type WorkerKind = "claude" | "codex" | "iflow";
 type TaskStatus = "待办" | "队列中" | "进行中" | "已完成" | "已阻塞";
 type DetailMode = "sidebar" | "modal";
@@ -529,7 +529,7 @@ export function App() {
 
     const config = workerConfigs[worker.kind];
     if (!config.executable.trim()) {
-      setNotice(`请先在设置页配置 ${worker.label} CLI。`);
+      setNotice(`请先在进度页配置 ${worker.label} 命令。`);
       return;
     }
 
@@ -755,6 +755,10 @@ export function App() {
               <Icon icon="mingcute:tree-line" />
               看板
             </button>
+            <button className={view === "progress" ? "active" : ""} onClick={() => setView("progress")}>
+              <Icon icon="mingcute:chart-bar-line" />
+              进度
+            </button>
           </nav>
 
           <section className="project-tree">
@@ -794,10 +798,6 @@ export function App() {
         </div>
 
         <div className="sidebar-footer">
-          <button className={view === "settings" ? "active settings-trigger" : "settings-trigger"} onClick={() => setView("settings")}>
-            <Icon icon="mingcute:settings-4-line" />
-            设置
-          </button>
           {notice ? <p className="notice">{notice}</p> : null}
         </div>
       </aside>
@@ -922,9 +922,9 @@ export function App() {
           </section>
         ) : null}
 
-        {view === "settings" ? (
+        {view === "progress" ? (
           <section>
-            <h2>设置</h2>
+            <h2>进度</h2>
             <div className="panel">
               <h3>
                 <Icon icon="mingcute:plug-2-line" />
@@ -934,17 +934,17 @@ export function App() {
                 <input
                   value={mcpConfig.executable}
                   onChange={(event) => setMcpConfig((previous) => ({ ...previous, executable: event.target.value }))}
-                  placeholder="executable (e.g. npx)"
+                  placeholder="启动命令（例如：npx）"
                 />
                 <input
                   value={mcpConfig.args}
                   onChange={(event) => setMcpConfig((previous) => ({ ...previous, args: event.target.value }))}
-                  placeholder="args"
+                  placeholder="启动参数（例如：-y @modelcontextprotocol/server-filesystem .）"
                 />
                 <input
                   value={mcpConfig.cwd}
                   onChange={(event) => setMcpConfig((previous) => ({ ...previous, cwd: event.target.value }))}
-                  placeholder="cwd (optional)"
+                  placeholder="工作目录（可选）"
                 />
                 <label className="checkbox-line">
                   <input
@@ -978,7 +978,7 @@ export function App() {
             <div className="panel">
               <h3>
                 <Icon icon="mingcute:ai-line" />
-                Worker 配置
+                Worker 接入
               </h3>
               <table>
                 <thead>
@@ -1010,7 +1010,7 @@ export function App() {
                                   [worker.kind]: { ...previous[worker.kind], executable: event.target.value }
                                 }))
                               }
-                              placeholder="executable"
+                              placeholder="命令（例如：codex / claude）"
                             />
                             <input
                               value={config.runArgs}
@@ -1020,7 +1020,7 @@ export function App() {
                                   [worker.kind]: { ...previous[worker.kind], runArgs: event.target.value }
                                 }))
                               }
-                              placeholder="run args"
+                              placeholder="执行参数（例如：exec 或 -p）"
                             />
                             <input
                               value={config.probeArgs}
@@ -1030,7 +1030,7 @@ export function App() {
                                   [worker.kind]: { ...previous[worker.kind], probeArgs: event.target.value }
                                 }))
                               }
-                              placeholder="probe args"
+                              placeholder="探测参数（例如：--version）"
                             />
                           </div>
                         </td>

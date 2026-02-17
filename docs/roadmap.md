@@ -5,7 +5,6 @@
 - Monorepo workspace initialized.
 - Shared task domain package initialized.
 - Agent runtime contract package initialized.
-- Notion bridge package initialized.
 
 ## Phase 1 - Vertical Slice
 
@@ -13,7 +12,7 @@
 - Add one basic Kanban list page in web app.
 - Add one desktop shell that hosts the same web bundle.
 
-## Phase 2 - Multi-agent and Notion UX
+## Phase 2 - Multi-agent and Project UX
 
 - Add Claude/Codex/iFlow adapters.
 - Add rich task description support (links, images).

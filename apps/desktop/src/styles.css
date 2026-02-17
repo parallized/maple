@@ -137,7 +137,6 @@ nav button {
 }
 
 nav .active,
-.settings-trigger.active,
 .tree-node.active,
 .popover-trigger.active,
 .task-link.active {
@@ -196,10 +195,6 @@ nav .active,
   margin-top: auto;
   display: grid;
   gap: 0.55rem;
-}
-
-.settings-trigger {
-  justify-content: center;
 }
 
 .notice {

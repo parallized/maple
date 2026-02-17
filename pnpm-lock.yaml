@@ -72,8 +72,6 @@ importers:
 
   packages/kanban-core: {}
 
-  packages/notion-bridge: {}
-
 packages:
 
   '@babel/code-frame@7.29.0':
