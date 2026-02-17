@@ -1,0 +1,19 @@
+[package]
+name = "maple_desktop"
+version = "0.1.0"
+description = "Maple desktop client"
+authors = ["Maple"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0.2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.1.1", features = [] }
+tauri-plugin-dialog = "2"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

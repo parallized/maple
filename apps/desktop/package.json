@@ -1,0 +1,31 @@
+{
+  "name": "@maple/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm tauri:dev",
+    "dev:web": "vite --host 0.0.0.0 --port 1420",
+    "build": "pnpm build:web",
+    "build:web": "vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"lint not configured for @maple/desktop\"",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@iconify-json/mingcute": "^1.2.2",
+    "@iconify/react": "^5.2.1",
+    "@tauri-apps/api": "^2.0.2",
+    "@tauri-apps/plugin-dialog": "^2.2.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "vite": "^5.4.11"
+  }
+}
