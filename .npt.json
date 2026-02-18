@@ -1,7 +1,14 @@
 {
   "project_name": "maple",
-  "notion_database_id": "3f5e405f-8f18-4e46-ac07-ce1fa9512f57",
+  "notion_database_id": "6fc6db3b-684d-41a8-90e4-e6839b5e30b1",
   "auto_mode": true,
-  "known_task_page_ids": ["30bf0611-dacc-802e-b93a-c8224000e776", "30bf0611-dacc-803f-a2c1-f1d555171ae2"],
-  "last_discovery_at": "2026-02-18T01:27:00Z"
+  "known_task_page_ids": [
+    "30bf0611-dacc-8031-b308-d5f421a685ad",
+    "30bf0611-dacc-803f-8ee8-d9d727d10a2d",
+    "30bf0611-dacc-8085-8b17-fbcca9077bdd",
+    "30bf0611-dacc-80ac-94a2-f9873fa50e18",
+    "30bf0611-dacc-80cb-a711-c18c992c2b92",
+    "30bf0611-dacc-80f4-b812-e6e09132c509"
+  ],
+  "last_discovery_at": "2026-02-19T02:30:00Z"
 }

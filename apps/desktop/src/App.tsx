@@ -1,8 +1,10 @@
 import { Icon } from "@iconify/react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CountUp, FadeContent, SplitText, SpotlightCard } from "./components/ReactBits";
 import { PopoverMenu, type PopoverMenuItem } from "./components/PopoverMenu";
 import { TaskDetailPanel } from "./components/TaskDetailPanel";
 import type {
@@ -16,13 +18,14 @@ import type {
   Worker,
   WorkerCommandResult,
   WorkerConfig,
-  WorkerKind
+  WorkerKind,
+  WorkerLogEvent
 } from "./domain";
 
 const STORAGE_PROJECTS = "maple.desktop.projects";
 const STORAGE_WORKER_CONFIGS = "maple.desktop.worker-configs";
 const STORAGE_MCP_CONFIG = "maple.desktop.mcp-config";
-const STORAGE_SIDEBAR_COLLAPSED = "maple.desktop.sidebar-collapsed";
+const STORAGE_SIDEBAR_OPEN = "maple.desktop.sidebar-open";
 
 const INITIAL_PROJECTS: Project[] = [];
 
@@ -160,9 +163,9 @@ function loadMcpServerConfig(): McpServerConfig {
   }
 }
 
-function loadSidebarCollapsed(): boolean {
+function loadSidebarOpen(): boolean {
   try {
-    return localStorage.getItem(STORAGE_SIDEBAR_COLLAPSED) === "1";
+    return localStorage.getItem(STORAGE_SIDEBAR_OPEN) === "1";
   } catch {
     return false;
   }
@@ -187,9 +190,9 @@ function buildConclusionReport(result: WorkerCommandResult, taskTitle: string): 
   return [`任务：${taskTitle}`, "结论：执行完成，但未输出报告内容。"].join("\n");
 }
 
-function InlineTaskInput({ onCommit }: { onCommit: (title: string) => void }) {
+function InlineTaskInput({ initialValue, onCommit }: { initialValue?: string; onCommit: (title: string) => void }) {
   const ref = useRef<HTMLInputElement | null>(null);
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialValue ?? "");
   const committed = useRef(false);
 
   useEffect(() => {
@@ -229,7 +232,7 @@ export function App() {
   const isTauri = hasTauriRuntime();
 
   const [view, setView] = useState<ViewKey>("overview");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsed());
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => loadSidebarOpen());
   const [projects, setProjects] = useState<Project[]>(() => loadProjects());
   const [workers, setWorkers] = useState<Worker[]>(INITIAL_WORKERS);
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => loadWorkerConfigs());
@@ -243,6 +246,8 @@ export function App() {
   const [detailMode, setDetailMode] = useState<DetailMode>("sidebar");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [workerConsoleOpen, setWorkerConsoleOpen] = useState(false);
+  const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(() => INITIAL_WORKERS[0]?.id ?? "");
 
   useEffect(() => {
     localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(projects));
@@ -257,8 +262,14 @@ export function App() {
   }, [mcpConfig]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_SIDEBAR_COLLAPSED, sidebarCollapsed ? "1" : "0");
-  }, [sidebarCollapsed]);
+    localStorage.setItem(STORAGE_SIDEBAR_OPEN, sidebarOpen ? "1" : "0");
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 3500);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     if (boardProjectId && !projects.some((project) => project.id === boardProjectId)) {
@@ -281,6 +292,30 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!isTauri) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      unlisten = await listen<WorkerLogEvent>("maple://worker-log", (event) => {
+        const { workerId, taskTitle, stream, line } = event.payload;
+        const taskPrefix = taskTitle ? `[${taskTitle}] ` : "";
+        const prefix = stream === "stderr" ? "[stderr] " : "";
+
+        setWorkerLogs((previous) => ({
+          ...previous,
+          [workerId]: `${previous[workerId] ?? ""}${taskPrefix}${prefix}${line}\n`
+        }));
+      });
+    })();
+
+    return () => {
+      unlisten?.();
+    };
+  }, [isTauri]);
+
   const boardProject = boardProjectId ? projects.find((project) => project.id === boardProjectId) ?? null : null;
   const selectedTask = boardProject && selectedTaskId ? boardProject.tasks.find((task) => task.id === selectedTaskId) ?? null : null;
 
@@ -292,7 +327,11 @@ export function App() {
   }, [projects, workers]);
 
   function appendWorkerLog(workerId: string, text: string) {
-    setWorkerLogs((previous) => ({ ...previous, [workerId]: text }));
+    setWorkerLogs((previous) => ({ ...previous, [workerId]: `${previous[workerId] ?? ""}${text}` }));
+  }
+
+  function clearWorkerLog(workerId: string) {
+    setWorkerLogs((previous) => ({ ...previous, [workerId]: "" }));
   }
 
   function updateTask(projectId: string, taskId: string, updater: (task: Task) => Task) {
@@ -398,15 +437,18 @@ export function App() {
         item.id !== projectId ? item : { ...item, tasks: [...item.tasks, newTask] }
       )
     );
-    setSelectedTaskId(newTask.id);
     setEditingTaskId(newTask.id);
   }
 
   function commitTaskTitle(projectId: string, taskId: string, title: string) {
     const trimmed = title.trim();
-    if (!trimmed) {
+    const project = projects.find((p) => p.id === projectId);
+    const existingTask = project?.tasks.find((t) => t.id === taskId);
+    const hadTitle = existingTask && existingTask.title.trim().length > 0;
+
+    if (!trimmed && !hadTitle) {
       deleteTask(projectId, taskId);
-    } else {
+    } else if (trimmed) {
       updateTask(projectId, taskId, (task) => ({ ...task, title: trimmed }));
     }
     setEditingTaskId(null);
@@ -453,6 +495,8 @@ export function App() {
     ].join("\n");
 
     return invoke<WorkerCommandResult>("run_worker", {
+      workerId: worker.id,
+      taskTitle: task.title,
       executable: config.executable,
       args,
       prompt,
@@ -481,21 +525,28 @@ export function App() {
         cwd: ""
       });
 
-      appendWorkerLog(worker.id, `${worker.label} probe\nstdout: ${result.stdout || "(empty)"}\nstderr: ${result.stderr || "(empty)"}`);
+      appendWorkerLog(worker.id, `\n$ ${config.executable} ${args.join(" ")}\n`);
+      if (result.stdout.trim()) {
+        appendWorkerLog(worker.id, `${result.stdout.trim()}\n`);
+      }
+      if (result.stderr.trim()) {
+        appendWorkerLog(worker.id, `[stderr] ${result.stderr.trim()}\n`);
+      }
       setNotice(result.success ? `${worker.label} 可用` : `${worker.label} 不可用（exit: ${result.code ?? "?"}）`);
     } catch (error) {
-      appendWorkerLog(worker.id, `${worker.label} probe error: ${String(error)}`);
+      appendWorkerLog(worker.id, `\n${worker.label} 探测失败：${String(error)}\n`);
       setNotice(`${worker.label} 探测失败。`);
     }
   }
 
-  async function completePending(projectId: string) {
+  async function completePending(projectId: string, overrideWorkerId?: string) {
     const project = projects.find((item) => item.id === projectId);
     if (!project) {
       return;
     }
 
-    if (!project.workerId) {
+    const effectiveWorkerId = overrideWorkerId ?? project.workerId;
+    if (!effectiveWorkerId) {
       setPickerForProject(projectId);
       return;
     }
@@ -505,7 +556,7 @@ export function App() {
       return;
     }
 
-    const worker = workers.find((item) => item.id === project.workerId);
+    const worker = workers.find((item) => item.id === effectiveWorkerId);
     if (!worker) {
       setNotice("未找到绑定 Worker。");
       return;
@@ -526,13 +577,25 @@ export function App() {
     const nextVersion = bumpPatch(project.version);
 
     setWorkers((previous) => previous.map((item) => (item.id === worker.id ? { ...item, busy: true } : item)));
+    setWorkerConsoleWorkerId(worker.id);
+    setWorkerConsoleOpen(true);
 
     for (const task of pendingTasks) {
       updateTask(project.id, task.id, (current) => ({ ...current, status: "进行中" }));
 
       try {
+        appendWorkerLog(worker.id, `\n—— ${task.title} ——\n`);
         const result = await runWorkerCommand(worker, config, task, project);
-        appendWorkerLog(worker.id, `${worker.label} -> ${task.title}\nstdout: ${result.stdout || "(empty)"}\nstderr: ${result.stderr || "(empty)"}`);
+        appendWorkerLog(worker.id, `[exit ${result.code ?? "?"}] ${result.success ? "完成" : "失败"}\n`);
+
+        if (!isTauri) {
+          if (result.stdout.trim()) {
+            appendWorkerLog(worker.id, `${result.stdout.trim()}\n`);
+          }
+          if (result.stderr.trim()) {
+            appendWorkerLog(worker.id, `[stderr] ${result.stderr.trim()}\n`);
+          }
+        }
 
         if (result.success) {
           updateTask(project.id, task.id, (current) => {
@@ -557,7 +620,7 @@ export function App() {
         }
       } catch (error) {
         const report = createTaskReport(worker.label, `执行异常：${String(error)}`);
-        appendWorkerLog(worker.id, `${worker.label} -> ${task.title}\nerror: ${String(error)}`);
+        appendWorkerLog(worker.id, `[error] ${task.title}: ${String(error)}\n`);
         updateTask(project.id, task.id, (current) => ({ ...current, status: "已阻塞", reports: [...current.reports, report] }));
       }
     }
@@ -708,58 +771,100 @@ export function App() {
   }
 
   return (
-    <div className={sidebarCollapsed ? "shell shell-collapsed" : "shell"}>
-      {isTauri ? (
-        <>
-          <div className="drag-strip" data-tauri-drag-region />
-          <div className="window-controls">
-            <button className="icon-button" onClick={() => void minimizeWindow()} aria-label="最小化">
-              <Icon icon="mingcute:minus-line" />
-            </button>
-            <button className="icon-button" onClick={() => void toggleWindowMaximize()} aria-label="全屏">
-              <Icon icon="mingcute:square-line" />
-            </button>
-            <button className="icon-button danger" onClick={() => void closeWindow()} aria-label="关闭">
-              <Icon icon="mingcute:close-line" />
-            </button>
-          </div>
-        </>
-      ) : null}
+    <div className="app-root">
+      <div className="shell">
+        {isTauri ? (
+          <>
+            <div className="drag-strip absolute top-0 left-0 right-0 h-[34px] z-20" data-tauri-drag-region />
+            <div className="absolute top-1.5 right-2.5 z-30 flex gap-1">
+              <button
+                type="button"
+                className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
+                onClick={() => void minimizeWindow()}
+                aria-label="最小化"
+              >
+                <Icon icon="mingcute:minus-line" />
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
+                onClick={() => void toggleWindowMaximize()}
+                aria-label="最大化"
+              >
+                <Icon icon="mingcute:square-line" />
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn--sm ui-btn--ghost ui-btn--danger ui-icon-btn"
+                onClick={() => void closeWindow()}
+                aria-label="关闭"
+              >
+                <Icon icon="mingcute:close-line" />
+              </button>
+            </div>
+          </>
+        ) : null}
 
-      <aside className="sidebar">
-        <div className="sidebar-main">
-          <div className="sidebar-header">
-            <h1>
+        <div className="topbar">
+          <button
+            type="button"
+            className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            aria-label="菜单"
+          >
+            <Icon icon="mingcute:menu-line" />
+          </button>
+          <h1 className="m-0 flex items-center gap-1.5 text-base font-semibold">
+            <Icon icon="mingcute:leaf-3-line" />
+            <span>Maple</span>
+          </h1>
+        </div>
+
+        {sidebarOpen ? <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} /> : null}
+        <aside className={sidebarOpen ? "sidebar sidebar-open" : "sidebar"}>
+        <div className="flex flex-col gap-2 flex-1 min-h-0">
+          <div className="flex items-center justify-between gap-2 px-1 py-0.5">
+            <h1 className="m-0 flex items-center gap-1.5 text-xl font-semibold">
               <Icon icon="mingcute:leaf-3-line" />
-              <span className="brand-label">Maple</span>
+              <span className="brand-label">
+                <SplitText text="Maple" className="inline" delay={40} />
+              </span>
             </h1>
             <button
               type="button"
-              className="icon-button"
-              onClick={() => setSidebarCollapsed((previous) => !previous)}
-              aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+              className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="关闭侧边栏"
             >
-              <Icon icon={sidebarCollapsed ? "mingcute:layout-leftbar-open-line" : "mingcute:layout-leftbar-close-line"} />
+              <Icon icon="mingcute:close-line" />
             </button>
           </div>
 
-          <nav>
-            <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>
+          <nav className="sidebar-nav flex flex-col gap-0.5">
+            <button
+              type="button"
+              className={`ui-btn ui-btn--sm ui-btn--ghost gap-2 ${view === "overview" ? "active" : ""}`}
+              onClick={() => { setView("overview"); setSidebarOpen(false); }}
+            >
               <Icon icon="mingcute:home-4-line" />
               <span className="nav-label">概览</span>
             </button>
-            <button className={view === "progress" ? "active" : ""} onClick={() => setView("progress")}>
+            <button
+              type="button"
+              className={`ui-btn ui-btn--sm ui-btn--ghost gap-2 ${view === "progress" ? "active" : ""}`}
+              onClick={() => { setView("progress"); setSidebarOpen(false); }}
+            >
               <Icon icon="mingcute:settings-3-line" />
               <span className="nav-label">设置</span>
             </button>
           </nav>
 
-          <div className="sidebar-section">
-            <div className="sidebar-section-header">
-              <span className="nav-label sidebar-section-title">项目</span>
+          <div className="flex flex-col gap-0.5 mt-1">
+            <div className="sidebar-section-header flex items-center gap-1 px-2 py-0.5">
+              <span className="nav-label flex-1 text-muted text-xs font-medium uppercase tracking-wide">项目</span>
               <button
                 type="button"
-                className="icon-button sidebar-action-btn"
+                className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn sidebar-action-btn text-muted"
                 onClick={() => void createProject()}
                 aria-label="新建项目"
               >
@@ -767,7 +872,7 @@ export function App() {
               </button>
               <button
                 type="button"
-                className="icon-button sidebar-action-btn"
+                className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn sidebar-action-btn text-muted"
                 onClick={() => void importExistingProject()}
                 aria-label="导入项目"
               >
@@ -775,91 +880,102 @@ export function App() {
               </button>
             </div>
 
-            <div className="sidebar-project-list">
+            <div className="sidebar-project-list flex flex-col gap-0.5">
               {projects.map((project) => (
                 <button
                   key={project.id}
                   type="button"
-                  className={boardProjectId === project.id && view === "board" ? "sidebar-project active" : "sidebar-project"}
+                  className={`sidebar-project ui-btn ui-btn--sm ui-btn--ghost gap-2 w-full text-left justify-start ${boardProjectId === project.id && view === "board" ? "active" : ""}`}
                   onClick={() => {
                     setBoardProjectId(project.id);
                     setView("board");
                     setSelectedTaskId(null);
+                    setSidebarOpen(false);
                   }}
                 >
                   <Icon icon="mingcute:folder-open-line" />
-                  <span className="nav-label">{project.name}</span>
+                  <span className="nav-label flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{project.name}</span>
                 </button>
               ))}
               {projects.length === 0 ? (
-                <p className="hint nav-label" style={{ padding: "0 0.4rem", fontSize: "0.78rem" }}>还没有项目</p>
+                <p className="nav-label text-muted text-xs px-2">还没有项目</p>
               ) : null}
             </div>
           </div>
         </div>
-
-        <div className="sidebar-footer">
-          {notice ? <p className="notice">{notice}</p> : null}
-        </div>
       </aside>
 
-      <main className="content">
+      <main className="p-4 px-5 flex-1 overflow-y-auto overflow-x-hidden">
         {view === "overview" ? (
-          <section>
-            <h2>概览</h2>
-            <div className="cards">
-              <article>
-                <h3>待处理任务</h3>
-                <p>{metrics.pending}</p>
-              </article>
-              <article>
-                <h3>忙碌 Worker</h3>
-                <p>{metrics.busyWorkers}</p>
-              </article>
-              <article>
-                <h3>项目数量</h3>
-                <p>{metrics.projectCount}</p>
-              </article>
-            </div>
+          <FadeContent duration={300}>
+            <section>
+              <h2 className="text-xl font-semibold m-0">概览</h2>
+              <div className="grid grid-cols-3 gap-3 mt-3">
+                <SpotlightCard spotlightColor="rgba(47, 111, 179, 0.15)" className="ui-card p-4">
+                  <h3 className="text-muted text-sm font-normal m-0">待处理任务</h3>
+                  <p className="text-2xl font-semibold mt-1 m-0">
+                    <CountUp from={0} to={metrics.pending} duration={0.6} />
+                  </p>
+                </SpotlightCard>
+                <SpotlightCard spotlightColor="rgba(47, 111, 179, 0.15)" className="ui-card p-4">
+                  <h3 className="text-muted text-sm font-normal m-0">忙碌 Worker</h3>
+                  <p className="text-2xl font-semibold mt-1 m-0">
+                    <CountUp from={0} to={metrics.busyWorkers} duration={0.6} />
+                  </p>
+                </SpotlightCard>
+                <SpotlightCard spotlightColor="rgba(47, 111, 179, 0.15)" className="ui-card p-4">
+                  <h3 className="text-muted text-sm font-normal m-0">项目数量</h3>
+                  <p className="text-2xl font-semibold mt-1 m-0">
+                    <CountUp from={0} to={metrics.projectCount} duration={0.6} />
+                  </p>
+                </SpotlightCard>
+              </div>
 
-            <div className="panel">
-              <h3>
-                <Icon icon="mingcute:plug-2-line" />
-                MCP Server
-              </h3>
-              <p className="hint">
-                状态：{mcpStatus.running ? `运行中（PID ${mcpStatus.pid ?? "?"}）` : "未运行"}
-                {mcpStatus.command ? ` | ${mcpStatus.command}` : ""}
-              </p>
-            </div>
-          </section>
+              <div className="ui-card p-4 mt-3">
+                <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+                  <Icon icon="mingcute:plug-2-line" />
+                  MCP Server
+                </h3>
+                <p className="text-muted text-sm mt-2">
+                  状态：{mcpStatus.running ? `运行中（PID ${mcpStatus.pid ?? "?"}）` : "未运行"}
+                  {mcpStatus.command ? ` | ${mcpStatus.command}` : ""}
+                </p>
+              </div>
+            </section>
+          </FadeContent>
         ) : null}
 
         {view === "board" ? (
-          <section className="board-page">
+          <section className="max-w-full">
             {!boardProject ? (
-              <div className="board-empty">
-                <Icon icon="mingcute:folder-open-line" style={{ fontSize: "2rem", color: "var(--muted)" }} />
-                <p>从侧边栏选择一个项目</p>
-              </div>
+              <FadeContent duration={300}>
+                <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted">
+                  <Icon icon="mingcute:folder-open-line" className="text-3xl" />
+                  <p>从侧边栏选择一个项目</p>
+                </div>
+              </FadeContent>
             ) : (
               <>
-                <header className="board-header">
-                  <div className="board-title-row">
-                    <h2>{boardProject.name}</h2>
-                    <span className="board-meta">v{boardProject.version}</span>
+                <header className="mb-3">
+                  <div className="flex items-baseline gap-2">
+                    <h2 className="text-xl font-semibold m-0">{boardProject.name}</h2>
+                    <span className="ui-badge">v{boardProject.version}</span>
                   </div>
-                  <p className="board-path">{boardProject.directory}</p>
+                  <p className="text-muted text-sm mt-0.5">{boardProject.directory}</p>
                 </header>
 
-                <div className="board-toolbar">
-                  <button onClick={() => addTask(boardProject.id)}>
+                <div className="flex gap-2 mb-3 flex-wrap">
+                  <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={() => addTask(boardProject.id)}>
                     <Icon icon="mingcute:add-line" />
                     新建
                   </button>
-                  <button onClick={() => void completePending(boardProject.id)}>
+                  <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={() => void completePending(boardProject.id)}>
                     <Icon icon="mingcute:check-circle-line" />
                     执行待办
+                  </button>
+                  <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost gap-1" onClick={() => setWorkerConsoleOpen(true)}>
+                    <Icon icon="mingcute:terminal-box-line" />
+                    控制台
                   </button>
                   <PopoverMenu
                     label="更多"
@@ -875,8 +991,8 @@ export function App() {
                   />
                 </div>
 
-                <div className={selectedTask && detailMode === "sidebar" ? "board-body with-detail" : "board-body"}>
-                  <div className="board-table-wrap">
+                <div className={selectedTask && detailMode === "sidebar" ? "board-body with-detail grid gap-3" : "board-body grid gap-3"}>
+                  <div className="min-w-0 overflow-hidden">
                     <table className="task-table">
                       <thead>
                         <tr>
@@ -892,7 +1008,13 @@ export function App() {
                         {boardProject.tasks.map((task) => (
                           <tr
                             key={task.id}
-                            className={task.id === selectedTaskId ? "task-row selected" : "task-row"}
+                            className={[
+                              "task-row",
+                              task.id === selectedTaskId ? "selected" : "",
+                              editingTaskId === task.id ? "editing" : ""
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
                             onClick={() => {
                               if (editingTaskId !== task.id) {
                                 setSelectedTaskId(task.id);
@@ -902,10 +1024,32 @@ export function App() {
                             <td className="col-task">
                               {editingTaskId === task.id ? (
                                 <InlineTaskInput
+                                  initialValue={task.title}
                                   onCommit={(title) => commitTaskTitle(boardProject.id, task.id, title)}
                                 />
                               ) : (
-                                <span className="task-title-text">{task.title || "(无标题)"}</span>
+                                <div className="task-title-cell flex items-center gap-1 min-w-0">
+                                  <span
+                                    className="task-title-text flex-1 cursor-text rounded px-0.5 overflow-hidden text-ellipsis whitespace-nowrap"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingTaskId(task.id);
+                                    }}
+                                  >
+                                    {task.title || "(无标题)"}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="task-open-btn ui-btn ui-btn--xs ui-btn--outline gap-0.5 shrink-0 text-[color:var(--color-primary)]"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedTaskId(task.id);
+                                    }}
+                                  >
+                                    <Icon icon="mingcute:arrow-right-up-line" />
+                                    打开
+                                  </button>
+                                </div>
                               )}
                             </td>
                             <td className="col-status">
@@ -915,14 +1059,19 @@ export function App() {
                             <td className="col-reports">{task.reports.length > 0 ? task.reports.length : ""}</td>
                             <td className="col-tags">
                               {task.tags.slice(0, 3).map((tag) => (
-                                <span key={tag} className="tag-inline">{tag}</span>
+                                <span key={tag} className="ui-badge mr-1">
+                                  {tag}
+                                </span>
                               ))}
-                              {task.tags.length > 3 ? <span className="tag-inline tag-more">+{task.tags.length - 3}</span> : null}
+                              {task.tags.length > 3 ? (
+                                <span className="ui-badge opacity-60">+{task.tags.length - 3}</span>
+                              ) : null}
                             </td>
                             <td className="col-version">{task.version}</td>
                             <td className="col-actions">
                               <button
-                                className="icon-button row-delete-btn"
+                                type="button"
+                                className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn row-delete-btn opacity-0 transition-opacity"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   deleteTask(boardProject.id, task.id);
@@ -938,14 +1087,14 @@ export function App() {
                     </table>
 
                     {boardProject.tasks.length === 0 ? (
-                      <div className="board-empty-tasks">
-                        <p className="hint">还没有任务，点击上方「新建」添加。</p>
+                      <div className="py-8 text-center">
+                        <p className="text-muted text-sm">还没有任务，点击上方「新建」添加。</p>
                       </div>
                     ) : null}
                   </div>
 
                   {selectedTask && detailMode === "sidebar" ? (
-                    <aside className="board-detail-side">
+                    <aside className="ui-card p-4 max-h-[calc(100vh-160px)] overflow-y-auto sticky top-4">
                       <TaskDetailPanel
                         task={selectedTask}
                         onClose={() => setSelectedTaskId(null)}
@@ -956,9 +1105,9 @@ export function App() {
                 </div>
 
                 {releaseReport ? (
-                  <div className="panel release-panel">
-                    <h3>版本草稿</h3>
-                    <textarea value={releaseReport} readOnly rows={14} />
+                  <div className="ui-card p-4 mt-3">
+                    <h3 className="font-semibold m-0">版本草稿</h3>
+                    <textarea className="ui-textarea w-full mt-2" value={releaseReport} readOnly rows={14} />
                   </div>
                 ) : null}
               </>
@@ -967,178 +1116,322 @@ export function App() {
         ) : null}
 
         {view === "progress" ? (
-          <section>
-            <h2>设置</h2>
-            <div className="panel">
-              <h3>
-                <Icon icon="mingcute:plug-2-line" />
-                MCP Server
-              </h3>
-              <div className="stack-input">
-                <input
-                  value={mcpConfig.executable}
-                  onChange={(event) => setMcpConfig((previous) => ({ ...previous, executable: event.target.value }))}
-                  placeholder="启动命令（例如：npx）"
-                />
-                <input
-                  value={mcpConfig.args}
-                  onChange={(event) => setMcpConfig((previous) => ({ ...previous, args: event.target.value }))}
-                  placeholder="启动参数（例如：-y @modelcontextprotocol/server-filesystem .）"
-                />
-                <input
-                  value={mcpConfig.cwd}
-                  onChange={(event) => setMcpConfig((previous) => ({ ...previous, cwd: event.target.value }))}
-                  placeholder="工作目录（可选）"
-                />
-                <label className="checkbox-line">
+          <FadeContent duration={300}>
+            <section>
+              <h2 className="text-xl font-semibold m-0">设置</h2>
+              <div className="ui-card p-4 mt-3">
+                <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+                  <Icon icon="mingcute:plug-2-line" />
+                  MCP Server
+                </h3>
+                <div className="grid gap-2 mt-3">
                   <input
-                    type="checkbox"
-                    checked={mcpConfig.autoStart}
-                    onChange={(event) => setMcpConfig((previous) => ({ ...previous, autoStart: event.target.checked }))}
+                    className="ui-input ui-input--sm w-full"
+                    value={mcpConfig.executable}
+                    onChange={(event) => setMcpConfig((previous) => ({ ...previous, executable: event.target.value }))}
+                    placeholder="启动命令（例如：npx）"
                   />
-                  启动 Maple 时自动拉起 MCP Server
-                </label>
+                  <input
+                    className="ui-input ui-input--sm w-full"
+                    value={mcpConfig.args}
+                    onChange={(event) => setMcpConfig((previous) => ({ ...previous, args: event.target.value }))}
+                    placeholder="启动参数（例如：-y @modelcontextprotocol/server-filesystem .）"
+                  />
+                  <input
+                    className="ui-input ui-input--sm w-full"
+                    value={mcpConfig.cwd}
+                    onChange={(event) => setMcpConfig((previous) => ({ ...previous, cwd: event.target.value }))}
+                    placeholder="工作目录（可选）"
+                  />
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="ui-checkbox"
+                      checked={mcpConfig.autoStart}
+                      onChange={(event) => setMcpConfig((previous) => ({ ...previous, autoStart: event.target.checked }))}
+                    />
+                    启动 Maple 时自动拉起 MCP Server
+                  </label>
+                </div>
+                <div className="flex gap-2 flex-wrap mt-3">
+                  <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={() => void startMcpServer()}>
+                    <Icon icon="mingcute:play-circle-line" />
+                    启动
+                  </button>
+                  <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={() => void stopMcpServer()}>
+                    <Icon icon="mingcute:stop-circle-line" />
+                    停止
+                  </button>
+                  <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={() => void refreshMcpStatus()}>
+                    <Icon icon="mingcute:refresh-2-line" />
+                    刷新状态
+                  </button>
+                </div>
+                <p className="text-muted text-sm mt-2">
+                  当前状态：{mcpStatus.running ? `运行中（PID ${mcpStatus.pid ?? "?"}）` : "未运行"}
+                  {mcpStatus.command ? ` | ${mcpStatus.command}` : ""}
+                </p>
               </div>
-              <div className="row-actions">
-                <button onClick={() => void startMcpServer()}>
-                  <Icon icon="mingcute:play-circle-line" />
-                  启动
-                </button>
-                <button onClick={() => void stopMcpServer()}>
-                  <Icon icon="mingcute:stop-circle-line" />
-                  停止
-                </button>
-                <button onClick={() => void refreshMcpStatus()}>
-                  <Icon icon="mingcute:refresh-2-line" />
-                  刷新状态
-                </button>
-              </div>
-              <p className="hint">
-                当前状态：{mcpStatus.running ? `运行中（PID ${mcpStatus.pid ?? "?"}）` : "未运行"}
-                {mcpStatus.command ? ` | ${mcpStatus.command}` : ""}
-              </p>
-            </div>
 
-            <div className="panel">
-              <h3>
-                <Icon icon="mingcute:ai-line" />
-                Worker 接入
-              </h3>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Worker</th>
-                    <th>状态</th>
-                    <th>绑定项目</th>
-                    <th>CLI 配置</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {workers.map((worker) => {
-                    const config = workerConfigs[worker.kind];
-                    const boundProject = projects.find((project) => project.id === worker.projectId);
-
-                    return (
-                      <tr key={worker.id}>
-                        <td>{worker.label}</td>
-                        <td>{worker.busy ? "忙碌" : "空闲"}</td>
-                        <td>{boundProject?.name ?? "-"}</td>
-                        <td>
-                          <div className="stack-input">
-                            <input
-                              value={config.executable}
-                              onChange={(event) =>
-                                setWorkerConfigs((previous) => ({
-                                  ...previous,
-                                  [worker.kind]: { ...previous[worker.kind], executable: event.target.value }
-                                }))
-                              }
-                              placeholder="命令（例如：codex / claude）"
-                            />
-                            <input
-                              value={config.runArgs}
-                              onChange={(event) =>
-                                setWorkerConfigs((previous) => ({
-                                  ...previous,
-                                  [worker.kind]: { ...previous[worker.kind], runArgs: event.target.value }
-                                }))
-                              }
-                              placeholder="执行参数（例如：exec 或 -p）"
-                            />
-                            <input
-                              value={config.probeArgs}
-                              onChange={(event) =>
-                                setWorkerConfigs((previous) => ({
-                                  ...previous,
-                                  [worker.kind]: { ...previous[worker.kind], probeArgs: event.target.value }
-                                }))
-                              }
-                              placeholder="探测参数（例如：--version）"
-                            />
-                          </div>
-                        </td>
-                        <td>
-                          <button onClick={() => void probeWorker(worker)}>
-                            <Icon icon="mingcute:search-line" />
-                            验证
-                          </button>
-                        </td>
+              <div className="ui-card p-4 mt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+                    <Icon icon="mingcute:ai-line" />
+                    Worker 接入
+                  </h3>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--sm ui-btn--ghost gap-1"
+                    onClick={() => setWorkerConsoleOpen(true)}
+                  >
+                    <Icon icon="mingcute:terminal-box-line" />
+                    控制台
+                  </button>
+                </div>
+                <div className="overflow-x-auto mt-3">
+                  <table className="ui-table">
+                    <thead>
+                      <tr>
+                        <th>Worker</th>
+                        <th>状态</th>
+                        <th>绑定项目</th>
+                        <th>CLI 配置</th>
+                        <th>操作</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {workers.map((worker) => {
+                        const config = workerConfigs[worker.kind];
+                        const boundProject = projects.find((project) => project.id === worker.projectId);
 
-            <div className="panel">
-              <h3>Worker 日志</h3>
-              {workers.map((worker) => (
-                <details key={worker.id}>
-                  <summary>{worker.label}</summary>
-                  <pre>{workerLogs[worker.id] || "暂无日志"}</pre>
-                </details>
-              ))}
-            </div>
-          </section>
+                        return (
+                          <tr key={worker.id}>
+                            <td className="font-medium">{worker.label}</td>
+                            <td>
+                              <span className={worker.busy ? "ui-badge ui-badge--warning" : "ui-badge ui-badge--success"}>
+                                {worker.busy ? "忙碌" : "空闲"}
+                              </span>
+                            </td>
+                            <td>{boundProject?.name ?? "-"}</td>
+                            <td>
+                              <div className="grid gap-1.5">
+                                <input
+                                  className="ui-input ui-input--xs w-full"
+                                  value={config.executable}
+                                  onChange={(event) =>
+                                    setWorkerConfigs((previous) => ({
+                                      ...previous,
+                                      [worker.kind]: { ...previous[worker.kind], executable: event.target.value }
+                                    }))
+                                  }
+                                  placeholder="命令（例如：codex / claude）"
+                                />
+                                <input
+                                  className="ui-input ui-input--xs w-full"
+                                  value={config.runArgs}
+                                  onChange={(event) =>
+                                    setWorkerConfigs((previous) => ({
+                                      ...previous,
+                                      [worker.kind]: { ...previous[worker.kind], runArgs: event.target.value }
+                                    }))
+                                  }
+                                  placeholder="执行参数（例如：exec 或 -p）"
+                                />
+                                <input
+                                  className="ui-input ui-input--xs w-full"
+                                  value={config.probeArgs}
+                                  onChange={(event) =>
+                                    setWorkerConfigs((previous) => ({
+                                      ...previous,
+                                      [worker.kind]: { ...previous[worker.kind], probeArgs: event.target.value }
+                                    }))
+                                  }
+                                  placeholder="探测参数（例如：--version）"
+                                />
+                              </div>
+                            </td>
+                            <td>
+                              <button type="button" className="ui-btn ui-btn--xs ui-btn--outline gap-1" onClick={() => void probeWorker(worker)}>
+                                <Icon icon="mingcute:search-line" />
+                                验证
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="ui-card p-4 mt-3">
+                <h3 className="m-0 font-semibold">Worker 日志</h3>
+                {workers.map((worker) => (
+                  <details key={worker.id} className="ui-details mt-2">
+                    <summary className="text-sm font-medium">{worker.label}</summary>
+                    <div className="p-3">
+                      <pre className="bg-[color:var(--color-base-200)] rounded-lg p-3 text-xs whitespace-pre-wrap break-words m-0 border-0">
+                        {workerLogs[worker.id] || "暂无日志"}
+                      </pre>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </section>
+          </FadeContent>
         ) : null}
       </main>
 
       {pickerForProject ? (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h3>选择 Worker</h3>
-            <p>绑定后会执行当前项目的待办任务。</p>
-            <div className="row-actions">
-              {workers.map((worker) => (
+        <div className="ui-modal" role="dialog" aria-modal="true" aria-label="选择 Worker">
+          <div className="ui-modal-backdrop" onClick={() => setPickerForProject(null)} />
+          <div className="ui-modal-panel">
+            <div className="ui-modal-body">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold m-0">选择 Worker</h3>
+                  <p className="text-muted text-sm mt-1">绑定后会执行当前项目的待办任务。</p>
+                </div>
                 <button
-                  key={worker.id}
-                  onClick={async () => {
-                    bindWorker(pickerForProject, worker.id);
-                    setPickerForProject(null);
-                    await completePending(pickerForProject);
-                  }}
+                  type="button"
+                  className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
+                  onClick={() => setPickerForProject(null)}
+                  aria-label="关闭"
                 >
-                  <Icon icon="mingcute:ai-line" />
-                  {worker.label}
+                  <Icon icon="mingcute:close-line" />
                 </button>
-              ))}
+              </div>
+
+              <div className="flex gap-2 flex-wrap mt-4">
+                {workers.map((worker) => (
+                  <button
+                    key={worker.id}
+                    type="button"
+                    className="ui-btn ui-btn--sm ui-btn--outline gap-1"
+                    onClick={async () => {
+                      bindWorker(pickerForProject, worker.id);
+                      setPickerForProject(null);
+                      await completePending(pickerForProject, worker.id);
+                    }}
+                  >
+                    <Icon icon="mingcute:ai-line" />
+                    {worker.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex justify-end mt-4">
+                <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost" onClick={() => setPickerForProject(null)}>
+                  取消
+                </button>
+              </div>
             </div>
-            <button className="ghost" onClick={() => setPickerForProject(null)}>
-              取消
-            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {workerConsoleOpen ? (
+        <div className="ui-modal" role="dialog" aria-modal="true" aria-label="Worker 控制台">
+          <div className="ui-modal-backdrop" onClick={() => setWorkerConsoleOpen(false)} />
+          <div className="ui-modal-panel">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[color:var(--color-base-200)]">
+              <h3 className="m-0 font-semibold">Worker 控制台</h3>
+              <button
+                type="button"
+                className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
+                onClick={() => setWorkerConsoleOpen(false)}
+                aria-label="关闭"
+              >
+                <Icon icon="mingcute:close-line" />
+              </button>
+            </div>
+            <div className="ui-modal-body">
+              <div className="grid grid-cols-[180px_1fr] gap-3">
+                <div className="flex flex-col gap-1">
+                  {workers.map((worker) => (
+                    <button
+                      key={worker.id}
+                      type="button"
+                      className={`ui-btn ui-btn--sm ui-btn--ghost justify-start gap-2 ${workerConsoleWorkerId === worker.id ? "bg-[color:var(--sidebar-active)]" : ""}`}
+                      onClick={() => setWorkerConsoleWorkerId(worker.id)}
+                    >
+                      <span className={worker.busy ? "ui-badge ui-badge--warning" : "ui-badge ui-badge--success"}>
+                        {worker.busy ? "忙碌" : "空闲"}
+                      </span>
+                      <span className="flex-1 text-left">{worker.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="m-0 text-muted text-xs">
+                      {workerConsoleWorkerId ? `当前：${workers.find((worker) => worker.id === workerConsoleWorkerId)?.label ?? workerConsoleWorkerId}` : "当前：-"}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn--xs ui-btn--outline gap-1"
+                        onClick={() => clearWorkerLog(workerConsoleWorkerId)}
+                        disabled={!workerConsoleWorkerId}
+                      >
+                        <Icon icon="mingcute:delete-2-line" />
+                        清空
+                      </button>
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn--xs ui-btn--outline gap-1"
+                        onClick={async () => {
+                          const text = workerConsoleWorkerId ? workerLogs[workerConsoleWorkerId] ?? "" : "";
+                          if (!text.trim()) {
+                            setNotice("当前没有可复制的日志。");
+                            return;
+                          }
+                          try {
+                            await navigator.clipboard.writeText(text);
+                            setNotice("已复制到剪贴板。");
+                          } catch {
+                            setNotice("复制失败，请稍后重试。");
+                          }
+                        }}
+                        disabled={!workerConsoleWorkerId}
+                      >
+                        <Icon icon="mingcute:copy-2-line" />
+                        复制
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="mt-2 bg-[color:var(--color-base-200)] rounded-lg p-3 text-xs whitespace-pre-wrap break-words m-0 border-0 max-h-[56vh] overflow-auto">
+                    {(workerConsoleWorkerId ? workerLogs[workerConsoleWorkerId] : "") || "暂无日志"}
+                  </pre>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
 
       {detailMode === "modal" && selectedTask && boardProject ? (
-        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedTaskId(null); }}>
-          <div className="modal task-modal">
-            <TaskDetailPanel
-              task={selectedTask}
-              onClose={() => setSelectedTaskId(null)}
-              onDelete={() => deleteTask(boardProject.id, selectedTask.id)}
-            />
+        <div className="ui-modal" role="dialog" aria-modal="true" aria-label="任务详情">
+          <div className="ui-modal-backdrop" onClick={() => setSelectedTaskId(null)} />
+          <div className="ui-modal-panel">
+            <div className="ui-modal-body">
+              <TaskDetailPanel
+                task={selectedTask}
+                onClose={() => setSelectedTaskId(null)}
+                onDelete={() => deleteTask(boardProject.id, selectedTask.id)}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
+      </div>
+
+      {notice ? (
+        <div className="toast-container" role="alert">
+          <div className="toast">
+            <Icon icon="mingcute:information-line" />
+            <span>{notice}</span>
           </div>
         </div>
       ) : null}

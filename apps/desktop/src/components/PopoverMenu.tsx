@@ -62,7 +62,7 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
     <div ref={rootRef} className="popover">
       <button
         type="button"
-        className={open ? "popover-trigger active" : "popover-trigger"}
+        className={`ui-btn ui-btn--sm ui-btn--outline gap-1 ${open ? "popover-trigger active" : "popover-trigger"}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
@@ -77,7 +77,7 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
           {items.map((item, index) => {
             if (item.kind === "heading") {
               return (
-                <div key={`heading-${index}`} className="popover-heading" role="presentation">
+                <div key={`heading-${index}`} className="px-2 py-1 text-muted text-xs" role="presentation">
                   {item.label}
                 </div>
               );
@@ -88,18 +88,18 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
                 key={item.key}
                 type="button"
                 role="menuitem"
-                className="popover-item"
+                className="popover-item ui-btn ui-btn--sm ui-btn--ghost justify-start gap-2 w-full border border-transparent rounded-lg"
                 disabled={item.disabled}
                 onClick={() => {
                   setOpen(false);
                   item.onSelect();
                 }}
               >
-                <span className="popover-item-icon" aria-hidden="true">
+                <span className="w-5 inline-flex justify-center" aria-hidden="true">
                   <Icon icon={item.icon} />
                 </span>
-                <span className="popover-item-label">{item.label}</span>
-                <span className="popover-item-check" aria-hidden="true">
+                <span>{item.label}</span>
+                <span className="ml-auto w-5 inline-flex justify-end text-[color:var(--color-primary)]" aria-hidden="true">
                   {item.checked ? <Icon icon="mingcute:check-line" /> : null}
                 </span>
               </button>
@@ -110,4 +110,3 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
     </div>
   );
 }
-

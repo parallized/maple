@@ -1,9 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
+use std::io::Write;
 use std::sync::Mutex;
+use tauri::Emitter;
 use tauri::State;
 
 #[derive(Serialize)]
@@ -12,6 +16,15 @@ struct WorkerCommandResult {
   code: Option<i32>,
   stdout: String,
   stderr: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct WorkerLogEvent {
+  worker_id: String,
+  task_title: String,
+  stream: String,
+  line: String,
 }
 
 #[derive(Serialize)]
@@ -41,15 +54,28 @@ fn probe_worker(
 }
 
 #[tauri::command]
-fn run_worker(
+async fn run_worker(
+  window: tauri::Window,
+  worker_id: String,
+  task_title: String,
   executable: String,
   args: Vec<String>,
   prompt: String,
   cwd: Option<String>,
 ) -> Result<WorkerCommandResult, String> {
-  let mut final_args = args;
-  final_args.push(prompt);
-  run_command(executable, final_args, cwd)
+  tauri::async_runtime::spawn_blocking(move || {
+    run_command_stream(
+      window,
+      worker_id,
+      task_title,
+      executable,
+      args,
+      Some(prompt),
+      cwd,
+    )
+  })
+  .await
+  .map_err(|_| "Worker 执行线程异常退出".to_string())?
 }
 
 #[tauri::command]
@@ -196,6 +222,114 @@ fn run_command(
     stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
     stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
   })
+}
+
+fn run_command_stream(
+  window: tauri::Window,
+  worker_id: String,
+  task_title: String,
+  executable: String,
+  args: Vec<String>,
+  prompt: Option<String>,
+  cwd: Option<String>,
+) -> Result<WorkerCommandResult, String> {
+  let executable = executable.trim().to_string();
+  if executable.is_empty() {
+    return Err("worker executable 不能为空".to_string());
+  }
+
+  let mut command = Command::new(&executable);
+  command.args(&args);
+  if let Some(value) = prompt.as_ref() {
+    if !value.trim().is_empty() {
+      command.arg(value);
+      command.stdin(Stdio::piped());
+    }
+  }
+  command.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+  if let Some(dir) = normalize_cwd(cwd) {
+    command.current_dir(dir);
+  }
+
+  let mut child = command
+    .spawn()
+    .map_err(|error| format!("执行命令失败: {error}"))?;
+
+  if let (Some(mut stdin), Some(value)) = (child.stdin.take(), prompt.clone()) {
+    if !value.trim().is_empty() {
+      let _ = stdin.write_all(value.as_bytes());
+      let _ = stdin.write_all(b"\n");
+    }
+  }
+
+  let stdout = child.stdout.take().ok_or_else(|| "无法捕获 stdout".to_string())?;
+  let stderr = child.stderr.take().ok_or_else(|| "无法捕获 stderr".to_string())?;
+
+  let stdout_window = window.clone();
+  let stdout_worker_id = worker_id.clone();
+  let stdout_task_title = task_title.clone();
+  let stdout_handle = std::thread::spawn(move || {
+    stream_lines(stdout_window, stdout_worker_id, stdout_task_title, "stdout", stdout)
+  });
+
+  let stderr_window = window.clone();
+  let stderr_worker_id = worker_id.clone();
+  let stderr_task_title = task_title.clone();
+  let stderr_handle = std::thread::spawn(move || {
+    stream_lines(stderr_window, stderr_worker_id, stderr_task_title, "stderr", stderr)
+  });
+
+  let status = child
+    .wait()
+    .map_err(|error| format!("等待 Worker 退出失败: {error}"))?;
+
+  let stdout_text = stdout_handle.join().unwrap_or_default();
+  let stderr_text = stderr_handle.join().unwrap_or_default();
+
+  Ok(WorkerCommandResult {
+    success: status.success(),
+    code: status.code(),
+    stdout: stdout_text.trim().to_string(),
+    stderr: stderr_text.trim().to_string(),
+  })
+}
+
+fn stream_lines<R: std::io::Read>(
+  window: tauri::Window,
+  worker_id: String,
+  task_title: String,
+  stream: &str,
+  reader: R,
+) -> String {
+  let mut out = String::new();
+  let mut buf_reader = BufReader::new(reader);
+  let mut line = String::new();
+
+  loop {
+    line.clear();
+    match buf_reader.read_line(&mut line) {
+      Ok(0) => break,
+      Ok(_) => {
+        out.push_str(&line);
+        let trimmed = line.trim_end_matches(&['\n', '\r']);
+        if !trimmed.is_empty() {
+          let _ = window.emit(
+            "maple://worker-log",
+            WorkerLogEvent {
+              worker_id: worker_id.clone(),
+              task_title: task_title.clone(),
+              stream: stream.to_string(),
+              line: trimmed.to_string(),
+            },
+          );
+        }
+      }
+      Err(_) => break,
+    }
+  }
+
+  out
 }
 
 fn normalize_cwd(cwd: Option<String>) -> Option<PathBuf> {

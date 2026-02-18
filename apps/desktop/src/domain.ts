@@ -31,6 +31,13 @@ export type WorkerCommandResult = {
   stderr: string;
 };
 
+export type WorkerLogEvent = {
+  workerId: string;
+  taskTitle: string;
+  stream: "stdout" | "stderr";
+  line: string;
+};
+
 export type McpServerStatus = {
   running: boolean;
   pid: number | null;
@@ -63,4 +70,3 @@ export type Project = {
   workerId?: string;
   tasks: Task[];
 };
-
