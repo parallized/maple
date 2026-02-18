@@ -1014,7 +1014,7 @@ export function App() {
         </nav>
 
         <div className="main-column">
-      <main className="flex-1 overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 overflow-hidden flex flex-col">
         {view === "overview" ? (
           <FadeContent duration={300}>
             <section>
@@ -1055,7 +1055,7 @@ export function App() {
         ) : null}
 
         {view === "board" ? (
-          <section className="max-w-full">
+          <section className="h-full max-w-full flex flex-col">
             {!boardProject ? (
               <FadeContent duration={300}>
                 <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted">
