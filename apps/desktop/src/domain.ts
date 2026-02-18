@@ -3,14 +3,6 @@ export type WorkerKind = "claude" | "codex" | "iflow";
 export type TaskStatus = "待办" | "队列中" | "进行中" | "已完成" | "已阻塞";
 export type DetailMode = "sidebar" | "modal";
 
-export type Worker = {
-  id: string;
-  kind: WorkerKind;
-  label: string;
-  busy: boolean;
-  projectId?: string;
-};
-
 export type WorkerConfig = {
   executable: string;
   runArgs: string;
@@ -73,6 +65,6 @@ export type Project = {
   name: string;
   version: string;
   directory: string;
-  workerId?: string;
+  workerKind?: WorkerKind;
   tasks: Task[];
 };

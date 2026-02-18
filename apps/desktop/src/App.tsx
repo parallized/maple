@@ -15,7 +15,6 @@ import type {
   Task,
   TaskReport,
   ViewKey,
-  Worker,
   WorkerCommandResult,
   WorkerConfig,
   WorkerDoneEvent,
@@ -26,14 +25,13 @@ import type {
 const STORAGE_PROJECTS = "maple.desktop.projects";
 const STORAGE_WORKER_CONFIGS = "maple.desktop.worker-configs";
 const STORAGE_MCP_CONFIG = "maple.desktop.mcp-config";
-const STORAGE_SIDEBAR_OPEN = "maple.desktop.sidebar-open";
 
 const INITIAL_PROJECTS: Project[] = [];
 
-const INITIAL_WORKERS: Worker[] = [
-  { id: "worker-claude", kind: "claude", label: "Claude", busy: false },
-  { id: "worker-codex", kind: "codex", label: "Codex", busy: false },
-  { id: "worker-iflow", kind: "iflow", label: "iFlow", busy: false }
+const WORKER_KINDS: { kind: WorkerKind; label: string }[] = [
+  { kind: "claude", label: "Claude" },
+  { kind: "codex", label: "Codex" },
+  { kind: "iflow", label: "iFlow" }
 ];
 
 const DEFAULT_WORKER_CONFIGS: Record<WorkerKind, WorkerConfig> = {
@@ -73,7 +71,7 @@ function createTask(taskTitle: string, projectVersion: string): Task {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: taskTitle,
     status: "待办",
-    tags: ["新任务", `v${nextVersion}`],
+    tags: [],
     version: nextVersion,
     createdAt: now,
     updatedAt: now,
@@ -95,9 +93,17 @@ function normalizeProjects(projects: Project[]): Project[] {
   return projects
     .map((project) => {
       const directory = (project.directory ?? "").trim();
+      // Migrate legacy workerId → workerKind
+      let workerKind = project.workerKind;
+      if (!workerKind && (project as Record<string, unknown>).workerId) {
+        const legacyId = (project as Record<string, unknown>).workerId as string;
+        const match = WORKER_KINDS.find((w) => `worker-${w.kind}` === legacyId);
+        if (match) workerKind = match.kind;
+      }
       return {
         ...project,
         directory,
+        workerKind,
         tasks: project.tasks.map((task) => {
           const createdAt = typeof task.createdAt === "string" && task.createdAt ? task.createdAt : now;
           const updatedAt = typeof task.updatedAt === "string" && task.updatedAt ? task.updatedAt : createdAt;
@@ -164,14 +170,6 @@ function loadMcpServerConfig(): McpServerConfig {
   }
 }
 
-function loadSidebarOpen(): boolean {
-  try {
-    return localStorage.getItem(STORAGE_SIDEBAR_OPEN) === "1";
-  } catch {
-    return false;
-  }
-}
-
 function hasTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -233,9 +231,7 @@ export function App() {
   const isTauri = hasTauriRuntime();
 
   const [view, setView] = useState<ViewKey>("overview");
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => loadSidebarOpen());
   const [projects, setProjects] = useState<Project[]>(() => loadProjects());
-  const [workers, setWorkers] = useState<Worker[]>(INITIAL_WORKERS);
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => loadWorkerConfigs());
   const [mcpConfig, setMcpConfig] = useState<McpServerConfig>(() => loadMcpServerConfig());
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
@@ -248,11 +244,46 @@ export function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [workerConsoleOpen, setWorkerConsoleOpen] = useState(false);
-  const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(() => INITIAL_WORKERS[0]?.id ?? "");
+  const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(`worker-${WORKER_KINDS[0]?.kind ?? "claude"}`);
   const [consoleInput, setConsoleInput] = useState("");
   const [runningWorkers, setRunningWorkers] = useState<Set<string>>(() => new Set());
   const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+
+  const DEFAULT_COL_WIDTHS: Record<string, number> = { task: 0, status: 90, reports: 50, tags: 180, version: 70, actions: 40 };
+  const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_COL_WIDTHS);
+  const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
+
+  function handleResizeStart(col: string, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startW = colWidths[col] || 100;
+    resizeRef.current = { col, startX, startW };
+
+    function onMouseMove(ev: MouseEvent) {
+      if (!resizeRef.current) return;
+      const diff = ev.clientX - resizeRef.current.startX;
+      const newW = Math.max(30, resizeRef.current.startW + diff);
+      setColWidths((prev) => ({ ...prev, [resizeRef.current!.col]: newW }));
+    }
+    function onMouseUp() {
+      resizeRef.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }
+
+  function handleResizeDblClick(col: string) {
+    setColWidths((prev) => ({ ...prev, [col]: DEFAULT_COL_WIDTHS[col] }));
+  }
 
   useEffect(() => {
     localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(projects));
@@ -265,10 +296,6 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_MCP_CONFIG, JSON.stringify(mcpConfig));
   }, [mcpConfig]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_SIDEBAR_OPEN, sidebarOpen ? "1" : "0");
-  }, [sidebarOpen]);
 
   useEffect(() => {
     if (!notice) return;
@@ -341,7 +368,8 @@ export function App() {
           next.delete(workerId);
           return next;
         });
-        const workerLabel = workers.find((w) => w.id === workerId)?.label ?? workerId;
+        const kindEntry = WORKER_KINDS.find((w) => `worker-${w.kind}` === workerId);
+        const workerLabel = kindEntry?.label ?? workerId;
         appendWorkerLog(workerId, `\n[exit ${code ?? "?"}] ${success ? "完成" : "失败"}\n`);
         setNotice(`${workerLabel} 会话已结束（exit ${code ?? "?"}）`);
       });
@@ -350,7 +378,7 @@ export function App() {
     return () => {
       unlisten?.();
     };
-  }, [isTauri, workers]);
+  }, [isTauri]);
 
   const boardProject = boardProjectId ? projects.find((project) => project.id === boardProjectId) ?? null : null;
   const selectedTask = boardProject && selectedTaskId ? boardProject.tasks.find((task) => task.id === selectedTaskId) ?? null : null;
@@ -365,9 +393,8 @@ export function App() {
   const metrics = useMemo(() => {
     const allTasks = projects.flatMap((project) => project.tasks);
     const pending = allTasks.filter((task) => task.status !== "已完成").length;
-    const busyWorkers = workers.filter((worker) => worker.busy).length;
-    return { pending, busyWorkers, projectCount: projects.length };
-  }, [projects, workers]);
+    return { pending, runningCount: runningWorkers.size, projectCount: projects.length };
+  }, [projects, runningWorkers]);
 
   function appendWorkerLog(workerId: string, text: string) {
     setWorkerLogs((previous) => ({ ...previous, [workerId]: `${previous[workerId] ?? ""}${text}` }));
@@ -398,20 +425,8 @@ export function App() {
     );
   }
 
-  function bindWorker(projectId: string, workerId: string) {
-    setProjects((previous) => previous.map((project) => (project.id === projectId ? { ...project, workerId } : project)));
-
-    setWorkers((previous) =>
-      previous.map((worker) => {
-        if (worker.id === workerId) {
-          return { ...worker, projectId, busy: false };
-        }
-        if (worker.projectId === projectId && worker.id !== workerId) {
-          return { ...worker, projectId: undefined, busy: false };
-        }
-        return worker;
-      })
-    );
+  function assignWorkerKind(projectId: string, kind: WorkerKind) {
+    setProjects((previous) => previous.map((project) => (project.id === projectId ? { ...project, workerKind: kind } : project)));
   }
 
   async function pickStandaloneDirectory(): Promise<string | null> {
@@ -514,7 +529,7 @@ export function App() {
   }
 
   async function runWorkerCommand(
-    worker: Worker,
+    workerId: string,
     config: WorkerConfig,
     task: Task,
     project: Project
@@ -538,7 +553,7 @@ export function App() {
     ].join("\n");
 
     return invoke<WorkerCommandResult>("run_worker", {
-      workerId: worker.id,
+      workerId,
       taskTitle: task.title,
       executable: config.executable,
       args,
@@ -547,10 +562,11 @@ export function App() {
     });
   }
 
-  async function probeWorker(worker: Worker) {
-    const config = workerConfigs[worker.kind];
+  async function probeWorker(kind: WorkerKind) {
+    const config = workerConfigs[kind];
+    const label = WORKER_KINDS.find((w) => w.kind === kind)?.label ?? kind;
     if (!config.executable.trim()) {
-      setNotice(`${worker.label} 未配置 executable。`);
+      setNotice(`${label} 未配置 executable。`);
       return;
     }
 
@@ -568,28 +584,30 @@ export function App() {
         cwd: ""
       });
 
-      appendWorkerLog(worker.id, `\n$ ${config.executable} ${args.join(" ")}\n`);
+      const workerId = `worker-${kind}`;
+      appendWorkerLog(workerId, `\n$ ${config.executable} ${args.join(" ")}\n`);
       if (result.stdout.trim()) {
-        appendWorkerLog(worker.id, `${result.stdout.trim()}\n`);
+        appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
       }
       if (result.stderr.trim()) {
-        appendWorkerLog(worker.id, `[stderr] ${result.stderr.trim()}\n`);
+        appendWorkerLog(workerId, `[stderr] ${result.stderr.trim()}\n`);
       }
-      setNotice(result.success ? `${worker.label} 可用` : `${worker.label} 不可用（exit: ${result.code ?? "?"}）`);
+      setNotice(result.success ? `${label} 可用` : `${label} 不可用（exit: ${result.code ?? "?"}）`);
     } catch (error) {
-      appendWorkerLog(worker.id, `\n${worker.label} 探测失败：${String(error)}\n`);
-      setNotice(`${worker.label} 探测失败。`);
+      const workerId = `worker-${kind}`;
+      appendWorkerLog(workerId, `\n${label} 探测失败：${String(error)}\n`);
+      setNotice(`${label} 探测失败。`);
     }
   }
 
-  async function completePending(projectId: string, overrideWorkerId?: string) {
+  async function completePending(projectId: string, overrideKind?: WorkerKind) {
     const project = projects.find((item) => item.id === projectId);
     if (!project) {
       return;
     }
 
-    const effectiveWorkerId = overrideWorkerId ?? project.workerId;
-    if (!effectiveWorkerId) {
+    const kind = overrideKind ?? project.workerKind;
+    if (!kind) {
       setPickerForProject(projectId);
       return;
     }
@@ -599,15 +617,10 @@ export function App() {
       return;
     }
 
-    const worker = workers.find((item) => item.id === effectiveWorkerId);
-    if (!worker) {
-      setNotice("未找到绑定 Worker。");
-      return;
-    }
-
-    const config = workerConfigs[worker.kind];
+    const config = workerConfigs[kind];
+    const label = WORKER_KINDS.find((w) => w.kind === kind)?.label ?? kind;
     if (!config.executable.trim()) {
-      setNotice(`请先在进度页配置 ${worker.label} 命令。`);
+      setNotice(`请先在进度页配置 ${label} 命令。`);
       return;
     }
 
@@ -618,25 +631,25 @@ export function App() {
     }
 
     const nextVersion = bumpPatch(project.version);
+    const workerId = `worker-${kind}`;
 
-    setWorkers((previous) => previous.map((item) => (item.id === worker.id ? { ...item, busy: true } : item)));
-    setWorkerConsoleWorkerId(worker.id);
+    setWorkerConsoleWorkerId(workerId);
     setWorkerConsoleOpen(true);
 
     for (const task of pendingTasks) {
       updateTask(project.id, task.id, (current) => ({ ...current, status: "进行中" }));
 
       try {
-        appendWorkerLog(worker.id, `\n—— ${task.title} ——\n`);
-        const result = await runWorkerCommand(worker, config, task, project);
-        appendWorkerLog(worker.id, `[exit ${result.code ?? "?"}] ${result.success ? "完成" : "失败"}\n`);
+        appendWorkerLog(workerId, `\n—— ${task.title} ——\n`);
+        const result = await runWorkerCommand(workerId, config, task, project);
+        appendWorkerLog(workerId, `[exit ${result.code ?? "?"}] ${result.success ? "完成" : "失败"}\n`);
 
         if (!isTauri) {
           if (result.stdout.trim()) {
-            appendWorkerLog(worker.id, `${result.stdout.trim()}\n`);
+            appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
           }
           if (result.stderr.trim()) {
-            appendWorkerLog(worker.id, `[stderr] ${result.stderr.trim()}\n`);
+            appendWorkerLog(workerId, `[stderr] ${result.stderr.trim()}\n`);
           }
         }
 
@@ -645,31 +658,30 @@ export function App() {
             const tags = new Set(current.tags);
             tags.add("自动完成");
             tags.add(`v${nextVersion}`);
-            tags.add(worker.label);
+            tags.add(label);
             return {
               ...current,
               status: "已完成",
               tags: [...tags],
               version: nextVersion,
-              reports: [...current.reports, createTaskReport(worker.label, buildConclusionReport(result, task.title))]
+              reports: [...current.reports, createTaskReport(label, buildConclusionReport(result, task.title))]
             };
           });
         } else {
           updateTask(project.id, task.id, (current) => ({
             ...current,
             status: "已阻塞",
-            reports: [...current.reports, createTaskReport(worker.label, buildConclusionReport(result, task.title))]
+            reports: [...current.reports, createTaskReport(label, buildConclusionReport(result, task.title))]
           }));
         }
       } catch (error) {
-        const report = createTaskReport(worker.label, `执行异常：${String(error)}`);
-        appendWorkerLog(worker.id, `[error] ${task.title}: ${String(error)}\n`);
+        const report = createTaskReport(label, `执行异常：${String(error)}`);
+        appendWorkerLog(workerId, `[error] ${task.title}: ${String(error)}\n`);
         updateTask(project.id, task.id, (current) => ({ ...current, status: "已阻塞", reports: [...current.reports, report] }));
       }
     }
 
-    setWorkers((previous) => previous.map((item) => (item.id === worker.id ? { ...item, busy: false } : item)));
-    setNotice(`已触发 ${worker.label} 执行 ${pendingTasks.length} 个任务。`);
+    setNotice(`已触发 ${label} 执行 ${pendingTasks.length} 个任务。`);
   }
 
   async function sendConsoleCommand(workerId: string, input: string) {
@@ -688,12 +700,12 @@ export function App() {
       return;
     }
 
-    const worker = workers.find((w) => w.id === workerId);
-    if (!worker) return;
+    const kindEntry = WORKER_KINDS.find((w) => `worker-${w.kind}` === workerId);
+    if (!kindEntry) return;
 
-    const config = workerConfigs[worker.kind];
+    const config = workerConfigs[kindEntry.kind];
     if (!config.executable.trim()) {
-      setNotice(`请先配置 ${worker.label} 的 executable。`);
+      setNotice(`请先配置 ${kindEntry.label} 的 executable。`);
       return;
     }
 
@@ -761,7 +773,7 @@ export function App() {
     const lines = [
       `# ${project.name} v${nextVersion}`,
       "",
-      `- Worker: ${workers.find((worker) => worker.id === project.workerId)?.label ?? "未分配"}`,
+      `- Worker: ${WORKER_KINDS.find((w) => w.kind === project.workerKind)?.label ?? "未分配"}`,
       `- 目录: ${project.directory}`,
       `- 包含任务: ${candidateTasks.length}`,
       "",
@@ -894,136 +906,112 @@ export function App() {
     <div className="app-root">
       <div className="shell">
         {isTauri ? (
-          <>
-            <div className="drag-strip absolute top-0 left-0 right-0 h-[34px] z-20" data-tauri-drag-region />
-            <div className="absolute top-1.5 right-2.5 z-30 flex gap-1">
-              <button
-                type="button"
-                className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
-                onClick={() => void minimizeWindow()}
-                aria-label="最小化"
-              >
-                <Icon icon="mingcute:minus-line" />
-              </button>
-              <button
-                type="button"
-                className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
-                onClick={() => void toggleWindowMaximize()}
-                aria-label="最大化"
-              >
-                <Icon icon="mingcute:square-line" />
-              </button>
-              <button
-                type="button"
-                className="ui-btn ui-btn--sm ui-btn--ghost ui-btn--danger ui-icon-btn"
-                onClick={() => void closeWindow()}
-                aria-label="关闭"
-              >
-                <Icon icon="mingcute:close-line" />
-              </button>
-            </div>
-          </>
+          <div className="drag-strip absolute top-0 left-0 right-0 h-[34px] z-20" data-tauri-drag-region />
         ) : null}
 
-        <div className="topbar">
-          <button
-            type="button"
-            className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            aria-label="菜单"
-          >
-            <Icon icon="mingcute:menu-line" />
-          </button>
-          <h1 className="m-0 flex items-center gap-1.5 text-base font-semibold">
-            <Icon icon="mingcute:leaf-3-line" />
-            <span>Maple</span>
-          </h1>
-        </div>
-
-        {sidebarOpen ? <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} /> : null}
-        <aside className={sidebarOpen ? "sidebar sidebar-open" : "sidebar"}>
-        <div className="flex flex-col gap-2 flex-1 min-h-0">
-          <div className="flex items-center justify-between gap-2 px-1 py-0.5">
-            <h1 className="m-0 flex items-center gap-1.5 text-xl font-semibold">
-              <Icon icon="mingcute:leaf-3-line" />
-              <span className="brand-label">
-                <SplitText text="Maple" className="inline" delay={40} />
-              </span>
+        <aside className="sidebar sidebar-expanded">
+          <div className="sidebar-top">
+            <h1 className="sidebar-brand m-0 flex items-center gap-1.5 text-base font-semibold">
+              <SplitText text="Maple" className="inline" delay={40} />
             </h1>
-            <button
-              type="button"
-              className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
-              onClick={() => setSidebarOpen(false)}
-              aria-label="关闭侧边栏"
-            >
-              <Icon icon="mingcute:close-line" />
-            </button>
           </div>
 
-          <nav className="sidebar-nav flex flex-col gap-0.5">
-            <button
-              type="button"
-              className={`ui-btn ui-btn--sm ui-btn--ghost gap-2 ${view === "overview" ? "active" : ""}`}
-              onClick={() => { setView("overview"); setSidebarOpen(false); }}
-            >
-              <Icon icon="mingcute:home-4-line" />
-              <span className="nav-label">概览</span>
-            </button>
-            <button
-              type="button"
-              className={`ui-btn ui-btn--sm ui-btn--ghost gap-2 ${view === "progress" ? "active" : ""}`}
-              onClick={() => { setView("progress"); setSidebarOpen(false); }}
-            >
-              <Icon icon="mingcute:settings-3-line" />
-              <span className="nav-label">设置</span>
-            </button>
-          </nav>
-
-          <div className="flex flex-col gap-0.5 mt-1">
-            <div className="sidebar-section-header flex items-center gap-1 px-2 py-0.5">
-              <span className="nav-label flex-1 text-muted text-xs font-medium uppercase tracking-wide">项目</span>
+          <div className="sidebar-body">
+            <nav className="sidebar-nav flex flex-col gap-0.5">
               <button
                 type="button"
-                className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn sidebar-action-btn text-muted"
-                onClick={() => void createProject()}
-                aria-label="新建项目"
+                className={`ui-btn ui-btn--sm ui-btn--ghost gap-2 ${view === "overview" ? "active" : ""}`}
+                onClick={() => setView("overview")}
               >
-                <Icon icon="mingcute:add-line" />
+                <Icon icon="mingcute:home-4-line" />
+                <span className="nav-label">概览</span>
               </button>
               <button
                 type="button"
-                className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn sidebar-action-btn text-muted"
-                onClick={() => void importExistingProject()}
-                aria-label="导入项目"
+                className={`ui-btn ui-btn--sm ui-btn--ghost gap-2 ${view === "progress" ? "active" : ""}`}
+                onClick={() => setView("progress")}
               >
-                <Icon icon="mingcute:folder-transfer-line" />
+                <Icon icon="mingcute:settings-3-line" />
+                <span className="nav-label">设置</span>
               </button>
-            </div>
+            </nav>
 
-            <div className="sidebar-project-list flex flex-col gap-0.5">
-              {projects.map((project) => (
+            <div className="flex flex-col gap-0.5 mt-1">
+              <div className="sidebar-section-header flex items-center gap-1 px-2 py-0.5">
+                <span className="nav-label flex-1 text-muted text-xs font-medium uppercase tracking-wide">项目</span>
                 <button
-                  key={project.id}
                   type="button"
-                  className={`sidebar-project ui-btn ui-btn--sm ui-btn--ghost gap-2 w-full text-left justify-start ${boardProjectId === project.id && view === "board" ? "active" : ""}`}
-                  onClick={() => {
-                    setBoardProjectId(project.id);
-                    setView("board");
-                    setSelectedTaskId(null);
-                    setSidebarOpen(false);
-                  }}
+                  className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn sidebar-action-btn text-muted"
+                  onClick={() => void createProject()}
+                  aria-label="新建项目"
                 >
-                  <Icon icon="mingcute:folder-open-line" />
-                  <span className="nav-label flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{project.name}</span>
+                  <Icon icon="mingcute:add-line" />
                 </button>
-              ))}
-              {projects.length === 0 ? (
-                <p className="nav-label text-muted text-xs px-2">还没有项目</p>
-              ) : null}
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn sidebar-action-btn text-muted"
+                  onClick={() => void importExistingProject()}
+                  aria-label="导入项目"
+                >
+                  <Icon icon="mingcute:folder-transfer-line" />
+                </button>
+              </div>
+
+              <div className="sidebar-project-list flex flex-col gap-0.5">
+                {projects.map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    className={`sidebar-project ui-btn ui-btn--sm ui-btn--ghost gap-2 w-full text-left justify-start ${boardProjectId === project.id && view === "board" ? "active" : ""}`}
+                    onClick={() => {
+                      setBoardProjectId(project.id);
+                      setView("board");
+                      setSelectedTaskId(null);
+                    }}
+                  >
+                    <Icon icon="mingcute:folder-open-line" />
+                    <span className="nav-label flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{project.name}</span>
+                  </button>
+                ))}
+                {projects.length === 0 ? (
+                  <p className="nav-label text-muted text-xs px-2">还没有项目</p>
+                ) : null}
+              </div>
             </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+
+        <div className="main-column">
+          {isTauri ? (
+            <div className="topbar">
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
+                  onClick={() => void minimizeWindow()}
+                  aria-label="最小化"
+                >
+                  <Icon icon="mingcute:minus-line" />
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
+                  onClick={() => void toggleWindowMaximize()}
+                  aria-label="最大化"
+                >
+                  <Icon icon="mingcute:square-line" />
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--sm ui-btn--ghost ui-btn--danger ui-icon-btn"
+                  onClick={() => void closeWindow()}
+                  aria-label="关闭"
+                >
+                  <Icon icon="mingcute:close-line" />
+                </button>
+              </div>
+            </div>
+          ) : null}
 
       <main className="p-4 px-5 flex-1 overflow-y-auto overflow-x-hidden">
         {view === "overview" ? (
@@ -1038,9 +1026,9 @@ export function App() {
                   </p>
                 </SpotlightCard>
                 <SpotlightCard spotlightColor="rgba(47, 111, 179, 0.15)" className="ui-card p-4">
-                  <h3 className="text-muted text-sm font-normal m-0">忙碌 Worker</h3>
+                  <h3 className="text-muted text-sm font-normal m-0">运行中 Worker</h3>
                   <p className="text-2xl font-semibold mt-1 m-0">
-                    <CountUp from={0} to={metrics.busyWorkers} duration={0.6} />
+                    <CountUp from={0} to={metrics.runningCount} duration={0.6} />
                   </p>
                 </SpotlightCard>
                 <SpotlightCard spotlightColor="rgba(47, 111, 179, 0.15)" className="ui-card p-4">
@@ -1113,14 +1101,33 @@ export function App() {
 
                 <div className={selectedTask && detailMode === "sidebar" ? "board-body with-detail grid gap-3" : "board-body grid gap-3"}>
                   <div className="min-w-0 overflow-hidden">
-                    <table className="task-table">
+                    <table ref={tableRef} className="task-table">
+                      <colgroup>
+                        <col style={colWidths.task ? { width: colWidths.task } : undefined} />
+                        <col style={{ width: colWidths.status }} />
+                        <col style={{ width: colWidths.reports }} />
+                        <col style={{ width: colWidths.tags }} />
+                        <col style={{ width: colWidths.version }} />
+                        <col style={{ width: colWidths.actions }} />
+                      </colgroup>
                       <thead>
                         <tr>
-                          <th className="col-task">任务</th>
-                          <th className="col-status">状态</th>
-                          <th className="col-reports">提及</th>
-                          <th className="col-tags">标签</th>
-                          <th className="col-version">版本</th>
+                          {[
+                            { key: "task", label: "任务" },
+                            { key: "status", label: "状态" },
+                            { key: "reports", label: "提及" },
+                            { key: "tags", label: "标签" },
+                            { key: "version", label: "版本" },
+                          ].map((col) => (
+                            <th key={col.key} className={`col-${col.key}`}>
+                              {col.label}
+                              <div
+                                className="col-resize-handle"
+                                onMouseDown={(e) => handleResizeStart(col.key, e)}
+                                onDoubleClick={() => handleResizeDblClick(col.key)}
+                              />
+                            </th>
+                          ))}
                           <th className="col-actions"></th>
                         </tr>
                       </thead>
@@ -1150,7 +1157,7 @@ export function App() {
                               ) : (
                                 <div className="task-title-cell flex items-center gap-1 min-w-0">
                                   <span
-                                    className="task-title-text flex-1 cursor-text rounded px-0.5 overflow-hidden text-ellipsis whitespace-nowrap"
+                                    className="task-title-text flex-1 cursor-text px-0.5 overflow-hidden text-ellipsis whitespace-nowrap"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setEditingTaskId(task.id);
@@ -1160,14 +1167,13 @@ export function App() {
                                   </span>
                                   <button
                                     type="button"
-                                    className="task-open-btn ui-btn ui-btn--xs ui-btn--outline gap-0.5 shrink-0 text-[color:var(--color-primary)]"
+                                    className="task-open-btn ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn shrink-0 text-[color:var(--color-primary)]"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setSelectedTaskId(task.id);
                                     }}
                                   >
                                     <Icon icon="mingcute:arrow-right-up-line" />
-                                    打开
                                   </button>
                                 </div>
                               )}
@@ -1313,26 +1319,17 @@ export function App() {
                     <thead>
                       <tr>
                         <th>Worker</th>
-                        <th>状态</th>
-                        <th>绑定项目</th>
                         <th>CLI 配置</th>
                         <th>操作</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {workers.map((worker) => {
-                        const config = workerConfigs[worker.kind];
-                        const boundProject = projects.find((project) => project.id === worker.projectId);
+                      {WORKER_KINDS.map(({ kind, label }) => {
+                        const config = workerConfigs[kind];
 
                         return (
-                          <tr key={worker.id}>
-                            <td className="font-medium">{worker.label}</td>
-                            <td>
-                              <span className={worker.busy ? "ui-badge ui-badge--warning" : "ui-badge ui-badge--success"}>
-                                {worker.busy ? "忙碌" : "空闲"}
-                              </span>
-                            </td>
-                            <td>{boundProject?.name ?? "-"}</td>
+                          <tr key={kind}>
+                            <td className="font-medium">{label}</td>
                             <td>
                               <div className="grid gap-1.5">
                                 <input
@@ -1341,7 +1338,7 @@ export function App() {
                                   onChange={(event) =>
                                     setWorkerConfigs((previous) => ({
                                       ...previous,
-                                      [worker.kind]: { ...previous[worker.kind], executable: event.target.value }
+                                      [kind]: { ...previous[kind], executable: event.target.value }
                                     }))
                                   }
                                   placeholder="命令（例如：codex / claude）"
@@ -1352,7 +1349,7 @@ export function App() {
                                   onChange={(event) =>
                                     setWorkerConfigs((previous) => ({
                                       ...previous,
-                                      [worker.kind]: { ...previous[worker.kind], runArgs: event.target.value }
+                                      [kind]: { ...previous[kind], runArgs: event.target.value }
                                     }))
                                   }
                                   placeholder="执行参数（例如：exec 或 -p）"
@@ -1363,7 +1360,7 @@ export function App() {
                                   onChange={(event) =>
                                     setWorkerConfigs((previous) => ({
                                       ...previous,
-                                      [worker.kind]: { ...previous[worker.kind], probeArgs: event.target.value }
+                                      [kind]: { ...previous[kind], probeArgs: event.target.value }
                                     }))
                                   }
                                   placeholder="探测参数（例如：--version）"
@@ -1371,7 +1368,7 @@ export function App() {
                               </div>
                             </td>
                             <td>
-                              <button type="button" className="ui-btn ui-btn--xs ui-btn--outline gap-1" onClick={() => void probeWorker(worker)}>
+                              <button type="button" className="ui-btn ui-btn--xs ui-btn--outline gap-1" onClick={() => void probeWorker(kind)}>
                                 <Icon icon="mingcute:search-line" />
                                 验证
                               </button>
@@ -1386,12 +1383,12 @@ export function App() {
 
               <div className="ui-card p-4 mt-3">
                 <h3 className="m-0 font-semibold">Worker 日志</h3>
-                {workers.map((worker) => (
-                  <details key={worker.id} className="ui-details mt-2">
-                    <summary className="text-sm font-medium">{worker.label}</summary>
+                {WORKER_KINDS.map(({ kind, label }) => (
+                  <details key={kind} className="ui-details mt-2">
+                    <summary className="text-sm font-medium">{label}</summary>
                     <div className="p-3">
                       <pre className="bg-[color:var(--color-base-200)] rounded-lg p-3 text-xs whitespace-pre-wrap break-words m-0 border-0">
-                        {workerLogs[worker.id] || "暂无日志"}
+                        {workerLogs[`worker-${kind}`] || "暂无日志"}
                       </pre>
                     </div>
                   </details>
@@ -1401,6 +1398,7 @@ export function App() {
           </FadeContent>
         ) : null}
       </main>
+      </div>{/* end main-column */}
 
       {pickerForProject ? (
         <div className="ui-modal" role="dialog" aria-modal="true" aria-label="选择 Worker">
@@ -1423,19 +1421,19 @@ export function App() {
               </div>
 
               <div className="flex gap-2 flex-wrap mt-4">
-                {workers.map((worker) => (
+                {WORKER_KINDS.map(({ kind, label }) => (
                   <button
-                    key={worker.id}
+                    key={kind}
                     type="button"
                     className="ui-btn ui-btn--sm ui-btn--outline gap-1"
                     onClick={async () => {
-                      bindWorker(pickerForProject, worker.id);
+                      assignWorkerKind(pickerForProject, kind);
                       setPickerForProject(null);
-                      await completePending(pickerForProject, worker.id);
+                      await completePending(pickerForProject, kind);
                     }}
                   >
                     <Icon icon="mingcute:ai-line" />
-                    {worker.label}
+                    {label}
                   </button>
                 ))}
               </div>
@@ -1468,31 +1466,28 @@ export function App() {
             <div className="ui-modal-body">
               <div className="grid grid-cols-[180px_1fr] gap-3">
                 <div className="flex flex-col gap-1">
-                  {workers.map((worker) => (
-                    <button
-                      key={worker.id}
-                      type="button"
-                      className={`ui-btn ui-btn--sm ui-btn--ghost justify-start gap-2 ${workerConsoleWorkerId === worker.id ? "bg-[color:var(--sidebar-active)]" : ""}`}
-                      onClick={() => setWorkerConsoleWorkerId(worker.id)}
-                    >
-                      <span className={
-                        runningWorkers.has(worker.id)
-                          ? "ui-badge ui-badge--solid"
-                          : worker.busy
-                            ? "ui-badge ui-badge--warning"
-                            : "ui-badge ui-badge--success"
-                      }>
-                        {runningWorkers.has(worker.id) ? "运行中" : worker.busy ? "忙碌" : "空闲"}
-                      </span>
-                      <span className="flex-1 text-left">{worker.label}</span>
-                    </button>
-                  ))}
+                  {WORKER_KINDS.map(({ kind, label }) => {
+                    const wId = `worker-${kind}`;
+                    return (
+                      <button
+                        key={kind}
+                        type="button"
+                        className={`ui-btn ui-btn--sm ui-btn--ghost justify-start gap-2 ${workerConsoleWorkerId === wId ? "bg-[color:var(--sidebar-active)]" : ""}`}
+                        onClick={() => setWorkerConsoleWorkerId(wId)}
+                      >
+                        <span className={runningWorkers.has(wId) ? "ui-badge ui-badge--solid" : "ui-badge ui-badge--success"}>
+                          {runningWorkers.has(wId) ? "运行中" : "就绪"}
+                        </span>
+                        <span className="flex-1 text-left">{label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="min-w-0 flex flex-col">
                   <div className="flex items-center justify-between gap-2">
                     <p className="m-0 text-muted text-xs">
-                      {workerConsoleWorkerId ? `当前：${workers.find((worker) => worker.id === workerConsoleWorkerId)?.label ?? workerConsoleWorkerId}` : "当前：-"}
+                      {workerConsoleWorkerId ? `当前：${WORKER_KINDS.find((w) => `worker-${w.kind}` === workerConsoleWorkerId)?.label ?? workerConsoleWorkerId}` : "当前：-"}
                       {runningWorkers.has(workerConsoleWorkerId) ? " (运行中)" : ""}
                     </p>
                     <div className="flex gap-2">

@@ -319,61 +319,50 @@ h1, h2, h3 {
 
 .shell {
   display: flex;
-  flex-direction: column;
   height: 100%;
   overflow: hidden;
   position: relative;
 }
 
-/* ── Topbar ── */
+/* ── Sidebar ── */
 
-.topbar {
-  position: relative;
-  z-index: 25;
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--color-base-300);
+  overflow: hidden;
+  flex-shrink: 0;
+  width: 240px;
+}
+
+.sidebar-top {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.35rem 0.6rem;
-  border-bottom: 1px solid var(--color-base-300);
-  background: var(--sidebar-bg);
+  padding: 0.35rem 0.5rem;
   min-height: 38px;
+  border-bottom: 1px solid var(--color-base-300);
 }
 
-/* ── Sidebar Overlay ── */
-
-.sidebar-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(18, 16, 14, 0.18);
-  z-index: 40;
+.sidebar-brand {
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-.sidebar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 260px;
-  border-right: 1px solid var(--color-base-300);
-  background: var(--sidebar-bg);
-  padding: 0.75rem 0.55rem;
+.sidebar-body {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.55rem 0.35rem;
   overflow-y: auto;
   overflow-x: hidden;
-  z-index: 50;
-  transform: translateX(-100%);
-  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: none;
-}
-
-.sidebar.sidebar-open {
-  transform: translateX(0);
-  box-shadow: 8px 0 24px rgba(32, 25, 18, 0.10);
 }
 
 .sidebar-nav .ui-btn {
   justify-content: flex-start;
+  width: 100%;
 }
 
 .sidebar-nav .ui-btn:hover {
@@ -399,6 +388,32 @@ h1, h2, h3 {
   background: var(--sidebar-hover);
 }
 
+/* ── Main Column ── */
+
+.main-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Topbar ── */
+
+.topbar {
+  position: relative;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--color-base-300);
+  background: var(--sidebar-bg);
+  min-height: 38px;
+}
+
 /* ── Task Table ── */
 
 .task-table {
@@ -408,36 +423,47 @@ h1, h2, h3 {
 }
 
 .task-table th {
+  position: relative;
   border-bottom: 1px solid var(--color-base-300);
   text-align: left;
-  padding: 0.45rem 0.5rem;
-  font-size: 0.78rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
   font-weight: 500;
   color: var(--color-secondary);
   white-space: nowrap;
 }
 
-.task-table .col-task { width: auto; }
-.task-table .col-status { width: 90px; }
-.task-table .col-reports { width: 50px; text-align: center; }
-.task-table .col-tags { width: 180px; }
-.task-table .col-version { width: 70px; }
-.task-table .col-actions { width: 40px; }
+.task-table .col-reports { text-align: center; }
 
 .task-row td {
   border-bottom: 1px solid var(--color-base-200);
-  padding: 0.42rem 0.5rem;
-  font-size: 0.86rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.84rem;
   vertical-align: middle;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .task-row:hover td {
   background: var(--row-hover);
 }
 
+.task-row.selected {
+  position: relative;
+}
+
 .task-row.selected td {
   background: var(--row-selected);
+}
+
+.task-row.selected td:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.task-row.selected td:last-child {
+  border-radius: 0 8px 8px 0;
 }
 
 .task-row:hover .row-delete-btn {
@@ -446,6 +472,24 @@ h1, h2, h3 {
 
 .task-row:hover .task-open-btn {
   display: inline-flex;
+}
+
+/* ── Column Resize Handle ── */
+
+.col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+  border-right: 2px solid transparent;
+  transition: border-color 0.12s;
+}
+
+.col-resize-handle:hover {
+  border-right-color: var(--color-primary);
 }
 
 /* ── Status Dots ── */
@@ -478,22 +522,9 @@ h1, h2, h3 {
 
 .task-row.editing td {
   background: var(--row-selected);
-  box-shadow: inset 0 0 0 1px rgba(47, 111, 179, 0.45);
-}
-
-.task-row.editing td:first-child {
-  border-left: none;
-}
-
-.task-row.editing td:last-child {
-  border-right: none;
 }
 
 /* ── Task Title Cell ── */
-
-.task-title-cell .task-title-text:hover {
-  background: var(--sidebar-hover);
-}
 
 .task-open-btn {
   display: none;
@@ -556,7 +587,7 @@ h1, h2, h3 {
 
 @media (max-width: 960px) {
   .sidebar {
-    width: 240px;
+    width: 200px;
   }
 }
 
