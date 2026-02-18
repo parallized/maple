@@ -2,76 +2,27 @@ import { Icon } from "@iconify/react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PopoverMenu, type PopoverMenuItem } from "./components/PopoverMenu";
-
-type ViewKey = "overview" | "board" | "progress";
-type WorkerKind = "claude" | "codex" | "iflow";
-type TaskStatus = "待办" | "队列中" | "进行中" | "已完成" | "已阻塞";
-type DetailMode = "sidebar" | "modal";
-
-type Worker = {
-  id: string;
-  kind: WorkerKind;
-  label: string;
-  busy: boolean;
-  projectId?: string;
-};
-
-type WorkerConfig = {
-  executable: string;
-  runArgs: string;
-  probeArgs: string;
-};
-
-type McpServerConfig = {
-  executable: string;
-  args: string;
-  cwd: string;
-  autoStart: boolean;
-};
-
-type WorkerCommandResult = {
-  success: boolean;
-  code: number | null;
-  stdout: string;
-  stderr: string;
-};
-
-type McpServerStatus = {
-  running: boolean;
-  pid: number | null;
-  command: string;
-};
-
-type TaskReport = {
-  id: string;
-  author: string;
-  content: string;
-  createdAt: string;
-};
-
-type Task = {
-  id: string;
-  title: string;
-  status: TaskStatus;
-  tags: string[];
-  version: string;
-  reports: TaskReport[];
-};
-
-type Project = {
-  id: string;
-  name: string;
-  version: string;
-  directory: string;
-  workerId?: string;
-  tasks: Task[];
-};
+import { TaskDetailPanel } from "./components/TaskDetailPanel";
+import type {
+  DetailMode,
+  McpServerConfig,
+  McpServerStatus,
+  Project,
+  Task,
+  TaskReport,
+  ViewKey,
+  Worker,
+  WorkerCommandResult,
+  WorkerConfig,
+  WorkerKind
+} from "./domain";
 
 const STORAGE_PROJECTS = "maple.desktop.projects";
 const STORAGE_WORKER_CONFIGS = "maple.desktop.worker-configs";
 const STORAGE_MCP_CONFIG = "maple.desktop.mcp-config";
+const STORAGE_SIDEBAR_COLLAPSED = "maple.desktop.sidebar-collapsed";
 
 const INITIAL_PROJECTS: Project[] = [];
 
@@ -113,12 +64,15 @@ function deriveProjectName(path: string): string {
 
 function createTask(taskTitle: string, projectVersion: string): Task {
   const nextVersion = bumpPatch(projectVersion);
+  const now = new Date().toISOString();
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: taskTitle,
     status: "待办",
     tags: ["新任务", `v${nextVersion}`],
     version: nextVersion,
+    createdAt: now,
+    updatedAt: now,
     reports: []
   };
 }
@@ -133,16 +87,23 @@ function createTaskReport(author: string, content: string): TaskReport {
 }
 
 function normalizeProjects(projects: Project[]): Project[] {
+  const now = new Date().toISOString();
   return projects
     .map((project) => {
       const directory = (project.directory ?? "").trim();
       return {
         ...project,
         directory,
-        tasks: project.tasks.map((task) => ({
-          ...task,
-          reports: Array.isArray(task.reports) ? task.reports : []
-        }))
+        tasks: project.tasks.map((task) => {
+          const createdAt = typeof task.createdAt === "string" && task.createdAt ? task.createdAt : now;
+          const updatedAt = typeof task.updatedAt === "string" && task.updatedAt ? task.updatedAt : createdAt;
+          return {
+            ...task,
+            createdAt,
+            updatedAt,
+            reports: Array.isArray(task.reports) ? task.reports : []
+          };
+        })
       };
     })
     .filter((project) => project.directory.length > 0);
@@ -199,16 +160,16 @@ function loadMcpServerConfig(): McpServerConfig {
   }
 }
 
-function hasTauriRuntime(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+function loadSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_SIDEBAR_COLLAPSED) === "1";
+  } catch {
+    return false;
+  }
 }
 
-function formatReportTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return "未知时间";
-  }
-  return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+function hasTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 function buildConclusionReport(result: WorkerCommandResult, taskTitle: string): string {
@@ -226,44 +187,41 @@ function buildConclusionReport(result: WorkerCommandResult, taskTitle: string): 
   return [`任务：${taskTitle}`, "结论：执行完成，但未输出报告内容。"].join("\n");
 }
 
-type TaskDetailPanelProps = {
-  task: Task;
-  onClose?: () => void;
-};
+function InlineTaskInput({ onCommit }: { onCommit: (title: string) => void }) {
+  const ref = useRef<HTMLInputElement | null>(null);
+  const [value, setValue] = useState("");
+  const committed = useRef(false);
 
-function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
+  useEffect(() => {
+    queueMicrotask(() => ref.current?.focus());
+  }, []);
+
+  function commit() {
+    if (committed.current) return;
+    committed.current = true;
+    onCommit(value);
+  }
+
   return (
-    <section className="task-detail">
-      <header>
-        <h3>
-          {task.title}
-          <span className="mention-badge">提及 {task.reports.length}</span>
-        </h3>
-        {onClose ? (
-          <button className="icon-button" onClick={onClose} aria-label="关闭详情">
-            <Icon icon="mingcute:close-line" />
-          </button>
-        ) : null}
-      </header>
-
-      <p className="detail-meta">状态：{task.status}</p>
-      <p className="detail-meta">标签：{task.tags.join("、") || "无"}</p>
-      <p className="detail-meta">版本：{task.version}</p>
-
-      <div className="report-list">
-        {task.reports.length === 0 ? <p className="hint">暂无结论报告。</p> : null}
-
-        {task.reports.map((report) => (
-          <article key={report.id} className="report-item">
-            <div className="report-head">
-              <strong>{report.author}</strong>
-              <span>{formatReportTime(report.createdAt)}</span>
-            </div>
-            <pre>{report.content}</pre>
-          </article>
-        ))}
-      </div>
-    </section>
+    <input
+      ref={ref}
+      className="inline-task-input"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      placeholder="输入任务标题…"
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit();
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          committed.current = true;
+          onCommit("");
+        }
+      }}
+      onBlur={commit}
+    />
   );
 }
 
@@ -271,6 +229,7 @@ export function App() {
   const isTauri = hasTauriRuntime();
 
   const [view, setView] = useState<ViewKey>("overview");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => loadSidebarCollapsed());
   const [projects, setProjects] = useState<Project[]>(() => loadProjects());
   const [workers, setWorkers] = useState<Worker[]>(INITIAL_WORKERS);
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => loadWorkerConfigs());
@@ -283,6 +242,7 @@ export function App() {
   const [notice, setNotice] = useState<string>("");
   const [detailMode, setDetailMode] = useState<DetailMode>("sidebar");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(projects));
@@ -295,6 +255,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_MCP_CONFIG, JSON.stringify(mcpConfig));
   }, [mcpConfig]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_SIDEBAR_COLLAPSED, sidebarCollapsed ? "1" : "0");
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (boardProjectId && !projects.some((project) => project.id === boardProjectId)) {
@@ -332,6 +296,7 @@ export function App() {
   }
 
   function updateTask(projectId: string, taskId: string, updater: (task: Task) => Task) {
+    const now = new Date().toISOString();
     setProjects((previous) =>
       previous.map((project) => {
         if (project.id !== projectId) {
@@ -339,7 +304,13 @@ export function App() {
         }
         return {
           ...project,
-          tasks: project.tasks.map((task) => (task.id === taskId ? updater(task) : task))
+          tasks: project.tasks.map((task) => {
+            if (task.id !== taskId) {
+              return task;
+            }
+            const next = updater(task);
+            return { ...next, updatedAt: now };
+          })
         };
       })
     );
@@ -420,28 +391,41 @@ export function App() {
 
   function addTask(projectId: string) {
     const project = projects.find((item) => item.id === projectId);
-    if (!project) {
-      return;
-    }
-
-    const taskTitle = globalThis.prompt("任务标题", "新任务");
-    if (!taskTitle) {
-      return;
-    }
-
-    const nextTask = createTask(taskTitle, project.version);
+    if (!project) return;
+    const newTask = createTask("", project.version);
     setProjects((previous) =>
-      previous.map((item) => {
-        if (item.id !== projectId) {
-          return item;
-        }
-        return {
-          ...item,
-          tasks: [nextTask, ...item.tasks]
-        };
-      })
+      previous.map((item) =>
+        item.id !== projectId ? item : { ...item, tasks: [...item.tasks, newTask] }
+      )
     );
-    setSelectedTaskId(nextTask.id);
+    setSelectedTaskId(newTask.id);
+    setEditingTaskId(newTask.id);
+  }
+
+  function commitTaskTitle(projectId: string, taskId: string, title: string) {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      deleteTask(projectId, taskId);
+    } else {
+      updateTask(projectId, taskId, (task) => ({ ...task, title: trimmed }));
+    }
+    setEditingTaskId(null);
+  }
+
+  function deleteTask(projectId: string, taskId: string) {
+    setProjects((previous) =>
+      previous.map((project) =>
+        project.id !== projectId
+          ? project
+          : { ...project, tasks: project.tasks.filter((task) => task.id !== taskId) }
+      )
+    );
+    if (selectedTaskId === taskId) {
+      setSelectedTaskId(null);
+    }
+    if (editingTaskId === taskId) {
+      setEditingTaskId(null);
+    }
   }
 
   async function runWorkerCommand(
@@ -598,19 +582,23 @@ export function App() {
       `- 目录: ${project.directory}`,
       `- 包含任务: ${candidateTasks.length}`,
       "",
-      "## 检查清单",
-      "- [ ] 核心功能通过",
-      "- [ ] 回归验证通过",
+      "## 建议检查",
+      "逐条确认下列任务对应的交互与结果是否符合预期：",
       "",
       "## 任务"
     ];
 
     for (const task of candidateTasks) {
-      lines.push(`- ${task.title} (${task.status})`);
+      lines.push(`- [ ] ${task.title}`);
+    }
+    if (candidateTasks.length === 0) {
+      lines.push("- [ ] 当前无候选任务。");
     }
 
-    if (candidateTasks.length === 0) {
-      lines.push("- 当前无候选任务。");
+    lines.push("", "## 变更列表");
+
+    for (const task of candidateTasks) {
+      lines.push(`- ${task.title} (${task.status})`);
     }
 
     setReleaseReport(lines.join("\n"));
@@ -720,7 +708,7 @@ export function App() {
   }
 
   return (
-    <div className="shell">
+    <div className={sidebarCollapsed ? "shell shell-collapsed" : "shell"}>
       {isTauri ? (
         <>
           <div className="drag-strip" data-tauri-drag-region />
@@ -740,61 +728,74 @@ export function App() {
 
       <aside className="sidebar">
         <div className="sidebar-main">
-          <h1>
-            <Icon icon="mingcute:leaf-3-line" />
-            Maple
-          </h1>
-          <p className="subtitle">项目工作台</p>
+          <div className="sidebar-header">
+            <h1>
+              <Icon icon="mingcute:leaf-3-line" />
+              <span className="brand-label">Maple</span>
+            </h1>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => setSidebarCollapsed((previous) => !previous)}
+              aria-label={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+            >
+              <Icon icon={sidebarCollapsed ? "mingcute:layout-leftbar-open-line" : "mingcute:layout-leftbar-close-line"} />
+            </button>
+          </div>
 
           <nav>
             <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>
               <Icon icon="mingcute:home-4-line" />
-              概览
-            </button>
-            <button className={view === "board" ? "active" : ""} onClick={() => setView("board")}>
-              <Icon icon="mingcute:tree-line" />
-              看板
+              <span className="nav-label">概览</span>
             </button>
             <button className={view === "progress" ? "active" : ""} onClick={() => setView("progress")}>
-              <Icon icon="mingcute:chart-bar-line" />
-              进度
+              <Icon icon="mingcute:settings-3-line" />
+              <span className="nav-label">设置</span>
             </button>
           </nav>
 
-          <section className="project-tree">
-            <header>
-              <Icon icon="mingcute:folder-2-line" />
-              <strong>项目目录树</strong>
-            </header>
-            <ul className="tree-list">
-              {projects.map((project) => (
-                <li key={project.id}>
-                  <button
-                    className={project.id === boardProjectId ? "tree-node active" : "tree-node"}
-                    onClick={() => {
-                      setView("board");
-                      setBoardProjectId(project.id);
-                      setSelectedTaskId(null);
-                    }}
-                  >
-                    <Icon icon="mingcute:folder-open-line" />
-                    <span>{project.name}</span>
-                    <small>{project.version}</small>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="tree-tools">
-              <button onClick={() => void createProject()}>
+          <div className="sidebar-section">
+            <div className="sidebar-section-header">
+              <span className="nav-label sidebar-section-title">项目</span>
+              <button
+                type="button"
+                className="icon-button sidebar-action-btn"
+                onClick={() => void createProject()}
+                aria-label="新建项目"
+              >
                 <Icon icon="mingcute:add-line" />
-                新建项目
               </button>
-              <button onClick={() => void importExistingProject()}>
+              <button
+                type="button"
+                className="icon-button sidebar-action-btn"
+                onClick={() => void importExistingProject()}
+                aria-label="导入项目"
+              >
                 <Icon icon="mingcute:folder-transfer-line" />
-                导入项目
               </button>
             </div>
-          </section>
+
+            <div className="sidebar-project-list">
+              {projects.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  className={boardProjectId === project.id && view === "board" ? "sidebar-project active" : "sidebar-project"}
+                  onClick={() => {
+                    setBoardProjectId(project.id);
+                    setView("board");
+                    setSelectedTaskId(null);
+                  }}
+                >
+                  <Icon icon="mingcute:folder-open-line" />
+                  <span className="nav-label">{project.name}</span>
+                </button>
+              ))}
+              {projects.length === 0 ? (
+                <p className="hint nav-label" style={{ padding: "0 0.4rem", fontSize: "0.78rem" }}>还没有项目</p>
+              ) : null}
+            </div>
+          </div>
         </div>
 
         <div className="sidebar-footer">
@@ -835,78 +836,121 @@ export function App() {
         ) : null}
 
         {view === "board" ? (
-          <section>
-            <h2>看板</h2>
+          <section className="board-page">
             {!boardProject ? (
-              <div className="panel">
-                <h3>请选择项目</h3>
-                <p className="hint">从左侧目录树选择一个项目进入任务表。</p>
+              <div className="board-empty">
+                <Icon icon="mingcute:folder-open-line" style={{ fontSize: "2rem", color: "var(--muted)" }} />
+                <p>从侧边栏选择一个项目</p>
               </div>
             ) : (
               <>
                 <header className="board-header">
-                  <div>
-                    <h3>{boardProject.name}</h3>
-                    <p>版本：{boardProject.version}</p>
-                    <p>目录：{boardProject.directory}</p>
+                  <div className="board-title-row">
+                    <h2>{boardProject.name}</h2>
+                    <span className="board-meta">v{boardProject.version}</span>
                   </div>
-                  <div className="row-actions">
-                    <button onClick={() => addTask(boardProject.id)}>
-                      <Icon icon="mingcute:add-line" />
-                      新建任务
-                    </button>
-                    <button onClick={() => void completePending(boardProject.id)}>
-                      <Icon icon="mingcute:check-circle-line" />
-                      完成待办
-                    </button>
-                    <PopoverMenu
-                      label="更多"
-                      icon="mingcute:more-3-line"
-                      items={
-                        [
-                          { kind: "item", key: "release-draft", label: "版本草稿", icon: "mingcute:send-plane-line", onSelect: () => createReleaseDraft(boardProject.id) },
-                          { kind: "heading", label: "详情展示" },
-                          { kind: "item", key: "detail-sidebar", label: "右侧边栏", icon: "mingcute:layout-right-line", checked: detailMode === "sidebar", onSelect: () => setDetailMode("sidebar") },
-                          { kind: "item", key: "detail-modal", label: "弹出式", icon: "mingcute:layout-grid-line", checked: detailMode === "modal", onSelect: () => setDetailMode("modal") }
-                        ] satisfies PopoverMenuItem[]
-                      }
-                    />
-                  </div>
+                  <p className="board-path">{boardProject.directory}</p>
                 </header>
 
-                <div className={detailMode === "sidebar" ? "board-layout with-side" : "board-layout"}>
-                  <div className="panel board-main">
-                    <table>
+                <div className="board-toolbar">
+                  <button onClick={() => addTask(boardProject.id)}>
+                    <Icon icon="mingcute:add-line" />
+                    新建
+                  </button>
+                  <button onClick={() => void completePending(boardProject.id)}>
+                    <Icon icon="mingcute:check-circle-line" />
+                    执行待办
+                  </button>
+                  <PopoverMenu
+                    label="更多"
+                    icon="mingcute:more-3-line"
+                    items={
+                      [
+                        { kind: "item", key: "release-draft", label: "版本草稿", icon: "mingcute:send-plane-line", onSelect: () => createReleaseDraft(boardProject.id) },
+                        { kind: "heading", label: "详情展示" },
+                        { kind: "item", key: "detail-sidebar", label: "右侧边栏", icon: "mingcute:layout-right-line", checked: detailMode === "sidebar", onSelect: () => setDetailMode("sidebar") },
+                        { kind: "item", key: "detail-modal", label: "弹出式", icon: "mingcute:layout-grid-line", checked: detailMode === "modal", onSelect: () => setDetailMode("modal") }
+                      ] satisfies PopoverMenuItem[]
+                    }
+                  />
+                </div>
+
+                <div className={selectedTask && detailMode === "sidebar" ? "board-body with-detail" : "board-body"}>
+                  <div className="board-table-wrap">
+                    <table className="task-table">
                       <thead>
                         <tr>
-                          <th>任务</th>
-                          <th>状态</th>
-                          <th>提及</th>
-                          <th>标签</th>
-                          <th>版本</th>
+                          <th className="col-task">任务</th>
+                          <th className="col-status">状态</th>
+                          <th className="col-reports">提及</th>
+                          <th className="col-tags">标签</th>
+                          <th className="col-version">版本</th>
+                          <th className="col-actions"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {boardProject.tasks.map((task) => (
-                          <tr key={task.id}>
-                            <td>
-                              <button className={task.id === selectedTaskId ? "task-link active" : "task-link"} onClick={() => setSelectedTaskId(task.id)}>
-                                {task.title}
+                          <tr
+                            key={task.id}
+                            className={task.id === selectedTaskId ? "task-row selected" : "task-row"}
+                            onClick={() => {
+                              if (editingTaskId !== task.id) {
+                                setSelectedTaskId(task.id);
+                              }
+                            }}
+                          >
+                            <td className="col-task">
+                              {editingTaskId === task.id ? (
+                                <InlineTaskInput
+                                  onCommit={(title) => commitTaskTitle(boardProject.id, task.id, title)}
+                                />
+                              ) : (
+                                <span className="task-title-text">{task.title || "(无标题)"}</span>
+                              )}
+                            </td>
+                            <td className="col-status">
+                              <span className={`status-dot status-${task.status === "已完成" ? "done" : task.status === "已阻塞" ? "blocked" : task.status === "进行中" ? "active" : "pending"}`} />
+                              {task.status}
+                            </td>
+                            <td className="col-reports">{task.reports.length > 0 ? task.reports.length : ""}</td>
+                            <td className="col-tags">
+                              {task.tags.slice(0, 3).map((tag) => (
+                                <span key={tag} className="tag-inline">{tag}</span>
+                              ))}
+                              {task.tags.length > 3 ? <span className="tag-inline tag-more">+{task.tags.length - 3}</span> : null}
+                            </td>
+                            <td className="col-version">{task.version}</td>
+                            <td className="col-actions">
+                              <button
+                                className="icon-button row-delete-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteTask(boardProject.id, task.id);
+                                }}
+                                aria-label="删除任务"
+                              >
+                                <Icon icon="mingcute:delete-2-line" />
                               </button>
                             </td>
-                            <td>{task.status}</td>
-                            <td>{task.reports.length}</td>
-                            <td>{task.tags.join(", ")}</td>
-                            <td>{task.version}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+
+                    {boardProject.tasks.length === 0 ? (
+                      <div className="board-empty-tasks">
+                        <p className="hint">还没有任务，点击上方「新建」添加。</p>
+                      </div>
+                    ) : null}
                   </div>
 
-                  {detailMode === "sidebar" && selectedTask ? (
-                    <aside className="panel board-side">
-                      <TaskDetailPanel task={selectedTask} />
+                  {selectedTask && detailMode === "sidebar" ? (
+                    <aside className="board-detail-side">
+                      <TaskDetailPanel
+                        task={selectedTask}
+                        onClose={() => setSelectedTaskId(null)}
+                        onDelete={() => deleteTask(boardProject.id, selectedTask.id)}
+                      />
                     </aside>
                   ) : null}
                 </div>
@@ -924,7 +968,7 @@ export function App() {
 
         {view === "progress" ? (
           <section>
-            <h2>进度</h2>
+            <h2>设置</h2>
             <div className="panel">
               <h3>
                 <Icon icon="mingcute:plug-2-line" />
@@ -1087,10 +1131,14 @@ export function App() {
         </div>
       ) : null}
 
-      {detailMode === "modal" && selectedTask ? (
-        <div className="modal-backdrop">
+      {detailMode === "modal" && selectedTask && boardProject ? (
+        <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedTaskId(null); }}>
           <div className="modal task-modal">
-            <TaskDetailPanel task={selectedTask} onClose={() => setSelectedTaskId(null)} />
+            <TaskDetailPanel
+              task={selectedTask}
+              onClose={() => setSelectedTaskId(null)}
+              onDelete={() => deleteTask(boardProject.id, selectedTask.id)}
+            />
           </div>
         </div>
       ) : null}
