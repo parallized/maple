@@ -1014,7 +1014,7 @@ export function App() {
         </nav>
 
         <div className="main-column">
-      <main className="p-4 px-5 flex-1 overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden">
         {view === "overview" ? (
           <FadeContent duration={300}>
             <section>
