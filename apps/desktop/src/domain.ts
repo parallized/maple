@@ -38,6 +38,12 @@ export type WorkerLogEvent = {
   line: string;
 };
 
+export type WorkerDoneEvent = {
+  workerId: string;
+  success: boolean;
+  code: number | null;
+};
+
 export type McpServerStatus = {
   running: boolean;
   pid: number | null;

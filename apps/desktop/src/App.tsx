@@ -18,6 +18,7 @@ import type {
   Worker,
   WorkerCommandResult,
   WorkerConfig,
+  WorkerDoneEvent,
   WorkerKind,
   WorkerLogEvent
 } from "./domain";
@@ -248,6 +249,10 @@ export function App() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [workerConsoleOpen, setWorkerConsoleOpen] = useState(false);
   const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(() => INITIAL_WORKERS[0]?.id ?? "");
+  const [consoleInput, setConsoleInput] = useState("");
+  const [runningWorkers, setRunningWorkers] = useState<Set<string>>(() => new Set());
+  const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
+  const logRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(projects));
@@ -308,6 +313,12 @@ export function App() {
           ...previous,
           [workerId]: `${previous[workerId] ?? ""}${taskPrefix}${prefix}${line}\n`
         }));
+
+        // Detect permission/confirmation prompts from CLI tools
+        const permissionPattern = /\b(allow|approve|permit|confirm|accept)\b.*\?|\[y\/n\]|\[Y\/n\]|\[y\/N\]|\(yes\/no\)|\(y\/n\)/i;
+        if (permissionPattern.test(line)) {
+          setPermissionPrompt({ workerId, question: line });
+        }
       });
     })();
 
@@ -316,8 +327,40 @@ export function App() {
     };
   }, [isTauri]);
 
+  useEffect(() => {
+    if (!isTauri) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      unlisten = await listen<WorkerDoneEvent>("maple://worker-done", (event) => {
+        const { workerId, success, code } = event.payload;
+        setRunningWorkers((prev) => {
+          const next = new Set(prev);
+          next.delete(workerId);
+          return next;
+        });
+        const workerLabel = workers.find((w) => w.id === workerId)?.label ?? workerId;
+        appendWorkerLog(workerId, `\n[exit ${code ?? "?"}] ${success ? "完成" : "失败"}\n`);
+        setNotice(`${workerLabel} 会话已结束（exit ${code ?? "?"}）`);
+      });
+    })();
+
+    return () => {
+      unlisten?.();
+    };
+  }, [isTauri, workers]);
+
   const boardProject = boardProjectId ? projects.find((project) => project.id === boardProjectId) ?? null : null;
   const selectedTask = boardProject && selectedTaskId ? boardProject.tasks.find((task) => task.id === selectedTaskId) ?? null : null;
+  const currentWorkerLog = workerConsoleWorkerId ? workerLogs[workerConsoleWorkerId] ?? "" : "";
+
+  useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, [currentWorkerLog]);
 
   const metrics = useMemo(() => {
     const allTasks = projects.flatMap((project) => project.tasks);
@@ -627,6 +670,83 @@ export function App() {
 
     setWorkers((previous) => previous.map((item) => (item.id === worker.id ? { ...item, busy: false } : item)));
     setNotice(`已触发 ${worker.label} 执行 ${pendingTasks.length} 个任务。`);
+  }
+
+  async function sendConsoleCommand(workerId: string, input: string) {
+    if (!isTauri || !input.trim()) return;
+
+    const trimmed = input.trim();
+    appendWorkerLog(workerId, `> ${trimmed}\n`);
+    setConsoleInput("");
+
+    if (runningWorkers.has(workerId)) {
+      try {
+        await invoke<boolean>("send_worker_input", { workerId, input: trimmed });
+      } catch (error) {
+        appendWorkerLog(workerId, `[error] 发送失败: ${String(error)}\n`);
+      }
+      return;
+    }
+
+    const worker = workers.find((w) => w.id === workerId);
+    if (!worker) return;
+
+    const config = workerConfigs[worker.kind];
+    if (!config.executable.trim()) {
+      setNotice(`请先配置 ${worker.label} 的 executable。`);
+      return;
+    }
+
+    const project = boardProject ?? projects[0];
+    const cwd = project?.directory ?? "";
+    const args = parseArgs(config.runArgs);
+
+    setRunningWorkers((prev) => {
+      const next = new Set(prev);
+      next.add(workerId);
+      return next;
+    });
+
+    try {
+      await invoke<boolean>("start_interactive_worker", {
+        workerId,
+        taskTitle: "",
+        executable: config.executable,
+        args,
+        prompt: trimmed,
+        cwd
+      });
+    } catch (error) {
+      appendWorkerLog(workerId, `[error] 启动失败: ${String(error)}\n`);
+      setRunningWorkers((prev) => {
+        const next = new Set(prev);
+        next.delete(workerId);
+        return next;
+      });
+    }
+  }
+
+  async function stopCurrentWorker(workerId: string) {
+    if (!isTauri) return;
+
+    try {
+      await invoke<boolean>("stop_worker_session", { workerId });
+      appendWorkerLog(workerId, `[系统] 已发送停止信号\n`);
+    } catch (error) {
+      appendWorkerLog(workerId, `[error] 停止失败: ${String(error)}\n`);
+    }
+  }
+
+  async function answerPermission(workerId: string, answer: string) {
+    setPermissionPrompt(null);
+    if (!isTauri) return;
+
+    appendWorkerLog(workerId, `> ${answer}\n`);
+    try {
+      await invoke<boolean>("send_worker_input", { workerId, input: answer });
+    } catch (error) {
+      appendWorkerLog(workerId, `[error] 发送失败: ${String(error)}\n`);
+    }
   }
 
   function createReleaseDraft(projectId: string) {
@@ -1355,20 +1475,37 @@ export function App() {
                       className={`ui-btn ui-btn--sm ui-btn--ghost justify-start gap-2 ${workerConsoleWorkerId === worker.id ? "bg-[color:var(--sidebar-active)]" : ""}`}
                       onClick={() => setWorkerConsoleWorkerId(worker.id)}
                     >
-                      <span className={worker.busy ? "ui-badge ui-badge--warning" : "ui-badge ui-badge--success"}>
-                        {worker.busy ? "忙碌" : "空闲"}
+                      <span className={
+                        runningWorkers.has(worker.id)
+                          ? "ui-badge ui-badge--solid"
+                          : worker.busy
+                            ? "ui-badge ui-badge--warning"
+                            : "ui-badge ui-badge--success"
+                      }>
+                        {runningWorkers.has(worker.id) ? "运行中" : worker.busy ? "忙碌" : "空闲"}
                       </span>
                       <span className="flex-1 text-left">{worker.label}</span>
                     </button>
                   ))}
                 </div>
 
-                <div className="min-w-0">
+                <div className="min-w-0 flex flex-col">
                   <div className="flex items-center justify-between gap-2">
                     <p className="m-0 text-muted text-xs">
                       {workerConsoleWorkerId ? `当前：${workers.find((worker) => worker.id === workerConsoleWorkerId)?.label ?? workerConsoleWorkerId}` : "当前：-"}
+                      {runningWorkers.has(workerConsoleWorkerId) ? " (运行中)" : ""}
                     </p>
                     <div className="flex gap-2">
+                      {runningWorkers.has(workerConsoleWorkerId) ? (
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn--xs ui-btn--outline ui-btn--danger gap-1"
+                          onClick={() => void stopCurrentWorker(workerConsoleWorkerId)}
+                        >
+                          <Icon icon="mingcute:stop-circle-line" />
+                          停止
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="ui-btn ui-btn--xs ui-btn--outline gap-1"
@@ -1401,9 +1538,33 @@ export function App() {
                       </button>
                     </div>
                   </div>
-                  <pre className="mt-2 bg-[color:var(--color-base-200)] rounded-lg p-3 text-xs whitespace-pre-wrap break-words m-0 border-0 max-h-[56vh] overflow-auto">
-                    {(workerConsoleWorkerId ? workerLogs[workerConsoleWorkerId] : "") || "暂无日志"}
+                  <pre ref={logRef} className="mt-2 bg-[color:var(--color-base-200)] rounded-lg p-3 text-xs whitespace-pre-wrap break-words m-0 border-0 max-h-[48vh] overflow-auto flex-1">
+                    {currentWorkerLog || "暂无日志\n输入命令开始交互…"}
                   </pre>
+                  <div className="console-input-row flex gap-2 mt-2">
+                    <input
+                      className="ui-input ui-input--sm flex-1 font-mono text-xs"
+                      value={consoleInput}
+                      onChange={(e) => setConsoleInput(e.target.value)}
+                      placeholder={runningWorkers.has(workerConsoleWorkerId) ? "输入内容发送到 Worker…" : "输入命令启动 Worker 会话…"}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void sendConsoleCommand(workerConsoleWorkerId, consoleInput);
+                        }
+                      }}
+                      disabled={!workerConsoleWorkerId}
+                    />
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--sm ui-btn--outline gap-1"
+                      onClick={() => void sendConsoleCommand(workerConsoleWorkerId, consoleInput)}
+                      disabled={!workerConsoleWorkerId || !consoleInput.trim()}
+                    >
+                      <Icon icon="mingcute:send-plane-line" />
+                      发送
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1427,7 +1588,36 @@ export function App() {
       ) : null}
       </div>
 
-      {notice ? (
+      {permissionPrompt ? (
+        <div className="toast-container" role="alert">
+          <div className="toast toast--permission">
+            <Icon icon="mingcute:shield-line" className="text-base" />
+            <span className="flex-1 text-left">{permissionPrompt.question}</span>
+            <button
+              type="button"
+              className="ui-btn ui-btn--xs ui-btn--outline gap-1 toast-permission-btn"
+              onClick={() => void answerPermission(permissionPrompt.workerId, "y")}
+            >
+              允许
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn--xs ui-btn--ghost gap-1"
+              onClick={() => void answerPermission(permissionPrompt.workerId, "n")}
+            >
+              拒绝
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn"
+              onClick={() => setPermissionPrompt(null)}
+              aria-label="忽略"
+            >
+              <Icon icon="mingcute:close-line" />
+            </button>
+          </div>
+        </div>
+      ) : notice ? (
         <div className="toast-container" role="alert">
           <div className="toast">
             <Icon icon="mingcute:information-line" />

@@ -592,3 +592,27 @@ h1, h2, h3 {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ── Permission Toast ── */
+
+.toast--permission {
+  white-space: normal;
+  max-width: 520px;
+  border-color: rgba(47, 111, 179, 0.35);
+  background: rgba(250, 249, 247, 0.97);
+}
+
+.toast-permission-btn {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.toast-permission-btn:hover {
+  background: rgba(47, 111, 179, 0.12);
+}
+
+/* ── Console Input ── */
+
+.console-input-row .ui-input {
+  font-family: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
+}
