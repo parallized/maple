@@ -25,6 +25,9 @@ import type {
 const STORAGE_PROJECTS = "maple.desktop.projects";
 const STORAGE_WORKER_CONFIGS = "maple.desktop.worker-configs";
 const STORAGE_MCP_CONFIG = "maple.desktop.mcp-config";
+const STORAGE_THEME = "maple.desktop.theme";
+
+type ThemeMode = "system" | "light" | "dark";
 
 const INITIAL_PROJECTS: Project[] = [];
 
@@ -170,8 +173,53 @@ function loadMcpServerConfig(): McpServerConfig {
   }
 }
 
+function loadTheme(): ThemeMode {
+  try {
+    const raw = localStorage.getItem(STORAGE_THEME);
+    if (raw === "light" || raw === "dark") return raw;
+    return "system";
+  } catch {
+    return "system";
+  }
+}
+
+function applyTheme(mode: ThemeMode) {
+  const root = document.documentElement;
+  root.classList.remove("light", "dark");
+  if (mode === "light") root.classList.add("light");
+  else if (mode === "dark") root.classList.add("dark");
+}
+
 function hasTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function relativeTimeZh(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  if (Number.isNaN(then)) return "—";
+  const diff = now - then;
+  if (diff < 0) return "刚刚";
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return "刚刚";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} 天前`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} 个月前`;
+  const years = Math.floor(months / 12);
+  return `${years} 年前`;
+}
+
+function getLastMentionTime(task: Task): string {
+  if (task.reports.length > 0) {
+    const sorted = [...task.reports].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return sorted[0].createdAt;
+  }
+  return task.createdAt;
 }
 
 function buildConclusionReport(result: WorkerCommandResult, taskTitle: string): string {
@@ -248,10 +296,11 @@ export function App() {
   const [consoleInput, setConsoleInput] = useState("");
   const [runningWorkers, setRunningWorkers] = useState<Set<string>>(() => new Set());
   const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
+  const [theme, setThemeState] = useState<ThemeMode>(() => loadTheme());
   const logRef = useRef<HTMLPreElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
 
-  const DEFAULT_COL_WIDTHS: Record<string, number> = { task: 0, status: 90, reports: 50, tags: 180, version: 70, actions: 40 };
+  const DEFAULT_COL_WIDTHS: Record<string, number> = { task: 0, status: 100, lastMention: 100, tags: 180, actions: 40 };
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_COL_WIDTHS);
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
 
@@ -283,6 +332,19 @@ export function App() {
 
   function handleResizeDblClick(col: string) {
     setColWidths((prev) => ({ ...prev, [col]: DEFAULT_COL_WIDTHS[col] }));
+  }
+
+  useEffect(() => {
+    applyTheme(theme);
+    localStorage.setItem(STORAGE_THEME, theme);
+  }, [theme]);
+
+  function cycleTheme() {
+    setThemeState((prev) => {
+      if (prev === "system") return "dark";
+      if (prev === "dark") return "light";
+      return "system";
+    });
   }
 
   useEffect(() => {
@@ -442,27 +504,6 @@ export function App() {
     }
 
     return selected;
-  }
-
-  async function importExistingProject() {
-    const directory = await pickStandaloneDirectory();
-    if (!directory) {
-      return;
-    }
-
-    const id = `project-${Math.random().toString(36).slice(2, 8)}`;
-    const project: Project = {
-      id,
-      name: deriveProjectName(directory),
-      version: "0.1.0",
-      directory,
-      tasks: []
-    };
-
-    setProjects((previous) => [project, ...previous]);
-    setView("board");
-    setBoardProjectId(id);
-    setSelectedTaskId(null);
   }
 
   async function createProject() {
@@ -906,113 +947,73 @@ export function App() {
     <div className="app-root">
       <div className="shell">
         {isTauri ? (
-          <div className="drag-strip absolute top-0 left-0 right-0 h-[34px] z-20" data-tauri-drag-region />
+          <div className="drag-strip absolute top-0 left-0 right-0 h-[46px] z-20" data-tauri-drag-region />
         ) : null}
 
-        <aside className="sidebar sidebar-expanded">
-          <div className="sidebar-top">
-            <h1 className="sidebar-brand m-0 flex items-center gap-1.5 text-base font-semibold">
-              <SplitText text="Maple" className="inline" delay={40} />
-            </h1>
+        <nav className="topnav">
+          <div className="topnav-brand">
+            <Icon icon="mingcute:maple-leaf-line" className="text-lg" />
+            <SplitText text="Maple" className="inline" delay={40} />
           </div>
 
-          <div className="sidebar-body">
-            <nav className="sidebar-nav flex flex-col gap-0.5">
-              <button
-                type="button"
-                className={`ui-btn ui-btn--sm ui-btn--ghost gap-2 ${view === "overview" ? "active" : ""}`}
-                onClick={() => setView("overview")}
-              >
-                <Icon icon="mingcute:home-4-line" />
-                <span className="nav-label">概览</span>
-              </button>
-              <button
-                type="button"
-                className={`ui-btn ui-btn--sm ui-btn--ghost gap-2 ${view === "progress" ? "active" : ""}`}
-                onClick={() => setView("progress")}
-              >
-                <Icon icon="mingcute:settings-3-line" />
-                <span className="nav-label">设置</span>
-              </button>
-            </nav>
+          <button
+            type="button"
+            className={`topnav-tab ${view === "overview" ? "active" : ""}`}
+            onClick={() => setView("overview")}
+          >
+            <Icon icon="mingcute:home-4-line" className="text-sm" />
+            概览
+          </button>
 
-            <div className="flex flex-col gap-0.5 mt-1">
-              <div className="sidebar-section-header flex items-center gap-1 px-2 py-0.5">
-                <span className="nav-label flex-1 text-muted text-xs font-medium uppercase tracking-wide">项目</span>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn sidebar-action-btn text-muted"
-                  onClick={() => void createProject()}
-                  aria-label="新建项目"
-                >
-                  <Icon icon="mingcute:add-line" />
-                </button>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn sidebar-action-btn text-muted"
-                  onClick={() => void importExistingProject()}
-                  aria-label="导入项目"
-                >
-                  <Icon icon="mingcute:folder-transfer-line" />
-                </button>
-              </div>
+          <div className="topnav-divider" />
 
-              <div className="sidebar-project-list flex flex-col gap-0.5">
-                {projects.map((project) => (
-                  <button
-                    key={project.id}
-                    type="button"
-                    className={`sidebar-project ui-btn ui-btn--sm ui-btn--ghost gap-2 w-full text-left justify-start ${boardProjectId === project.id && view === "board" ? "active" : ""}`}
-                    onClick={() => {
-                      setBoardProjectId(project.id);
-                      setView("board");
-                      setSelectedTaskId(null);
-                    }}
-                  >
-                    <Icon icon="mingcute:folder-open-line" />
-                    <span className="nav-label flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{project.name}</span>
-                  </button>
-                ))}
-                {projects.length === 0 ? (
-                  <p className="nav-label text-muted text-xs px-2">还没有项目</p>
-                ) : null}
-              </div>
-            </div>
+          <div className="topnav-scroll">
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                type="button"
+                className={`topnav-tab ${boardProjectId === project.id && view === "board" ? "active" : ""}`}
+                onClick={() => {
+                  setBoardProjectId(project.id);
+                  setView("board");
+                  setSelectedTaskId(null);
+                }}
+              >
+                {project.name}
+              </button>
+            ))}
+            <button type="button" className="topnav-tab" onClick={() => void createProject()} aria-label="新建项目">
+              <Icon icon="mingcute:add-line" className="text-sm" />
+            </button>
           </div>
-        </aside>
+
+          <div className="topnav-actions">
+            <button
+              type="button"
+              className={`topnav-wc ${view === "progress" ? "active" : ""}`}
+              onClick={() => setView("progress")}
+              aria-label="设置"
+            >
+              <Icon icon="mingcute:settings-3-line" className="text-sm" />
+            </button>
+            {isTauri ? (
+              <>
+                <div className="topnav-divider" />
+                <button type="button" className="topnav-wc" onClick={() => void minimizeWindow()} aria-label="最小化">
+                  <Icon icon="mingcute:minus-line" className="text-sm" />
+                </button>
+                <button type="button" className="topnav-wc" onClick={() => void toggleWindowMaximize()} aria-label="最大化">
+                  <Icon icon="mingcute:square-line" className="text-sm" />
+                </button>
+                <button type="button" className="topnav-wc wc-close" onClick={() => void closeWindow()} aria-label="关闭">
+                  <Icon icon="mingcute:close-line" className="text-sm" />
+                </button>
+              </>
+            ) : null}
+          </div>
+        </nav>
 
         <div className="main-column">
-          {isTauri ? (
-            <div className="topbar">
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
-                  onClick={() => void minimizeWindow()}
-                  aria-label="最小化"
-                >
-                  <Icon icon="mingcute:minus-line" />
-                </button>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
-                  onClick={() => void toggleWindowMaximize()}
-                  aria-label="最大化"
-                >
-                  <Icon icon="mingcute:square-line" />
-                </button>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--sm ui-btn--ghost ui-btn--danger ui-icon-btn"
-                  onClick={() => void closeWindow()}
-                  aria-label="关闭"
-                >
-                  <Icon icon="mingcute:close-line" />
-                </button>
-              </div>
-            </div>
-          ) : null}
-
       <main className="p-4 px-5 flex-1 overflow-y-auto overflow-x-hidden">
         {view === "overview" ? (
           <FadeContent duration={300}>
@@ -1064,63 +1065,80 @@ export function App() {
               </FadeContent>
             ) : (
               <>
-                <header className="mb-3">
-                  <div className="flex items-baseline gap-2">
-                    <h2 className="text-xl font-semibold m-0">{boardProject.name}</h2>
-                    <span className="ui-badge">v{boardProject.version}</span>
-                  </div>
-                  <p className="text-muted text-sm mt-0.5">{boardProject.directory}</p>
-                </header>
-
-                <div className="flex gap-2 mb-3 flex-wrap">
-                  <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={() => addTask(boardProject.id)}>
-                    <Icon icon="mingcute:add-line" />
-                    新建
-                  </button>
-                  <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={() => void completePending(boardProject.id)}>
-                    <Icon icon="mingcute:check-circle-line" />
-                    执行待办
-                  </button>
-                  <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost gap-1" onClick={() => setWorkerConsoleOpen(true)}>
-                    <Icon icon="mingcute:terminal-box-line" />
-                    控制台
-                  </button>
-                  <PopoverMenu
-                    label="更多"
-                    icon="mingcute:more-3-line"
-                    items={
-                      [
-                        { kind: "item", key: "release-draft", label: "版本草稿", icon: "mingcute:send-plane-line", onSelect: () => createReleaseDraft(boardProject.id) },
-                        { kind: "heading", label: "详情展示" },
-                        { kind: "item", key: "detail-sidebar", label: "右侧边栏", icon: "mingcute:layout-right-line", checked: detailMode === "sidebar", onSelect: () => setDetailMode("sidebar") },
-                        { kind: "item", key: "detail-modal", label: "弹出式", icon: "mingcute:layout-grid-line", checked: detailMode === "modal", onSelect: () => setDetailMode("modal") }
-                      ] satisfies PopoverMenuItem[]
-                    }
-                  />
-                </div>
-
-                <div className={selectedTask && detailMode === "sidebar" ? "board-body with-detail grid gap-3" : "board-body grid gap-3"}>
-                  <div className="min-w-0 overflow-hidden">
+                <div className="board-layout">
+                  <aside className="board-sidebar">
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Icon icon="mingcute:folder-3-line" className="text-base shrink-0 text-muted" />
+                        <span className="text-sm font-semibold truncate">{boardProject.name}</span>
+                      </div>
+                      <PopoverMenu
+                        label=""
+                        icon="mingcute:more-1-line"
+                        align="left"
+                        items={
+                          [
+                            { kind: "item", key: "release-draft", label: "版本草稿", icon: "mingcute:send-plane-line", onSelect: () => createReleaseDraft(boardProject.id) },
+                            { kind: "heading", label: "Worker" },
+                            ...WORKER_KINDS.map(({ kind, label }) => ({
+                              kind: "item" as const,
+                              key: `worker-${kind}`,
+                              label,
+                              icon: "mingcute:ai-line",
+                              checked: boardProject.workerKind === kind,
+                              onSelect: () => assignWorkerKind(boardProject.id, kind)
+                            })),
+                            { kind: "heading", label: "详情展示" },
+                            { kind: "item", key: "detail-sidebar", label: "右侧边栏", icon: "mingcute:layout-right-line", checked: detailMode === "sidebar", onSelect: () => setDetailMode("sidebar") },
+                            { kind: "item", key: "detail-modal", label: "弹出式", icon: "mingcute:layout-grid-line", checked: detailMode === "modal", onSelect: () => setDetailMode("modal") },
+                            { kind: "heading", label: "" },
+                            { kind: "item", key: "remove-project", label: "删除项目", icon: "mingcute:delete-2-line", onSelect: () => { setProjects((prev) => prev.filter((p) => p.id !== boardProject.id)); setBoardProjectId(null); setSelectedTaskId(null); } }
+                          ] satisfies PopoverMenuItem[]
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <span className="ui-badge">v{boardProject.version}</span>
+                    </div>
+                    <p className="text-muted text-[0.7rem] mt-1.5 leading-tight break-all">{boardProject.directory}</p>
+                    <hr className="border-[color:var(--color-base-200)] my-3" />
+                    <div className="board-sidebar-nav">
+                      <button type="button" className="ui-btn ui-btn--sm ui-btn--accent gap-1" onClick={() => addTask(boardProject.id)}>
+                        <Icon icon="mingcute:add-line" />
+                        新建
+                      </button>
+                      <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost gap-1" onClick={() => void completePending(boardProject.id)}>
+                        <Icon icon="mingcute:check-circle-line" />
+                        执行待办
+                      </button>
+                      <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost gap-1" onClick={() => setWorkerConsoleOpen(true)}>
+                        <Icon icon="mingcute:terminal-box-line" />
+                        控制台
+                      </button>
+                    </div>
+                  </aside>
+                  <div className="board-main">
                     <table ref={tableRef} className="task-table">
                       <colgroup>
                         <col style={colWidths.task ? { width: colWidths.task } : undefined} />
                         <col style={{ width: colWidths.status }} />
-                        <col style={{ width: colWidths.reports }} />
+                        <col style={{ width: colWidths.lastMention }} />
                         <col style={{ width: colWidths.tags }} />
-                        <col style={{ width: colWidths.version }} />
                         <col style={{ width: colWidths.actions }} />
                       </colgroup>
                       <thead>
                         <tr>
                           {[
-                            { key: "task", label: "任务" },
-                            { key: "status", label: "状态" },
-                            { key: "reports", label: "提及" },
-                            { key: "tags", label: "标签" },
-                            { key: "version", label: "版本" },
+                            { key: "task", label: "任务", icon: "mingcute:task-line" },
+                            { key: "status", label: "状态", icon: "mingcute:signal-line" },
+                            { key: "lastMention", label: "上次提及", icon: "mingcute:time-line" },
+                            { key: "tags", label: "标签", icon: "mingcute:tag-line" },
                           ].map((col) => (
                             <th key={col.key} className={`col-${col.key}`}>
-                              {col.label}
+                              <span className="inline-flex items-center gap-1">
+                                <Icon icon={col.icon} className="text-xs opacity-60" />
+                                {col.label}
+                              </span>
                               <div
                                 className="col-resize-handle"
                                 onMouseDown={(e) => handleResizeStart(col.key, e)}
@@ -1167,22 +1185,25 @@ export function App() {
                                   </span>
                                   <button
                                     type="button"
-                                    className="task-open-btn ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn shrink-0 text-[color:var(--color-primary)]"
+                                    className="task-open-btn ui-btn ui-btn--xs ui-btn--outline shrink-0 gap-1 text-[color:var(--color-primary)]"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       setSelectedTaskId(task.id);
                                     }}
                                   >
-                                    <Icon icon="mingcute:arrow-right-up-line" />
+                                    <Icon icon="mingcute:external-link-line" className="text-xs" />
+                                    打开
                                   </button>
                                 </div>
                               )}
                             </td>
                             <td className="col-status">
-                              <span className={`status-dot status-${task.status === "已完成" ? "done" : task.status === "已阻塞" ? "blocked" : task.status === "进行中" ? "active" : "pending"}`} />
-                              {task.status}
+                              <span className={`ui-badge ${task.status === "已完成" ? "ui-badge--success" : task.status === "已阻塞" ? "ui-badge--error" : task.status === "进行中" ? "ui-badge--solid" : ""}`}>
+                                <span className={`status-dot status-${task.status === "已完成" ? "done" : task.status === "已阻塞" ? "blocked" : task.status === "进行中" ? "active" : "pending"}`} />
+                                {task.status}
+                              </span>
                             </td>
-                            <td className="col-reports">{task.reports.length > 0 ? task.reports.length : ""}</td>
+                            <td className="col-lastMention text-muted">{relativeTimeZh(getLastMentionTime(task))}</td>
                             <td className="col-tags">
                               {task.tags.slice(0, 3).map((tag) => (
                                 <span key={tag} className="ui-badge mr-1">
@@ -1193,7 +1214,6 @@ export function App() {
                                 <span className="ui-badge opacity-60">+{task.tags.length - 3}</span>
                               ) : null}
                             </td>
-                            <td className="col-version">{task.version}</td>
                             <td className="col-actions">
                               <button
                                 type="button"
@@ -1214,28 +1234,18 @@ export function App() {
 
                     {boardProject.tasks.length === 0 ? (
                       <div className="py-8 text-center">
-                        <p className="text-muted text-sm">还没有任务，点击上方「新建」添加。</p>
+                        <p className="text-muted text-sm">还没有任务，点击左侧「新建」添加。</p>
+                      </div>
+                    ) : null}
+
+                    {releaseReport ? (
+                      <div className="ui-card p-4 mt-3">
+                        <h3 className="font-semibold m-0">版本草稿</h3>
+                        <textarea className="ui-textarea w-full mt-2" value={releaseReport} readOnly rows={14} />
                       </div>
                     ) : null}
                   </div>
-
-                  {selectedTask && detailMode === "sidebar" ? (
-                    <aside className="ui-card p-4 max-h-[calc(100vh-160px)] overflow-y-auto sticky top-4">
-                      <TaskDetailPanel
-                        task={selectedTask}
-                        onClose={() => setSelectedTaskId(null)}
-                        onDelete={() => deleteTask(boardProject.id, selectedTask.id)}
-                      />
-                    </aside>
-                  ) : null}
                 </div>
-
-                {releaseReport ? (
-                  <div className="ui-card p-4 mt-3">
-                    <h3 className="font-semibold m-0">版本草稿</h3>
-                    <textarea className="ui-textarea w-full mt-2" value={releaseReport} readOnly rows={14} />
-                  </div>
-                ) : null}
               </>
             )}
           </section>
@@ -1382,22 +1392,46 @@ export function App() {
               </div>
 
               <div className="ui-card p-4 mt-3">
-                <h3 className="m-0 font-semibold">Worker 日志</h3>
-                {WORKER_KINDS.map(({ kind, label }) => (
-                  <details key={kind} className="ui-details mt-2">
-                    <summary className="text-sm font-medium">{label}</summary>
-                    <div className="p-3">
-                      <pre className="bg-[color:var(--color-base-200)] rounded-lg p-3 text-xs whitespace-pre-wrap break-words m-0 border-0">
-                        {workerLogs[`worker-${kind}`] || "暂无日志"}
-                      </pre>
-                    </div>
-                  </details>
-                ))}
+                <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+                  <Icon icon="mingcute:palette-line" />
+                  外观
+                </h3>
+                <div className="flex items-center gap-3 mt-3">
+                  <span className="text-sm">主题模式</span>
+                  <div className="flex gap-1">
+                    {([
+                      { mode: "system" as ThemeMode, label: "跟随系统", icon: "mingcute:computer-line" },
+                      { mode: "light" as ThemeMode, label: "浅色", icon: "mingcute:sun-line" },
+                      { mode: "dark" as ThemeMode, label: "深色", icon: "mingcute:moon-line" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.mode}
+                        type="button"
+                        className={`ui-btn ui-btn--sm gap-1 ${theme === opt.mode ? "ui-btn--outline" : "ui-btn--ghost"}`}
+                        onClick={() => setThemeState(opt.mode)}
+                      >
+                        <Icon icon={opt.icon} className="text-sm" />
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
+
             </section>
           </FadeContent>
         ) : null}
       </main>
+
+          {selectedTask && detailMode === "sidebar" && boardProject ? (
+            <div className="detail-sidebar">
+              <TaskDetailPanel
+                task={selectedTask}
+                onClose={() => setSelectedTaskId(null)}
+                onDelete={() => deleteTask(boardProject.id, selectedTask.id)}
+              />
+            </div>
+          ) : null}
       </div>{/* end main-column */}
 
       {pickerForProject ? (
