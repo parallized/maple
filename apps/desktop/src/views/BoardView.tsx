@@ -28,7 +28,14 @@ type BoardViewProps = {
   onRemoveProject: (projectId: string) => void;
 };
 
-const DEFAULT_COL_WIDTHS: Record<string, number> = { task: 0, status: 100, lastMention: 100, tags: 180, actions: 40 };
+const TASK_TITLE_MAX_WIDTH = 340;
+const DEFAULT_COL_WIDTHS: Record<string, number> = {
+  task: TASK_TITLE_MAX_WIDTH,
+  status: 100,
+  lastMention: 100,
+  tags: 0,
+  actions: 40
+};
 
 export function BoardView({
   boardProject,
@@ -62,7 +69,8 @@ export function BoardView({
     function onMouseMove(ev: MouseEvent) {
       if (!resizeRef.current) return;
       const diff = ev.clientX - resizeRef.current.startX;
-      const newW = Math.max(30, resizeRef.current.startW + diff);
+      const proposed = Math.max(30, resizeRef.current.startW + diff);
+      const newW = resizeRef.current.col === "task" ? Math.min(TASK_TITLE_MAX_WIDTH, proposed) : proposed;
       setColWidths((prev) => ({ ...prev, [resizeRef.current!.col]: newW }));
     }
     function onMouseUp() {
@@ -264,7 +272,7 @@ function TaskTable({
         <col style={colWidths.task ? { width: colWidths.task } : undefined} />
         <col style={{ width: colWidths.status }} />
         <col style={{ width: colWidths.lastMention }} />
-        <col style={{ width: colWidths.tags }} />
+        <col style={colWidths.tags > 0 ? { width: colWidths.tags } : undefined} />
         <col style={{ width: colWidths.actions }} />
       </colgroup>
       <thead>
@@ -317,6 +325,7 @@ function TaskTable({
                 <div className="task-title-cell flex items-center gap-1 min-w-0">
                   <span
                     className="task-title-text flex-1 cursor-text px-0.5 overflow-hidden text-ellipsis whitespace-nowrap"
+                    style={{ maxWidth: `${TASK_TITLE_MAX_WIDTH}px` }}
                     onClick={(e) => {
                       e.stopPropagation();
                       onEditTask(task.id);

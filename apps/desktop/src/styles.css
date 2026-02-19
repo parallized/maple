@@ -814,8 +814,8 @@ h1, h2, h3 {
 
 .detail-sidebar-close {
   position: absolute;
-  top: 14px;
-  right: 14px;
+  top: 1.25rem;
+  right: 1.25rem;
   z-index: 2;
 }
 
@@ -978,7 +978,6 @@ h1, h2, h3 {
   :root:not(.light) .ui-modal-panel { background: var(--color-base-100); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8); border: 1px solid var(--color-base-300); }
   :root:not(.light) .toast { background: var(--color-base-100); border: 1px solid var(--color-base-300); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
   :root:not(.light) .status-dot.status-pending { background: #48484a; }
-  :root:not(.light) .detail-sidebar { background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4); }
 }
 
 :root.dark .ui-badge--success { color: #30d158; }
@@ -988,4 +987,3 @@ h1, h2, h3 {
 :root.dark .ui-modal-panel { background: var(--color-base-100); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8); border: 1px solid var(--color-base-300); }
 :root.dark .toast { background: var(--color-base-100); border: 1px solid var(--color-base-300); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
 :root.dark .status-dot.status-pending { background: #48484a; }
-:root.dark .detail-sidebar { background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4); }

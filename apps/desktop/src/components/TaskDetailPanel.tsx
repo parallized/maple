@@ -26,81 +26,78 @@ function formatAbsoluteTime(value: string): string {
 
 export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProps) {
   return (
-    <section className="task-detail-panel grid gap-2">
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <h3 className="m-0 task-detail-title">{task.title}</h3>
-          <span className="ui-badge">提及 {task.reports.length}</span>
-        </div>
-        <div className="flex gap-1 shrink-0">
+    <section className="task-detail-panel flex flex-col gap-6">
+      <header className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className="m-0 text-2xl font-semibold tracking-tight text-primary flex items-center gap-3">
+            {task.title}
+            <span className="text-sm font-normal text-muted bg-base-200 px-2 py-0.5 rounded-md">提及 {task.reports.length}</span>
+          </h2>
           {onDelete ? (
             <button
               type="button"
-              className="ui-btn ui-btn--sm ui-btn--ghost ui-btn--danger ui-icon-btn"
+              className="ui-btn ui-btn--sm ui-btn--ghost ui-btn--danger ui-icon-btn shrink-0"
               onClick={onDelete}
               aria-label="删除任务"
             >
               <Icon icon="mingcute:delete-2-line" />
             </button>
           ) : null}
-          {onClose ? (
-            <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn" onClick={onClose} aria-label="关闭详情">
-              <Icon icon="mingcute:close-line" />
-            </button>
-          ) : null}
         </div>
       </header>
 
-      <div className="task-properties ui-card p-3">
-        <div className="task-prop flex justify-between items-center gap-3">
-          <span className="text-muted text-sm whitespace-nowrap">状态</span>
-          <span className="ui-badge ui-badge--solid">{task.status}</span>
+      <div className="task-properties grid grid-cols-[100px_1fr] gap-y-3 gap-x-4 items-center">
+        <span className="text-muted text-sm">状态</span>
+        <div className="flex items-center">
+          <span className={`ui-badge ${task.status === "已完成" ? "ui-badge--success" : task.status === "已阻塞" ? "ui-badge--error" : task.status === "进行中" ? "ui-badge--solid" : task.status === "需要更多信息" ? "ui-badge--warning" : ""}`}>
+            {task.status}
+          </span>
         </div>
-        <div className="task-prop flex justify-between items-center gap-3">
-          <span className="text-muted text-sm whitespace-nowrap">版本</span>
+
+        <span className="text-muted text-sm">版本</span>
+        <div className="flex items-center">
           <span className="ui-badge">{task.version}</span>
         </div>
-        <div className="task-prop task-prop-wide flex justify-between items-center gap-3">
-          <span className="text-muted text-sm whitespace-nowrap">标签</span>
-          <div className="task-tag-badges">
-            {task.tags.length === 0 ? <span className="text-sm text-muted">无</span> : null}
-            {task.tags.map((tag) => (
-              <span key={tag} className="ui-badge">
-                {tag}
-              </span>
-            ))}
-          </div>
+
+        <span className="text-muted text-sm">标签</span>
+        <div className="flex flex-wrap gap-1.5">
+          {task.tags.length === 0 ? <span className="text-sm text-muted">无</span> : null}
+          {task.tags.map((tag) => (
+            <span key={tag} className="ui-badge">
+              {tag}
+            </span>
+          ))}
         </div>
-        <div className="task-prop flex justify-between items-center gap-3">
-          <span className="text-muted text-sm whitespace-nowrap">创建时间</span>
-          <span className="text-sm" title={formatAbsoluteTime(task.createdAt)}>
-            {formatRelativeTime(task.createdAt)}
-          </span>
+
+        <span className="text-muted text-sm">创建时间</span>
+        <div className="flex items-center text-sm" title={formatAbsoluteTime(task.createdAt)}>
+          {formatRelativeTime(task.createdAt)}
         </div>
-        <div className="task-prop flex justify-between items-center gap-3">
-          <span className="text-muted text-sm whitespace-nowrap">上次调整</span>
-          <span className="text-sm" title={formatAbsoluteTime(task.updatedAt)}>
-            {formatRelativeTime(task.updatedAt)}
-          </span>
+
+        <span className="text-muted text-sm">上次调整</span>
+        <div className="flex items-center text-sm" title={formatAbsoluteTime(task.updatedAt)}>
+          {formatRelativeTime(task.updatedAt)}
         </div>
       </div>
 
-      <div>
-        <h4 className="task-detail-section-title mt-1 mb-0">结论记录</h4>
-        {task.reports.length === 0 ? <p className="text-muted text-sm mt-2">暂无结论记录。</p> : null}
+      <div className="h-px bg-(--color-base-300) my-1" />
 
-        <div className="grid gap-2 mt-1.5">
+      <div>
+        <h3 className="text-lg font-medium mb-4">结论记录</h3>
+        {task.reports.length === 0 ? <p className="text-muted text-sm">暂无结论记录。</p> : null}
+
+        <div className="flex flex-col gap-6">
           {task.reports.map((report) => (
-            <article key={report.id} className="ui-card p-3">
-              <div className="flex justify-between items-center gap-2 mb-2 text-sm">
-                <strong>{report.author}</strong>
+            <article key={report.id} className="flex flex-col gap-2">
+              <div className="flex justify-between items-center text-sm">
+                <strong className="font-medium">{report.author}</strong>
                 <span className="text-muted" title={formatAbsoluteTime(report.createdAt)}>
                   {formatRelativeTime(report.createdAt)}
                 </span>
               </div>
-              <pre className="bg-[color:var(--color-base-200)] rounded-lg p-3 text-xs whitespace-pre-wrap break-words m-0 border-0">
+              <div className="text-sm leading-relaxed text-base-content whitespace-pre-wrap">
                 {report.content}
-              </pre>
+              </div>
             </article>
           ))}
         </div>

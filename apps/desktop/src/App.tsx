@@ -58,6 +58,7 @@ export function App() {
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => loadWorkerConfigs());
   const [mcpConfig, setMcpConfig] = useState<McpServerConfig>(() => loadMcpServerConfig());
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
+  const [mcpStartupError, setMcpStartupError] = useState("");
   const [mcpProjectQuery, setMcpProjectQuery] = useState("");
   const [mcpKeywordQuery, setMcpKeywordQuery] = useState("");
   const [mcpQueryResult, setMcpQueryResult] = useState("");
@@ -554,28 +555,58 @@ export function App() {
   }
 
   async function startMcpServer(silent = false) {
+    setMcpStartupError("");
     if (!mcpConfig.executable.trim()) {
       setMcpStatus(createBuiltinMcpStatus());
       if (!silent) setNotice("内置 Maple MCP 已就绪。");
       return;
     }
-    if (!isTauri) { if (!silent) setNotice("当前环境无法启动 MCP Server。"); return; }
+    if (!isTauri) {
+      const msg = "当前环境无法启动 MCP Server。";
+      setMcpStartupError(msg);
+      if (!silent) setNotice(msg);
+      return;
+    }
     try {
       const status = await invoke<McpServerStatus>("start_mcp_server", { executable: mcpConfig.executable, args: parseArgs(mcpConfig.args), cwd: mcpConfig.cwd });
       setMcpStatus(status);
-      if (!silent) setNotice(status.running ? `MCP Server 已启动（PID ${status.pid ?? "?"}）` : "MCP Server 启动失败");
-    } catch (error) { if (!silent) setNotice(`MCP Server 启动失败：${String(error)}`); }
+      if (status.running) {
+        setMcpStartupError("");
+        if (!silent) setNotice(`MCP Server 已启动（PID ${status.pid ?? "?"}）`);
+      } else {
+        const msg = "MCP Server 启动失败，请检查配置。";
+        setMcpStartupError(msg);
+        if (!silent) setNotice(msg);
+      }
+    } catch (error) {
+      const msg = `MCP Server 启动失败：${String(error)}`;
+      setMcpStartupError(msg);
+      if (!silent) setNotice(msg);
+    }
   }
 
-  async function stopMcpServer() {
+  async function stopMcpServer(silent = false) {
+    setMcpStartupError("");
     if (!mcpConfig.executable.trim()) {
       setMcpStatus(createBuiltinMcpStatus());
-      setNotice("当前使用内置 MCP，无需停止。");
+      if (!silent) setNotice("当前使用内置 MCP，无需停止。");
       return;
     }
-    if (!isTauri) { setNotice("当前环境无法停止 MCP Server。"); return; }
-    try { setMcpStatus(await invoke<McpServerStatus>("stop_mcp_server")); setNotice("MCP Server 已停止。"); }
-    catch (error) { setNotice(`MCP Server 停止失败：${String(error)}`); }
+    if (!isTauri) {
+      if (!silent) setNotice("当前环境无法停止 MCP Server。");
+      return;
+    }
+    try {
+      setMcpStatus(await invoke<McpServerStatus>("stop_mcp_server"));
+      if (!silent) setNotice("MCP Server 已停止。");
+    } catch (error) {
+      if (!silent) setNotice(`MCP Server 停止失败：${String(error)}`);
+    }
+  }
+
+  async function restartMcpServer() {
+    await stopMcpServer(true);
+    await startMcpServer(false);
   }
 
   // ── Window Controls ──
@@ -662,31 +693,14 @@ export function App() {
             {view === "progress" || view === "settings" ? (
               <div className="flex-1 overflow-auto px-0.5">
                 <SettingsView
-                  mcpConfig={mcpConfig}
                   mcpStatus={mcpStatus}
-                  workerConfigs={workerConfigs}
-                  mcpProjectQuery={mcpProjectQuery}
-                  mcpKeywordQuery={mcpKeywordQuery}
-                  mcpQueryResult={mcpQueryResult}
+                  mcpStartupError={mcpStartupError}
+                  detailMode={detailMode}
                   theme={theme}
-                  onMcpConfigChange={setMcpConfig}
-                  onMcpProjectQueryChange={setMcpProjectQuery}
-                  onMcpKeywordQueryChange={setMcpKeywordQuery}
-                  onRunMcpTodoQuery={runMcpTodoQuery}
-                  onRunMcpRecentQuery={runMcpRecentQuery}
-                  onApplyRecommendedSetup={applyRecommendedSetup}
-                  onWorkerConfigChange={(kind, field, value) =>
-                    setWorkerConfigs((prev) => ({ ...prev, [kind]: { ...prev[kind], [field]: value } }))
-                  }
-                  onWorkerDangerModeChange={(kind, dangerMode) =>
-                    setWorkerConfigs((prev) => ({ ...prev, [kind]: { ...prev[kind], dangerMode } }))
-                  }
                   onProbeWorker={(kind) => void probeWorker(kind)}
-                  onStartMcpServer={() => void startMcpServer()}
-                  onStopMcpServer={() => void stopMcpServer()}
-                  onRefreshMcpStatus={() => void refreshMcpStatus()}
-                  onOpenConsole={() => openWorkerConsole(undefined, { requireActive: true })}
+                  onRestartMcpServer={() => void restartMcpServer()}
                   onThemeChange={setThemeState}
+                  onDetailModeChange={setDetailMode}
                 />
               </div>
             ) : null}
