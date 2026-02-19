@@ -127,11 +127,11 @@ h1, h2, h3 {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.08rem 0.5rem;
-  border: 1px solid var(--color-base-300);
-  border-radius: 999px;
-  background: var(--color-base-100);
-  color: var(--color-secondary);
+  padding: 0.15rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--color-base-300) 50%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-base-200) 50%, transparent);
+  color: color-mix(in srgb, var(--color-secondary) 80%, transparent);
   font-size: 0.75rem;
   line-height: 1.4;
   white-space: nowrap;
@@ -139,25 +139,25 @@ h1, h2, h3 {
 
 .ui-badge.ui-badge--solid {
   border-color: transparent;
-  background: rgba(47, 111, 179, 0.12);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
   color: var(--color-primary);
 }
 
 .ui-badge.ui-badge--success {
-  border-color: rgba(77, 168, 114, 0.18);
-  background: rgba(77, 168, 114, 0.12);
+  border-color: rgba(77, 168, 114, 0.15);
+  background: rgba(77, 168, 114, 0.1);
   color: #1e6b3b;
 }
 
 .ui-badge.ui-badge--warning {
-  border-color: rgba(227, 179, 65, 0.2);
-  background: rgba(227, 179, 65, 0.14);
+  border-color: rgba(227, 179, 65, 0.15);
+  background: rgba(227, 179, 65, 0.1);
   color: #7a5200;
 }
 
 .ui-badge.ui-badge--error {
-  border-color: rgba(212, 112, 73, 0.2);
-  background: rgba(212, 112, 73, 0.12);
+  border-color: rgba(212, 112, 73, 0.15);
+  background: rgba(212, 112, 73, 0.1);
   color: #b04a25;
 }
 
@@ -528,25 +528,23 @@ h1, h2, h3 {
   top: 0;
   z-index: 10;
   background: var(--color-base-100);
-  border-bottom: 1px solid var(--color-base-300);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-base-300) 25%, transparent);
   text-align: left;
-  padding: 0.72rem 0.5rem;
-  font-weight: 600;
+  padding: 0.6rem 0.5rem 0.6rem 0;
+  font-weight: 500;
   font-size: 0.8125rem;
-  color: var(--color-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: color-mix(in srgb, var(--color-secondary) 50%, transparent);
   white-space: nowrap;
 }
 
 .task-row td {
-  border-bottom: 1px solid var(--color-base-300);
-  padding: 0.2rem 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-base-300) 25%, transparent);
+  padding: 0.4rem 0.5rem 0.4rem 0;
   font-size: 0.875rem;
   transition: background 0.1s;
-  height: 30px;
-  min-height: 30px;
-  max-height: 30px;
+  height: 42px;
+  min-height: 42px;
+  max-height: 42px;
   vertical-align: middle;
   white-space: nowrap;
   overflow: hidden;
@@ -554,11 +552,11 @@ h1, h2, h3 {
 }
 
 .task-row:hover td {
-  background: var(--btn-bg);
+  background: var(--row-hover);
 }
 
 .task-row.selected td {
-  background: var(--btn-bg);
+  background: var(--row-selected);
 }
 
 .task-row:hover .row-delete-btn {
