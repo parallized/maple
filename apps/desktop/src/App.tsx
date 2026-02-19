@@ -956,60 +956,74 @@ export function App() {
             <SplitText text="Maple" className="inline" delay={40} />
           </div>
 
-          <button
-            type="button"
-            className={`topnav-tab ${view === "overview" ? "active" : ""}`}
-            onClick={() => setView("overview")}
-          >
-            <Icon icon="mingcute:home-4-line" className="text-sm" />
-            概览
-          </button>
-
-          <div className="topnav-divider" />
-
-          <div className="topnav-scroll">
-            {projects.map((project) => (
-              <button
-                key={project.id}
-                type="button"
-                className={`topnav-tab ${boardProjectId === project.id && view === "board" ? "active" : ""}`}
-                onClick={() => {
-                  setBoardProjectId(project.id);
-                  setView("board");
-                  setSelectedTaskId(null);
-                }}
-              >
-                {project.name}
-              </button>
-            ))}
-            <button type="button" className="topnav-tab" onClick={() => void createProject()} aria-label="新建项目">
-              <Icon icon="mingcute:add-line" className="text-sm" />
-            </button>
-          </div>
-
-          <div className="topnav-actions">
+          <div className="flex items-center gap-2 rounded-xl">
             <button
               type="button"
-              className={`topnav-wc ${view === "progress" ? "active" : ""}`}
-              onClick={() => setView("progress")}
-              aria-label="设置"
+              className={`topnav-tab ${view === "overview" ? "active" : ""}`}
+              onClick={() => setView("overview")}
+            >
+              <Icon icon="mingcute:home-4-line" className="text-sm" />
+              概览
+            </button>
+
+            <div className="w-px h-4 bg-(--color-base-300) mx-1" />
+
+            <div className="flex items-center gap-2">
+              {projects.map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  className={`topnav-tab ${boardProjectId === project.id && view === "board" ? "active" : ""}`}
+                  onClick={() => {
+                    setBoardProjectId(project.id);
+                    setView("board");
+                    setSelectedTaskId(null);
+                  }}
+                >
+                  {project.name}
+                </button>
+              ))}
+              <button type="button" className="topnav-tab px-2" onClick={() => void createProject()} aria-label="新建项目">
+                <Icon icon="mingcute:add-line" className="text-sm" />
+              </button>
+            </div>
+          </div>
+
+          <div className="topnav-actions ml-auto">
+            <button
+              type="button"
+              className="topnav-tab"
+              onClick={() => setWorkerConsoleOpen(!workerConsoleOpen)}
+              title="控制台"
+            >
+              <Icon icon="mingcute:terminal-line" className="text-sm" />
+              {metrics.runningCount > 0 && (
+                <span className="flex h-2 w-2 rounded-full bg-primary animate-pulse" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              className="topnav-tab"
+              onClick={() => setView("settings")}
+              title="设置"
             >
               <Icon icon="mingcute:settings-3-line" className="text-sm" />
             </button>
-            {isTauri ? (
-              <>
-                <div className="topnav-divider" />
-                <button type="button" className="topnav-wc" onClick={() => void minimizeWindow()} aria-label="最小化">
-                  <Icon icon="mingcute:minus-line" className="text-sm" />
-                </button>
-                <button type="button" className="topnav-wc" onClick={() => void toggleWindowMaximize()} aria-label="最大化">
-                  <Icon icon="mingcute:square-line" className="text-sm" />
-                </button>
-                <button type="button" className="topnav-wc wc-close" onClick={() => void closeWindow()} aria-label="关闭">
-                  <Icon icon="mingcute:close-line" className="text-sm" />
-                </button>
-              </>
-            ) : null}
+
+            <div className="w-px h-4 bg-(--color-base-300) mx-1" />
+
+            <div className="flex items-center gap-1">
+              <button type="button" className="topnav-wc" onClick={minimizeWindow} aria-label="最小化">
+                <Icon icon="mingcute:minimize-line" />
+              </button>
+              <button type="button" className="topnav-wc" onClick={toggleWindowMaximize} aria-label="最大化">
+                <Icon icon="mingcute:maximize-line" />
+              </button>
+              <button type="button" className="topnav-wc hover:bg-error/10 hover:text-error" onClick={closeWindow} aria-label="关闭">
+                <Icon icon="mingcute:close-line" />
+              </button>
+            </div>
           </div>
         </nav>
 
@@ -1070,7 +1084,7 @@ export function App() {
                     <div className="flex items-center justify-between gap-1">
                       <div className="flex items-center gap-2 min-w-0">
                         <Icon icon="mingcute:folder-3-line" className="text-base shrink-0 text-muted" />
-                        <span className="text-sm font-semibold truncate">{boardProject.name}</span>
+                        <span className="text-sm font-semibold truncate tracking-tight">{boardProject.name}</span>
                       </div>
                       <PopoverMenu
                         label=""
@@ -1097,22 +1111,30 @@ export function App() {
                         }
                       />
                     </div>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <span className="ui-badge">v{boardProject.version}</span>
+
+                    <div className="flex items-center gap-2 mt-4 px-1">
+                      <span className="text-[10px] uppercase tracking-widest font-medium opacity-40">Version</span>
+                      <span className="text-[11px] font-mono opacity-60">v{boardProject.version}</span>
                     </div>
-                    <p className="text-muted text-[0.7rem] mt-1.5 leading-tight break-all">{boardProject.directory}</p>
-                    <hr className="border-[color:var(--color-base-200)] my-3" />
+                    
+                    <div className="mt-4 px-1">
+                      <div className="text-[10px] uppercase tracking-widest font-medium opacity-40 mb-1">Directory</div>
+                      <p className="text-muted text-[11px] leading-relaxed break-all opacity-50 font-mono">{boardProject.directory}</p>
+                    </div>
+
+                    <div className="h-px bg-(--color-base-300) my-6 mx-1" />
+
                     <div className="board-sidebar-nav">
-                      <button type="button" className="ui-btn ui-btn--sm ui-btn--accent gap-1" onClick={() => addTask(boardProject.id)}>
-                        <Icon icon="mingcute:add-line" />
-                        新建
+                      <button type="button" className="ui-btn ui-btn--sm ui-btn--accent gap-2" onClick={() => addTask(boardProject.id)}>
+                        <Icon icon="mingcute:add-line" className="text-sm" />
+                        新建任务
                       </button>
-                      <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost gap-1" onClick={() => void completePending(boardProject.id)}>
-                        <Icon icon="mingcute:check-circle-line" />
+                      <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost gap-2" onClick={() => void completePending(boardProject.id)}>
+                        <Icon icon="mingcute:check-circle-line" className="text-sm" />
                         执行待办
                       </button>
-                      <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost gap-1" onClick={() => setWorkerConsoleOpen(true)}>
-                        <Icon icon="mingcute:terminal-box-line" />
+                      <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost gap-2" onClick={() => setWorkerConsoleOpen(true)}>
+                        <Icon icon="mingcute:terminal-box-line" className="text-sm" />
                         控制台
                       </button>
                     </div>
