@@ -103,7 +103,7 @@ export function BoardView({
         <aside className="board-sidebar">
           <div className="flex items-center justify-between gap-1 mb-2">
             <div className="flex items-center gap-2 min-w-0 px-1">
-              <span className="text-2xl font-bold truncate tracking-tight text-primary">{boardProject.name}</span>
+              <span className="text-[1.35rem] font-medium truncate tracking-tight text-primary">{boardProject.name}</span>
             </div>
             <PopoverMenu
               label=""

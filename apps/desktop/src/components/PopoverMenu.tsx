@@ -77,7 +77,7 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
           {items.map((item, index) => {
             if (item.kind === "heading") {
               return (
-                <div key={`heading-${index}`} className="px-2 py-1 text-muted text-xs" role="presentation">
+                <div key={`heading-${index}`} className="px-2 py-1.5 mt-1 text-muted text-xs font-medium uppercase tracking-wider" role="presentation">
                   {item.label}
                 </div>
               );
@@ -88,7 +88,7 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
                 key={item.key}
                 type="button"
                 role="menuitem"
-                className="popover-item ui-btn ui-btn--sm ui-btn--ghost justify-start gap-2 w-full border border-transparent rounded-lg"
+                className="popover-item ui-btn ui-btn--sm ui-btn--ghost justify-start gap-2 w-full border border-transparent rounded-[8px] font-medium"
                 disabled={item.disabled}
                 onClick={() => {
                   setOpen(false);
