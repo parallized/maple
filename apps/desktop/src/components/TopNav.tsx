@@ -5,6 +5,7 @@ import type { Project } from "../domain";
 
 type TopNavProps = {
   isTauri: boolean;
+  windowMaximized: boolean;
   view: ViewKey;
   projects: Project[];
   boardProjectId: string | null;
@@ -21,6 +22,7 @@ type TopNavProps = {
 
 export function TopNav({
   isTauri,
+  windowMaximized,
   view,
   projects,
   boardProjectId,
@@ -100,7 +102,7 @@ export function TopNav({
                 <Icon icon="mingcute:minimize-line" />
               </button>
               <button type="button" className="topnav-wc" onClick={onToggleMaximize} aria-label="最大化">
-                <Icon icon="mingcute:maximize-line" />
+                <Icon icon={windowMaximized ? "mingcute:minimize-line" : "mingcute:fullscreen-line"} />
               </button>
               <button type="button" className="topnav-wc hover:bg-error/10 hover:text-error" onClick={onClose} aria-label="关闭">
                 <Icon icon="mingcute:close-line" />

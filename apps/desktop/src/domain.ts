@@ -6,7 +6,9 @@ export type DetailMode = "sidebar" | "modal";
 export type WorkerConfig = {
   executable: string;
   runArgs: string;
+  consoleArgs: string;
   probeArgs: string;
+  dangerMode: boolean;
 };
 
 export type McpServerConfig = {

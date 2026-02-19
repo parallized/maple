@@ -54,6 +54,7 @@ export function App() {
   const [runningWorkers, setRunningWorkers] = useState<Set<string>>(() => new Set());
   const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
   const [theme, setThemeState] = useState<ThemeMode>(() => loadTheme());
+  const [windowMaximized, setWindowMaximized] = useState(false);
 
   // ── Derived ──
   const boardProject = boardProjectId ? projects.find((p) => p.id === boardProjectId) ?? null : null;
@@ -89,36 +90,53 @@ export function App() {
     if (!isTauri) return;
     void refreshMcpStatus();
     if (mcpConfig.autoStart) void startMcpServer(true);
+    void getCurrentWindow().isMaximized().then(setWindowMaximized).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!isTauri) return;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      unlisten = await listen<WorkerLogEvent>("maple://worker-log", (event) => {
-        const { workerId, line } = event.payload;
-        setWorkerLogs((prev) => ({ ...prev, [workerId]: `${prev[workerId] ?? ""}${line}\n` }));
-        const permissionPattern = /\b(allow|approve|permit|confirm|accept)\b.*\?|\[y\/n\]|\[Y\/n\]|\[y\/N\]|\(yes\/no\)|\(y\/n\)/i;
-        if (permissionPattern.test(line)) setPermissionPrompt({ workerId, question: line });
-      });
-    })();
-    return () => { unlisten?.(); };
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    void listen<WorkerLogEvent>("maple://worker-log", (event) => {
+      const { workerId, line } = event.payload;
+      setWorkerLogs((prev) => ({ ...prev, [workerId]: `${prev[workerId] ?? ""}${line}\n` }));
+      const permissionPattern = /\b(allow|approve|permit|confirm|accept)\b.*\?|\[y\/n\]|\[Y\/n\]|\[y\/N\]|\(yes\/no\)|\(y\/n\)/i;
+      if (permissionPattern.test(line)) setPermissionPrompt({ workerId, question: line });
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        cleanup = unlisten;
+      }
+    });
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
   }, [isTauri]);
 
   useEffect(() => {
     if (!isTauri) return;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      unlisten = await listen<WorkerDoneEvent>("maple://worker-done", (event) => {
-        const { workerId, success, code } = event.payload;
-        setRunningWorkers((prev) => { const next = new Set(prev); next.delete(workerId); return next; });
-        const kindEntry = WORKER_KINDS.find((w) => `worker-${w.kind}` === workerId);
-        appendWorkerLog(workerId, `\n[exit ${code ?? "?"}] ${success ? "完成" : "失败"}\n`);
-        setNotice(`${kindEntry?.label ?? workerId} 会话已结束（exit ${code ?? "?"}）`);
-      });
-    })();
-    return () => { unlisten?.(); };
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    void listen<WorkerDoneEvent>("maple://worker-done", (event) => {
+      const { workerId, success, code } = event.payload;
+      setRunningWorkers((prev) => { const next = new Set(prev); next.delete(workerId); return next; });
+      const kindEntry = WORKER_KINDS.find((w) => `worker-${w.kind}` === workerId);
+      appendWorkerLog(workerId, `\n[exit ${code ?? "?"}] ${success ? "完成" : "失败"}\n`);
+      setNotice(`${kindEntry?.label ?? workerId} 会话已结束（exit ${code ?? "?"}）`);
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        cleanup = unlisten;
+      }
+    });
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
   }, [isTauri]);
 
   // ── Worker Logs ──
@@ -127,6 +145,21 @@ export function App() {
   }
   function clearWorkerLog(workerId: string) {
     setWorkerLogs((prev) => ({ ...prev, [workerId]: "" }));
+  }
+
+  function buildDangerArgs(kind: WorkerKind, dangerMode: boolean): string[] {
+    if (!dangerMode) return [];
+    if (kind === "claude") return ["--dangerously-skip-permissions"];
+    if (kind === "codex") return ["--dangerously-bypass-approvals-and-sandbox"];
+    return [];
+  }
+
+  function buildWorkerRunArgs(kind: WorkerKind, config: WorkerConfig): string[] {
+    return [...buildDangerArgs(kind, config.dangerMode), ...parseArgs(config.runArgs)];
+  }
+
+  function buildWorkerConsoleArgs(kind: WorkerKind, config: WorkerConfig): string[] {
+    return [...buildDangerArgs(kind, config.dangerMode), ...parseArgs(config.consoleArgs)];
   }
 
   // ── Task CRUD ──
@@ -216,7 +249,8 @@ export function App() {
   // ── Worker Execution ──
   async function runWorkerCommand(workerId: string, config: WorkerConfig, task: Task, project: Project): Promise<WorkerCommandResult> {
     if (!isTauri) return { success: false, code: null, stdout: "", stderr: "当前环境无法执行 Worker CLI。" };
-    const args = parseArgs(config.runArgs);
+    const kind = WORKER_KINDS.find((entry) => `worker-${entry.kind}` === workerId)?.kind;
+    const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
     const prompt = ["[Maple Worker Task]", `Project: ${project.name}`, `Directory: ${project.directory}`, `Task: ${task.title}`, "请执行任务并输出中文结论报告，包含：结论、变更、验证。"].join("\n");
     return invoke<WorkerCommandResult>("run_worker", { workerId, taskTitle: task.title, executable: config.executable, args, prompt, cwd: project.directory });
   }
@@ -304,7 +338,7 @@ export function App() {
     if (!config.executable.trim()) { setNotice(`请先配置 ${kindEntry.label} 的 executable。`); return; }
     const project = boardProject ?? projects[0];
     const cwd = project?.directory ?? "";
-    const args = parseArgs(config.runArgs);
+    const args = buildWorkerConsoleArgs(kindEntry.kind, config);
     setRunningWorkers((prev) => { const next = new Set(prev); next.add(workerId); return next; });
     try {
       await invoke<boolean>("start_interactive_worker", { workerId, taskTitle: "", executable: config.executable, args, prompt: trimmed, cwd });
@@ -381,8 +415,10 @@ export function App() {
     if (!isTauri) return;
     try {
       const appWindow = getCurrentWindow();
-      if (await appWindow.isMaximized()) await appWindow.unmaximize();
+      const maximized = await appWindow.isMaximized();
+      if (maximized) await appWindow.unmaximize();
       else await appWindow.maximize();
+      setWindowMaximized(!maximized);
     } catch (error) { setNotice(`窗口缩放失败：${String(error)}`); }
   }
 
@@ -402,6 +438,7 @@ export function App() {
 
         <TopNav
           isTauri={isTauri}
+          windowMaximized={windowMaximized}
           view={view}
           projects={projects}
           boardProjectId={boardProjectId}
@@ -452,6 +489,9 @@ export function App() {
                 onMcpConfigChange={setMcpConfig}
                 onWorkerConfigChange={(kind, field, value) =>
                   setWorkerConfigs((prev) => ({ ...prev, [kind]: { ...prev[kind], [field]: value } }))
+                }
+                onWorkerDangerModeChange={(kind, dangerMode) =>
+                  setWorkerConfigs((prev) => ({ ...prev, [kind]: { ...prev[kind], dangerMode } }))
                 }
                 onProbeWorker={(kind) => void probeWorker(kind)}
                 onStartMcpServer={() => void startMcpServer()}

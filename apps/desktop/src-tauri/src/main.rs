@@ -400,7 +400,6 @@ fn run_command_stream(
   if let Some(value) = prompt.as_ref() {
     if !value.trim().is_empty() {
       command.arg(value);
-      command.stdin(Stdio::piped());
     }
   }
   command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -412,13 +411,6 @@ fn run_command_stream(
   let mut child = command
     .spawn()
     .map_err(|error| format!("执行命令失败: {error}"))?;
-
-  if let (Some(mut stdin), Some(value)) = (child.stdin.take(), prompt.clone()) {
-    if !value.trim().is_empty() {
-      let _ = stdin.write_all(value.as_bytes());
-      let _ = stdin.write_all(b"\n");
-    }
-  }
 
   let stdout = child.stdout.take().ok_or_else(|| "无法捕获 stdout".to_string())?;
   let stderr = child.stderr.take().ok_or_else(|| "无法捕获 stderr".to_string())?;

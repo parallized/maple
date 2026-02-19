@@ -28,10 +28,22 @@ export function loadWorkerConfigs(): Record<WorkerKind, WorkerConfig> {
       return DEFAULT_WORKER_CONFIGS;
     }
     const parsed = JSON.parse(raw) as Record<WorkerKind, WorkerConfig>;
+    const normalize = (kind: WorkerKind, fallback: WorkerConfig): WorkerConfig => {
+      const value = parsed[kind] ?? fallback;
+      const runArgsValue = value.runArgs ?? fallback.runArgs;
+      const legacyRunArgs = kind === "iflow" && runArgsValue.trim() === "run";
+      return {
+        executable: value.executable ?? fallback.executable,
+        runArgs: legacyRunArgs ? "-p" : runArgsValue,
+        consoleArgs: value.consoleArgs ?? fallback.consoleArgs,
+        probeArgs: value.probeArgs ?? fallback.probeArgs,
+        dangerMode: value.dangerMode ?? fallback.dangerMode
+      };
+    };
     return {
-      claude: parsed.claude ?? DEFAULT_WORKER_CONFIGS.claude,
-      codex: parsed.codex ?? DEFAULT_WORKER_CONFIGS.codex,
-      iflow: parsed.iflow ?? DEFAULT_WORKER_CONFIGS.iflow
+      claude: normalize("claude", DEFAULT_WORKER_CONFIGS.claude),
+      codex: normalize("codex", DEFAULT_WORKER_CONFIGS.codex),
+      iflow: normalize("iflow", DEFAULT_WORKER_CONFIGS.iflow)
     };
   } catch {
     return DEFAULT_WORKER_CONFIGS;

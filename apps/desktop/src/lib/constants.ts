@@ -14,9 +14,9 @@ export const WORKER_KINDS: { kind: WorkerKind; label: string }[] = [
 ];
 
 export const DEFAULT_WORKER_CONFIGS: Record<WorkerKind, WorkerConfig> = {
-  claude: { executable: "claude", runArgs: "-p", probeArgs: "--version" },
-  codex: { executable: "codex", runArgs: "exec", probeArgs: "--version" },
-  iflow: { executable: "iflow", runArgs: "run", probeArgs: "--version" }
+  claude: { executable: "claude", runArgs: "-p", consoleArgs: "", probeArgs: "--version", dangerMode: false },
+  codex: { executable: "codex", runArgs: "exec", consoleArgs: "", probeArgs: "--version", dangerMode: false },
+  iflow: { executable: "iflow", runArgs: "-p", consoleArgs: "", probeArgs: "--version", dangerMode: false }
 };
 
 export const DEFAULT_MCP_CONFIG: McpServerConfig = {

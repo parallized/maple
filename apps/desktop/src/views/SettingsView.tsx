@@ -10,7 +10,12 @@ type SettingsViewProps = {
   workerConfigs: Record<WorkerKind, WorkerConfig>;
   theme: ThemeMode;
   onMcpConfigChange: (updater: (prev: McpServerConfig) => McpServerConfig) => void;
-  onWorkerConfigChange: (kind: WorkerKind, field: keyof WorkerConfig, value: string) => void;
+  onWorkerConfigChange: (
+    kind: WorkerKind,
+    field: "executable" | "runArgs" | "consoleArgs" | "probeArgs",
+    value: string
+  ) => void;
+  onWorkerDangerModeChange: (kind: WorkerKind, value: boolean) => void;
   onProbeWorker: (kind: WorkerKind) => void;
   onStartMcpServer: () => void;
   onStopMcpServer: () => void;
@@ -26,6 +31,7 @@ export function SettingsView({
   theme,
   onMcpConfigChange,
   onWorkerConfigChange,
+  onWorkerDangerModeChange,
   onProbeWorker,
   onStartMcpServer,
   onStopMcpServer,
@@ -165,7 +171,13 @@ export function SettingsView({
                             className="ui-input ui-input--xs w-full"
                             value={config.runArgs}
                             onChange={(event) => onWorkerConfigChange(kind, "runArgs", event.target.value)}
-                            placeholder="执行参数（例如：exec 或 -p）"
+                            placeholder="任务执行参数（例如：exec 或 -p）"
+                          />
+                          <input
+                            className="ui-input ui-input--xs w-full"
+                            value={config.consoleArgs}
+                            onChange={(event) => onWorkerConfigChange(kind, "consoleArgs", event.target.value)}
+                            placeholder="控制台参数（默认留空进入交互）"
                           />
                           <input
                             className="ui-input ui-input--xs w-full"
@@ -173,6 +185,15 @@ export function SettingsView({
                             onChange={(event) => onWorkerConfigChange(kind, "probeArgs", event.target.value)}
                             placeholder="探测参数（例如：--version）"
                           />
+                          <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="ui-checkbox"
+                              checked={config.dangerMode}
+                              onChange={(event) => onWorkerDangerModeChange(kind, event.target.checked)}
+                            />
+                            启用危险模式（跳过审批）
+                          </label>
                         </div>
                       </td>
                       <td>
