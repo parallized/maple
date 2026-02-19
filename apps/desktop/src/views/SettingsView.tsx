@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react";
 import { FadeContent } from "../components/ReactBits";
-import { WORKER_KINDS } from "../lib/constants";
+import { WORKER_KINDS, DEFAULT_MCP_CONFIG } from "../lib/constants";
 import type { ThemeMode } from "../lib/constants";
 import type { McpServerConfig, McpServerStatus, WorkerConfig, WorkerKind } from "../domain";
 
@@ -38,10 +38,16 @@ export function SettingsView({
       <section>
         <h2 className="text-xl font-semibold m-0">设置</h2>
         <div className="ui-card p-4 mt-3">
-          <h3 className="flex items-center gap-1.5 m-0 font-semibold">
-            <Icon icon="mingcute:plug-2-line" />
-            MCP Server
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+              <Icon icon="mingcute:plug-2-line" />
+              MCP Server
+            </h3>
+            <span className={`ui-badge ${mcpStatus.running ? "ui-badge--success" : "ui-badge--error"}`}>
+              <span className={`status-dot ${mcpStatus.running ? "status-done" : "status-blocked"}`} />
+              {mcpStatus.running ? "运行中" : "未运行"}
+            </span>
+          </div>
           <div className="grid gap-2 mt-3">
             <input
               className="ui-input ui-input--sm w-full"
@@ -72,6 +78,19 @@ export function SettingsView({
             </label>
           </div>
           <div className="flex gap-2 flex-wrap mt-3">
+            {!mcpConfig.executable.trim() ? (
+              <button
+                type="button"
+                className="ui-btn ui-btn--sm ui-btn--accent gap-1"
+                onClick={() => {
+                  onMcpConfigChange(() => ({ ...DEFAULT_MCP_CONFIG, autoStart: true }));
+                  setTimeout(onStartMcpServer, 100);
+                }}
+              >
+                <Icon icon="mingcute:flash-line" />
+                快速配置
+              </button>
+            ) : null}
             <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={onStartMcpServer}>
               <Icon icon="mingcute:play-circle-line" />
               启动
@@ -85,10 +104,15 @@ export function SettingsView({
               刷新状态
             </button>
           </div>
-          <p className="text-muted text-sm mt-2">
-            当前状态：{mcpStatus.running ? `运行中（PID ${mcpStatus.pid ?? "?"}）` : "未运行"}
-            {mcpStatus.command ? ` | ${mcpStatus.command}` : ""}
-          </p>
+          {mcpStatus.running ? (
+            <p className="text-muted text-sm mt-2">
+              PID {mcpStatus.pid ?? "?"}{mcpStatus.command ? ` | ${mcpStatus.command}` : ""}
+            </p>
+          ) : (
+            <p className="text-sm mt-2" style={{ color: "var(--color-error, #d47049)" }}>
+              Worker 验证和任务执行需要 MCP Server 处于运行状态。
+            </p>
+          )}
         </div>
 
         <div className="ui-card p-4 mt-3">
@@ -97,14 +121,22 @@ export function SettingsView({
               <Icon icon="mingcute:ai-line" />
               Worker 接入
             </h3>
-            <button
-              type="button"
-              className="ui-btn ui-btn--sm ui-btn--ghost gap-1"
-              onClick={onOpenConsole}
-            >
-              <Icon icon="mingcute:terminal-box-line" />
-              控制台
-            </button>
+            <div className="flex items-center gap-2">
+              {!mcpStatus.running ? (
+                <span className="ui-badge ui-badge--warning">
+                  <Icon icon="mingcute:alert-line" className="text-xs" />
+                  需要 MCP
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className="ui-btn ui-btn--sm ui-btn--ghost gap-1"
+                onClick={onOpenConsole}
+              >
+                <Icon icon="mingcute:terminal-box-line" />
+                控制台
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto mt-3">
             <table className="ui-table">

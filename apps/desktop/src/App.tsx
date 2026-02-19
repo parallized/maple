@@ -97,10 +97,8 @@ export function App() {
     let unlisten: (() => void) | undefined;
     void (async () => {
       unlisten = await listen<WorkerLogEvent>("maple://worker-log", (event) => {
-        const { workerId, taskTitle, stream, line } = event.payload;
-        const taskPrefix = taskTitle ? `[${taskTitle}] ` : "";
-        const prefix = stream === "stderr" ? "[stderr] " : "";
-        setWorkerLogs((prev) => ({ ...prev, [workerId]: `${prev[workerId] ?? ""}${taskPrefix}${prefix}${line}\n` }));
+        const { workerId, line } = event.payload;
+        setWorkerLogs((prev) => ({ ...prev, [workerId]: `${prev[workerId] ?? ""}${line}\n` }));
         const permissionPattern = /\b(allow|approve|permit|confirm|accept)\b.*\?|\[y\/n\]|\[Y\/n\]|\[y\/N\]|\(yes\/no\)|\(y\/n\)/i;
         if (permissionPattern.test(line)) setPermissionPrompt({ workerId, question: line });
       });
@@ -195,6 +193,26 @@ export function App() {
     setSelectedTaskId(null);
   }
 
+  // ── MCP Guard ──
+  async function ensureMcpRunning(): Promise<boolean> {
+    if (!isTauri) return true;
+    await refreshMcpStatus();
+    if (mcpStatus.running) return true;
+    // Attempt auto-start
+    if (mcpConfig.executable.trim()) {
+      await startMcpServer(true);
+      await refreshMcpStatus();
+    }
+    // Re-read latest status
+    try {
+      const status = await invoke<McpServerStatus>("mcp_server_status");
+      setMcpStatus(status);
+      return status.running;
+    } catch {
+      return false;
+    }
+  }
+
   // ── Worker Execution ──
   async function runWorkerCommand(workerId: string, config: WorkerConfig, task: Task, project: Project): Promise<WorkerCommandResult> {
     if (!isTauri) return { success: false, code: null, stdout: "", stderr: "当前环境无法执行 Worker CLI。" };
@@ -208,14 +226,17 @@ export function App() {
     const label = WORKER_KINDS.find((w) => w.kind === kind)?.label ?? kind;
     if (!config.executable.trim()) { setNotice(`${label} 未配置 executable。`); return; }
     if (!isTauri) { setNotice("当前环境无法探测 Worker。"); return; }
+    // Gate on MCP
+    const mcpOk = await ensureMcpRunning();
+    if (!mcpOk) { setNotice(`MCP Server 未运行，请先在设置中启动 MCP。`); return; }
     const args = parseArgs(config.probeArgs);
     try {
       const result = await invoke<WorkerCommandResult>("probe_worker", { executable: config.executable, args, cwd: "" });
       const workerId = `worker-${kind}`;
       appendWorkerLog(workerId, `\n$ ${config.executable} ${args.join(" ")}\n`);
       if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
-      if (result.stderr.trim()) appendWorkerLog(workerId, `[stderr] ${result.stderr.trim()}\n`);
-      setNotice(result.success ? `${label} 可用` : `${label} 不可用（exit: ${result.code ?? "?"}）`);
+      if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
+      setNotice(result.success ? `${label} 可用（MCP ✓）` : `${label} 不可用（exit: ${result.code ?? "?"}）`);
     } catch (error) {
       appendWorkerLog(`worker-${kind}`, `\n${label} 探测失败：${String(error)}\n`);
       setNotice(`${label} 探测失败。`);
@@ -231,6 +252,9 @@ export function App() {
     const config = workerConfigs[kind];
     const label = WORKER_KINDS.find((w) => w.kind === kind)?.label ?? kind;
     if (!config.executable.trim()) { setNotice(`请先在进度页配置 ${label} 命令。`); return; }
+    // Gate on MCP
+    const mcpOk = await ensureMcpRunning();
+    if (!mcpOk) { setNotice("MCP Server 未运行，无法执行任务。请先在设置中启动 MCP。"); return; }
     const pendingTasks = project.tasks.filter((t) => t.status !== "已完成");
     if (pendingTasks.length === 0) { setNotice("没有待执行任务。"); return; }
     const nextVersion = bumpPatch(project.version);
@@ -241,12 +265,10 @@ export function App() {
     for (const task of pendingTasks) {
       updateTask(project.id, task.id, (c) => ({ ...c, status: "进行中" }));
       try {
-        appendWorkerLog(workerId, `\n—— ${task.title} ——\n`);
         const result = await runWorkerCommand(workerId, config, task, project);
-        appendWorkerLog(workerId, `[exit ${result.code ?? "?"}] ${result.success ? "完成" : "失败"}\n`);
         if (!isTauri) {
           if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
-          if (result.stderr.trim()) appendWorkerLog(workerId, `[stderr] ${result.stderr.trim()}\n`);
+          if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
         }
         if (result.success) {
           updateTask(project.id, task.id, (c) => {
