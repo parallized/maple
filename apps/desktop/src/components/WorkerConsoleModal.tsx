@@ -7,9 +7,7 @@ type WorkerConsoleModalProps = {
   currentWorkerLog: string;
   consoleInput: string;
   runningWorkers: Set<string>;
-  workerLogs: Record<string, string>;
   onClose: () => void;
-  onWorkerSelect: (workerId: string) => void;
   onConsoleInputChange: (value: string) => void;
   onSendCommand: (workerId: string, input: string) => void;
   onStopWorker: (workerId: string) => void;
@@ -22,9 +20,7 @@ export function WorkerConsoleModal({
   currentWorkerLog,
   consoleInput,
   runningWorkers,
-  workerLogs,
   onClose,
-  onWorkerSelect,
   onConsoleInputChange,
   onSendCommand,
   onStopWorker,
@@ -49,20 +45,7 @@ export function WorkerConsoleModal({
         <div className="worker-console-header">
           <div className="worker-console-meta">
             <h3 className="m-0 font-semibold">Worker 控制台</h3>
-            <label className="worker-console-select-wrap">
-              <span className="text-muted text-xs">当前 Worker</span>
-              <select
-                className="ui-input ui-input--sm worker-console-select"
-                value={workerConsoleWorkerId}
-                onChange={(event) => onWorkerSelect(event.target.value)}
-              >
-                {WORKER_KINDS.map(({ kind, label }) => (
-                  <option key={kind} value={`worker-${kind}`}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <p className="m-0 text-muted text-xs">当前 Worker：{currentWorkerLabel}</p>
             <p className="m-0 text-muted text-xs">
               {isRunning ? `${currentWorkerLabel} 会话运行中，输入将直接发送到 CLI。` : `${currentWorkerLabel} 未连接会话，输入后将自动开始交互。`}
             </p>
@@ -83,7 +66,7 @@ export function WorkerConsoleModal({
               type="button"
               className="ui-btn ui-btn--xs ui-btn--outline gap-1"
               onClick={async () => {
-                const text = workerConsoleWorkerId ? workerLogs[workerConsoleWorkerId] ?? "" : "";
+                const text = currentWorkerLog;
                 if (!text.trim()) {
                   onNotice("当前没有可复制的日志。");
                   return;
@@ -95,7 +78,7 @@ export function WorkerConsoleModal({
                   onNotice("复制失败，请稍后重试。");
                 }
               }}
-              disabled={!workerConsoleWorkerId}
+              disabled={!workerConsoleWorkerId || !currentWorkerLog.trim()}
             >
               <Icon icon="mingcute:copy-2-line" />
               复制

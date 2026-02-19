@@ -193,9 +193,17 @@ export function BoardView({
 
       {selectedTask && detailMode === "sidebar" ? (
         <div className="detail-sidebar">
+          <button
+            type="button"
+            className="detail-sidebar-close ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn"
+            onClick={() => onSelectTask(null)}
+            aria-label="关闭侧边栏"
+          >
+            <Icon icon="mingcute:close-line" />
+          </button>
           <TaskDetailPanel
             task={selectedTask}
-            onClose={() => onSelectTask(null)}
+            onClose={undefined}
             onDelete={() => onDeleteTask(boardProject.id, selectedTask.id)}
           />
         </div>

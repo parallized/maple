@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react";
 import type { Task } from "../domain";
+import { relativeTimeZh } from "../lib/utils";
 
 type TaskDetailPanelProps = {
   task: Task;
@@ -7,10 +8,18 @@ type TaskDetailPanelProps = {
   onDelete?: () => void;
 };
 
-function formatDateTime(value: string): string {
+function formatRelativeTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return "—";
+  }
+  return relativeTimeZh(value);
+}
+
+function formatAbsoluteTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
   }
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
 }
@@ -61,11 +70,15 @@ export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProp
         </div>
         <div className="task-prop flex justify-between items-center gap-3">
           <span className="text-muted text-sm whitespace-nowrap">创建时间</span>
-          <span className="text-sm">{formatDateTime(task.createdAt)}</span>
+          <span className="text-sm" title={formatAbsoluteTime(task.createdAt)}>
+            {formatRelativeTime(task.createdAt)}
+          </span>
         </div>
         <div className="task-prop flex justify-between items-center gap-3">
           <span className="text-muted text-sm whitespace-nowrap">上次调整</span>
-          <span className="text-sm">{formatDateTime(task.updatedAt)}</span>
+          <span className="text-sm" title={formatAbsoluteTime(task.updatedAt)}>
+            {formatRelativeTime(task.updatedAt)}
+          </span>
         </div>
       </div>
 
@@ -78,7 +91,9 @@ export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProp
             <article key={report.id} className="ui-card p-3">
               <div className="flex justify-between items-center gap-2 mb-2 text-sm">
                 <strong>{report.author}</strong>
-                <span className="text-muted">{formatDateTime(report.createdAt)}</span>
+                <span className="text-muted" title={formatAbsoluteTime(report.createdAt)}>
+                  {formatRelativeTime(report.createdAt)}
+                </span>
               </div>
               <pre className="bg-[color:var(--color-base-200)] rounded-lg p-3 text-xs whitespace-pre-wrap break-words m-0 border-0">
                 {report.content}

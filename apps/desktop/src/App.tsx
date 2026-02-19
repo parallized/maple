@@ -12,9 +12,18 @@ import { OverviewView } from "./views/OverviewView";
 import { BoardView } from "./views/BoardView";
 import { SettingsView } from "./views/SettingsView";
 
-import { STORAGE_PROJECTS, STORAGE_WORKER_CONFIGS, STORAGE_MCP_CONFIG, STORAGE_THEME, WORKER_KINDS } from "./lib/constants";
+import {
+  DEFAULT_MCP_CONFIG,
+  DEFAULT_WORKER_CONFIGS,
+  STORAGE_MCP_CONFIG,
+  STORAGE_PROJECTS,
+  STORAGE_THEME,
+  STORAGE_WORKER_CONFIGS,
+  WORKER_KINDS
+} from "./lib/constants";
 import type { ThemeMode } from "./lib/constants";
 import { hasTauriRuntime, applyTheme, bumpPatch, parseArgs, deriveProjectName, createTask, createTaskReport, buildConclusionReport } from "./lib/utils";
+import { queryProjectTodos, queryRecentContext } from "./lib/mcpTools";
 import { loadProjects, loadWorkerConfigs, loadMcpServerConfig, loadTheme } from "./lib/storage";
 
 import type {
@@ -40,6 +49,9 @@ export function App() {
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => loadWorkerConfigs());
   const [mcpConfig, setMcpConfig] = useState<McpServerConfig>(() => loadMcpServerConfig());
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
+  const [mcpProjectQuery, setMcpProjectQuery] = useState("");
+  const [mcpKeywordQuery, setMcpKeywordQuery] = useState("");
+  const [mcpQueryResult, setMcpQueryResult] = useState("");
   const [boardProjectId, setBoardProjectId] = useState<string | null>(null);
   const [pickerForProject, setPickerForProject] = useState<string | null>(null);
   const [releaseReport, setReleaseReport] = useState<string>("");
@@ -87,8 +99,8 @@ export function App() {
 
   // ── Tauri Event Listeners ──
   useEffect(() => {
-    if (!isTauri) return;
     void refreshMcpStatus();
+    if (!isTauri) return;
     if (mcpConfig.autoStart) void startMcpServer(true);
     void getCurrentWindow().isMaximized().then(setWindowMaximized).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,6 +213,94 @@ export function App() {
     setProjects((prev) => prev.map((p) => p.id === projectId ? { ...p, workerKind: kind } : p));
   }
 
+  function createBuiltinMcpStatus(): McpServerStatus {
+    return { running: true, pid: null, command: "Maple MCP（内置）" };
+  }
+
+  function cloneDefaultWorkerConfigs(): Record<WorkerKind, WorkerConfig> {
+    return WORKER_KINDS.reduce((acc, item) => {
+      acc[item.kind] = { ...DEFAULT_WORKER_CONFIGS[item.kind] };
+      return acc;
+    }, {} as Record<WorkerKind, WorkerConfig>);
+  }
+
+  function formatTime(isoTime: string): string {
+    const parsed = new Date(isoTime);
+    if (Number.isNaN(parsed.getTime())) return isoTime;
+    return parsed.toLocaleString("zh-CN", { hour12: false });
+  }
+
+  function compactText(input: string, maxLength = 160): string {
+    const plain = input.replace(/\s+/g, " ").trim();
+    if (plain.length <= maxLength) return plain;
+    return `${plain.slice(0, maxLength - 1)}…`;
+  }
+
+  function runMcpTodoQuery() {
+    const projectName = mcpProjectQuery.trim() || (boardProject?.name ?? "");
+    if (!projectName) {
+      setNotice("请先输入项目名。");
+      return;
+    }
+    const todos = queryProjectTodos(projects, projectName);
+    if (todos.length === 0) {
+      setMcpQueryResult([
+        `query_project_todos(project="${projectName}")`,
+        "",
+        "未找到匹配项目，或该项目暂无未完成任务。"
+      ].join("\n"));
+      setMcpProjectQuery(projectName);
+      return;
+    }
+    const lines: string[] = [`query_project_todos(project="${projectName}")`, ""];
+    for (const [index, todo] of todos.entries()) {
+      const tagText = todo.tags.length ? ` | 标签：${todo.tags.join("、")}` : "";
+      lines.push(`${index + 1}. [${todo.status}] ${todo.title}`);
+      lines.push(`   更新时间：${formatTime(todo.updatedAt)}${tagText}`);
+    }
+    setMcpProjectQuery(projectName);
+    setMcpQueryResult(lines.join("\n"));
+  }
+
+  function runMcpRecentQuery() {
+    const keyword = mcpKeywordQuery.trim();
+    const items = queryRecentContext(projects, workerLogs, keyword, 10);
+    const header = keyword
+      ? `query_recent_context(limit=10, keyword="${keyword}")`
+      : "query_recent_context(limit=10)";
+    if (items.length === 0) {
+      setMcpQueryResult([header, "", keyword ? "没有匹配该关键词的上下文。" : "暂无上下文记录。"].join("\n"));
+      return;
+    }
+    const lines: string[] = [header, ""];
+    for (const [index, item] of items.entries()) {
+      const sourceLabel = item.source === "report" ? "任务报告" : "Worker 日志";
+      lines.push(`${index + 1}. [${sourceLabel}] ${item.project} / ${item.taskTitle}`);
+      lines.push(`   时间：${formatTime(item.createdAt)}`);
+      lines.push(`   内容：${compactText(item.text)}`);
+      lines.push("");
+    }
+    setMcpQueryResult(lines.join("\n").trim());
+  }
+
+  function applyRecommendedSetup() {
+    setMcpConfig(() => ({ ...DEFAULT_MCP_CONFIG, autoStart: true }));
+    setWorkerConfigs(cloneDefaultWorkerConfigs());
+    setMcpStatus(createBuiltinMcpStatus());
+    setNotice("已应用推荐配置：内置 Maple MCP 与默认 Worker 参数。");
+  }
+
+  function openWorkerConsole(preferredKind?: WorkerKind) {
+    const fallbackKind =
+      preferredKind
+      ?? boardProject?.workerKind
+      ?? projects.find((project) => project.workerKind)?.workerKind
+      ?? WORKER_KINDS[0]?.kind
+      ?? "claude";
+    setWorkerConsoleWorkerId(`worker-${fallbackKind}`);
+    setWorkerConsoleOpen(true);
+  }
+
   // ── Project Management ──
   async function pickStandaloneDirectory(): Promise<string | null> {
     if (!isTauri) { setNotice("目录选择仅支持桌面端。"); return null; }
@@ -228,14 +328,20 @@ export function App() {
 
   // ── MCP Guard ──
   async function ensureMcpRunning(): Promise<boolean> {
-    if (!isTauri) return true;
-    await refreshMcpStatus();
-    if (mcpStatus.running) return true;
-    // Attempt auto-start
-    if (mcpConfig.executable.trim()) {
-      await startMcpServer(true);
-      await refreshMcpStatus();
+    if (!mcpConfig.executable.trim()) {
+      setMcpStatus(createBuiltinMcpStatus());
+      return true;
     }
+    if (!isTauri) return true;
+    try {
+      const current = await invoke<McpServerStatus>("mcp_server_status");
+      setMcpStatus(current);
+      if (current.running) return true;
+    } catch {
+      return false;
+    }
+    // Attempt auto-start
+    await startMcpServer(true);
     // Re-read latest status
     try {
       const status = await invoke<McpServerStatus>("mcp_server_status");
@@ -251,7 +357,14 @@ export function App() {
     if (!isTauri) return { success: false, code: null, stdout: "", stderr: "当前环境无法执行 Worker CLI。" };
     const kind = WORKER_KINDS.find((entry) => `worker-${entry.kind}` === workerId)?.kind;
     const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
-    const prompt = ["[Maple Worker Task]", `Project: ${project.name}`, `Directory: ${project.directory}`, `Task: ${task.title}`, "请执行任务并输出中文结论报告，包含：结论、变更、验证。"].join("\n");
+    const prompt = [
+      "[Maple Worker Task]",
+      `Project: ${project.name}`,
+      `Directory: ${project.directory}`,
+      `Task: ${task.title}`,
+      "请执行任务，并在完成后通过可用 MCP/Skills 产出结果归档。",
+      "终端最后请输出一个 JSON 代码块（```json ... ```），字段包含：conclusion, changes[], verification[]。"
+    ].join("\n");
     return invoke<WorkerCommandResult>("run_worker", { workerId, taskTitle: task.title, executable: config.executable, args, prompt, cwd: project.directory });
   }
 
@@ -270,7 +383,10 @@ export function App() {
       appendWorkerLog(workerId, `\n$ ${config.executable} ${args.join(" ")}\n`);
       if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
       if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
-      setNotice(result.success ? `${label} 可用（MCP ✓）` : `${label} 不可用（exit: ${result.code ?? "?"}）`);
+      if (result.success) {
+        appendWorkerLog(workerId, "[提示] 验证通过：仅表示 CLI 可执行，未校验 MCP 挂载是否成功。\n");
+      }
+      setNotice(result.success ? `${label} CLI 可用（未校验 MCP 挂载）` : `${label} 不可用（exit: ${result.code ?? "?"}）`);
     } catch (error) {
       appendWorkerLog(`worker-${kind}`, `\n${label} 探测失败：${String(error)}\n`);
       setNotice(`${label} 探测失败。`);
@@ -293,11 +409,12 @@ export function App() {
     if (pendingTasks.length === 0) { setNotice("没有待执行任务。"); return; }
     const nextVersion = bumpPatch(project.version);
     const workerId = `worker-${kind}`;
-    setWorkerConsoleWorkerId(workerId);
-    setWorkerConsoleOpen(true);
+    openWorkerConsole(kind);
+    appendWorkerLog(workerId, `\n[系统] 开始执行 ${pendingTasks.length} 个待办任务。\n`);
 
     for (const task of pendingTasks) {
       updateTask(project.id, task.id, (c) => ({ ...c, status: "进行中" }));
+      appendWorkerLog(workerId, `[任务] 开始：${task.title || "(无标题)"}\n`);
       try {
         const result = await runWorkerCommand(workerId, config, task, project);
         if (!isTauri) {
@@ -310,14 +427,17 @@ export function App() {
             tags.add("自动完成"); tags.add(`v${nextVersion}`); tags.add(label);
             return { ...c, status: "已完成", tags: [...tags], version: nextVersion, reports: [...c.reports, createTaskReport(label, buildConclusionReport(result, task.title))] };
           });
+          appendWorkerLog(workerId, `[任务] 完成：${task.title || "(无标题)"}\n`);
         } else {
           updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, createTaskReport(label, buildConclusionReport(result, task.title))] }));
+          appendWorkerLog(workerId, `[任务] 失败：${task.title || "(无标题)"}（exit ${result.code ?? "?"}）\n`);
         }
       } catch (error) {
         appendWorkerLog(workerId, `[error] ${task.title}: ${String(error)}\n`);
         updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, createTaskReport(label, `执行异常：${String(error)}`)] }));
       }
     }
+    appendWorkerLog(workerId, `[系统] 批量执行结束。\n`);
     setNotice(`已触发 ${label} 执行 ${pendingTasks.length} 个任务。`);
   }
 
@@ -383,14 +503,22 @@ export function App() {
 
   // ── MCP Server ──
   async function refreshMcpStatus() {
+    if (!mcpConfig.executable.trim()) {
+      setMcpStatus(createBuiltinMcpStatus());
+      return;
+    }
     if (!isTauri) { setMcpStatus({ running: false, pid: null, command: "" }); return; }
     try { setMcpStatus(await invoke<McpServerStatus>("mcp_server_status")); }
     catch (error) { setNotice(`获取 MCP Server 状态失败：${String(error)}`); }
   }
 
   async function startMcpServer(silent = false) {
+    if (!mcpConfig.executable.trim()) {
+      setMcpStatus(createBuiltinMcpStatus());
+      if (!silent) setNotice("内置 Maple MCP 已就绪。");
+      return;
+    }
     if (!isTauri) { if (!silent) setNotice("当前环境无法启动 MCP Server。"); return; }
-    if (!mcpConfig.executable.trim()) { if (!silent) setNotice("请先填写 MCP Server executable。"); return; }
     try {
       const status = await invoke<McpServerStatus>("start_mcp_server", { executable: mcpConfig.executable, args: parseArgs(mcpConfig.args), cwd: mcpConfig.cwd });
       setMcpStatus(status);
@@ -399,6 +527,11 @@ export function App() {
   }
 
   async function stopMcpServer() {
+    if (!mcpConfig.executable.trim()) {
+      setMcpStatus(createBuiltinMcpStatus());
+      setNotice("当前使用内置 MCP，无需停止。");
+      return;
+    }
     if (!isTauri) { setNotice("当前环境无法停止 MCP Server。"); return; }
     try { setMcpStatus(await invoke<McpServerStatus>("stop_mcp_server")); setNotice("MCP Server 已停止。"); }
     catch (error) { setNotice(`MCP Server 停止失败：${String(error)}`); }
@@ -447,7 +580,10 @@ export function App() {
           onViewChange={setView}
           onProjectSelect={(id) => { setBoardProjectId(id); setView("board"); setSelectedTaskId(null); }}
           onCreateProject={() => void createProject()}
-          onToggleConsole={() => setWorkerConsoleOpen(!workerConsoleOpen)}
+          onToggleConsole={() => {
+            if (workerConsoleOpen) setWorkerConsoleOpen(false);
+            else openWorkerConsole();
+          }}
           onMinimize={minimizeWindow}
           onToggleMaximize={toggleWindowMaximize}
           onClose={closeWindow}
@@ -456,7 +592,9 @@ export function App() {
         <div className="main-column">
           <main className="flex-1 overflow-hidden flex flex-col">
             {view === "overview" ? (
-              <OverviewView metrics={metrics} mcpStatus={mcpStatus} />
+              <div className="flex-1 overflow-auto px-0.5">
+                <OverviewView metrics={metrics} mcpStatus={mcpStatus} />
+              </div>
             ) : null}
 
             {view === "board" ? (
@@ -475,31 +613,41 @@ export function App() {
                 onCreateReleaseDraft={createReleaseDraft}
                 onAssignWorkerKind={assignWorkerKind}
                 onSetDetailMode={setDetailMode}
-                onOpenConsole={() => setWorkerConsoleOpen(true)}
+                onOpenConsole={() => openWorkerConsole(boardProject?.workerKind)}
                 onRemoveProject={removeProject}
               />
             ) : null}
 
             {view === "progress" || view === "settings" ? (
-              <SettingsView
-                mcpConfig={mcpConfig}
-                mcpStatus={mcpStatus}
-                workerConfigs={workerConfigs}
-                theme={theme}
-                onMcpConfigChange={setMcpConfig}
-                onWorkerConfigChange={(kind, field, value) =>
-                  setWorkerConfigs((prev) => ({ ...prev, [kind]: { ...prev[kind], [field]: value } }))
-                }
-                onWorkerDangerModeChange={(kind, dangerMode) =>
-                  setWorkerConfigs((prev) => ({ ...prev, [kind]: { ...prev[kind], dangerMode } }))
-                }
-                onProbeWorker={(kind) => void probeWorker(kind)}
-                onStartMcpServer={() => void startMcpServer()}
-                onStopMcpServer={() => void stopMcpServer()}
-                onRefreshMcpStatus={() => void refreshMcpStatus()}
-                onOpenConsole={() => setWorkerConsoleOpen(true)}
-                onThemeChange={setThemeState}
-              />
+              <div className="flex-1 overflow-auto px-0.5">
+                <SettingsView
+                  mcpConfig={mcpConfig}
+                  mcpStatus={mcpStatus}
+                  workerConfigs={workerConfigs}
+                  mcpProjectQuery={mcpProjectQuery}
+                  mcpKeywordQuery={mcpKeywordQuery}
+                  mcpQueryResult={mcpQueryResult}
+                  theme={theme}
+                  onMcpConfigChange={setMcpConfig}
+                  onMcpProjectQueryChange={setMcpProjectQuery}
+                  onMcpKeywordQueryChange={setMcpKeywordQuery}
+                  onRunMcpTodoQuery={runMcpTodoQuery}
+                  onRunMcpRecentQuery={runMcpRecentQuery}
+                  onApplyRecommendedSetup={applyRecommendedSetup}
+                  onWorkerConfigChange={(kind, field, value) =>
+                    setWorkerConfigs((prev) => ({ ...prev, [kind]: { ...prev[kind], [field]: value } }))
+                  }
+                  onWorkerDangerModeChange={(kind, dangerMode) =>
+                    setWorkerConfigs((prev) => ({ ...prev, [kind]: { ...prev[kind], dangerMode } }))
+                  }
+                  onProbeWorker={(kind) => void probeWorker(kind)}
+                  onStartMcpServer={() => void startMcpServer()}
+                  onStopMcpServer={() => void stopMcpServer()}
+                  onRefreshMcpStatus={() => void refreshMcpStatus()}
+                  onOpenConsole={() => openWorkerConsole()}
+                  onThemeChange={setThemeState}
+                />
+              </div>
             ) : null}
           </main>
         </div>
@@ -521,9 +669,7 @@ export function App() {
             currentWorkerLog={currentWorkerLog}
             consoleInput={consoleInput}
             runningWorkers={runningWorkers}
-            workerLogs={workerLogs}
             onClose={() => setWorkerConsoleOpen(false)}
-            onWorkerSelect={setWorkerConsoleWorkerId}
             onConsoleInputChange={setConsoleInput}
             onSendCommand={(wId, input) => void sendConsoleCommand(wId, input)}
             onStopWorker={(wId) => void stopCurrentWorker(wId)}

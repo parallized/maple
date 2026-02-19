@@ -112,17 +112,94 @@ export function getLastMentionTime(task: Task): string {
   return task.createdAt;
 }
 
+function normalizeReportList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+  return [];
+}
+
+function extractJsonCandidate(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const fenced = trimmed.match(/```json\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+  return null;
+}
+
+function parseStructuredReport(text: string): {
+  conclusion: string;
+  changes: string[];
+  verification: string[];
+} | null {
+  const candidate = extractJsonCandidate(text);
+  if (!candidate) return null;
+  try {
+    const parsed = JSON.parse(candidate) as Record<string, unknown>;
+    const conclusion = typeof parsed.conclusion === "string" ? parsed.conclusion.trim() : "";
+    const changes = normalizeReportList(parsed.changes);
+    const verification = normalizeReportList(parsed.verification);
+    if (!conclusion && changes.length === 0 && verification.length === 0) return null;
+    return { conclusion, changes, verification };
+  } catch {
+    return null;
+  }
+}
+
+function formatSection(title: string, items: string[]): string[] {
+  if (items.length === 0) {
+    return [title, "- 无"];
+  }
+  return [title, ...items.map((item) => `- ${item}`)];
+}
+
 export function buildConclusionReport(result: WorkerCommandResult, taskTitle: string): string {
   const stdout = result.stdout.trim();
   const stderr = result.stderr.trim();
+  const structured = parseStructuredReport(stdout) ?? parseStructuredReport(stderr);
 
-  if (stdout) {
-    return stdout;
+  if (structured) {
+    const conclusion = structured.conclusion || (result.success ? "任务已完成并已归档。" : "任务执行失败。");
+    return [
+      `任务：${taskTitle}`,
+      `执行状态：${result.success ? "成功" : "失败"}`,
+      "",
+      `结论：${conclusion}`,
+      "",
+      ...formatSection("变更：", structured.changes),
+      "",
+      ...formatSection("验证：", structured.verification)
+    ].join("\n");
   }
 
-  if (stderr) {
-    return [`任务：${taskTitle}`, "结论：执行完成，但未输出标准报告。", `stderr：${stderr}`].join("\n");
+  const rawOutput = stdout || stderr;
+  if (rawOutput) {
+    const trimmed = rawOutput.length > 4000 ? `${rawOutput.slice(0, 4000)}\n...(输出过长，已截断)` : rawOutput;
+    return [
+      `任务：${taskTitle}`,
+      `执行状态：${result.success ? "成功" : "失败"}`,
+      "",
+      "结论：已执行并自动归档到 Maple。",
+      "",
+      "原始输出：",
+      trimmed
+    ].join("\n");
   }
 
-  return [`任务：${taskTitle}`, "结论：执行完成，但未输出报告内容。"].join("\n");
+  return [
+    `任务：${taskTitle}`,
+    `执行状态：${result.success ? "成功" : "失败"}`,
+    "结论：执行完成，但未收到可归档输出。"
+  ].join("\n");
 }

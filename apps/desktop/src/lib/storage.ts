@@ -57,9 +57,13 @@ export function loadMcpServerConfig(): McpServerConfig {
       return DEFAULT_MCP_CONFIG;
     }
     const parsed = JSON.parse(raw) as Partial<McpServerConfig>;
+    const executable = (parsed.executable ?? DEFAULT_MCP_CONFIG.executable).trim();
+    const args = parsed.args ?? DEFAULT_MCP_CONFIG.args;
+    const isLegacyFilesystemBootstrap =
+      executable === "npx" && args.includes("@modelcontextprotocol/server-filesystem");
     return {
-      executable: parsed.executable ?? DEFAULT_MCP_CONFIG.executable,
-      args: parsed.args ?? DEFAULT_MCP_CONFIG.args,
+      executable: isLegacyFilesystemBootstrap ? "" : executable,
+      args: isLegacyFilesystemBootstrap ? "" : args,
       cwd: parsed.cwd ?? DEFAULT_MCP_CONFIG.cwd,
       autoStart: parsed.autoStart ?? DEFAULT_MCP_CONFIG.autoStart
     };

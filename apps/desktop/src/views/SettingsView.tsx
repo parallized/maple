@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react";
 import { FadeContent } from "../components/ReactBits";
-import { WORKER_KINDS, DEFAULT_MCP_CONFIG } from "../lib/constants";
+import { WORKER_KINDS } from "../lib/constants";
 import type { ThemeMode } from "../lib/constants";
 import type { McpServerConfig, McpServerStatus, WorkerConfig, WorkerKind } from "../domain";
 
@@ -8,8 +8,16 @@ type SettingsViewProps = {
   mcpConfig: McpServerConfig;
   mcpStatus: McpServerStatus;
   workerConfigs: Record<WorkerKind, WorkerConfig>;
+  mcpProjectQuery: string;
+  mcpKeywordQuery: string;
+  mcpQueryResult: string;
   theme: ThemeMode;
   onMcpConfigChange: (updater: (prev: McpServerConfig) => McpServerConfig) => void;
+  onMcpProjectQueryChange: (value: string) => void;
+  onMcpKeywordQueryChange: (value: string) => void;
+  onRunMcpTodoQuery: () => void;
+  onRunMcpRecentQuery: () => void;
+  onApplyRecommendedSetup: () => void;
   onWorkerConfigChange: (
     kind: WorkerKind,
     field: "executable" | "runArgs" | "consoleArgs" | "probeArgs",
@@ -28,8 +36,16 @@ export function SettingsView({
   mcpConfig,
   mcpStatus,
   workerConfigs,
+  mcpProjectQuery,
+  mcpKeywordQuery,
+  mcpQueryResult,
   theme,
   onMcpConfigChange,
+  onMcpProjectQueryChange,
+  onMcpKeywordQueryChange,
+  onRunMcpTodoQuery,
+  onRunMcpRecentQuery,
+  onApplyRecommendedSetup,
   onWorkerConfigChange,
   onWorkerDangerModeChange,
   onProbeWorker,
@@ -55,17 +71,22 @@ export function SettingsView({
             </span>
           </div>
           <div className="grid gap-2 mt-3">
+            {mcpConfig.executable.trim() ? null : (
+              <p className="text-muted text-sm m-0">
+                当前使用内置 Maple MCP，支持最近上下文查询和项目 TODO 查询。
+              </p>
+            )}
             <input
               className="ui-input ui-input--sm w-full"
               value={mcpConfig.executable}
               onChange={(event) => onMcpConfigChange((prev) => ({ ...prev, executable: event.target.value }))}
-              placeholder="启动命令（例如：npx）"
+              placeholder="留空使用内置 Maple MCP（推荐）"
             />
             <input
               className="ui-input ui-input--sm w-full"
               value={mcpConfig.args}
               onChange={(event) => onMcpConfigChange((prev) => ({ ...prev, args: event.target.value }))}
-              placeholder="启动参数（例如：-y @modelcontextprotocol/server-filesystem .）"
+              placeholder="外部 MCP 参数（可选）"
             />
             <input
               className="ui-input ui-input--sm w-full"
@@ -84,19 +105,14 @@ export function SettingsView({
             </label>
           </div>
           <div className="flex gap-2 flex-wrap mt-3">
-            {!mcpConfig.executable.trim() ? (
-              <button
-                type="button"
-                className="ui-btn ui-btn--sm ui-btn--accent gap-1"
-                onClick={() => {
-                  onMcpConfigChange(() => ({ ...DEFAULT_MCP_CONFIG, autoStart: true }));
-                  setTimeout(onStartMcpServer, 100);
-                }}
-              >
-                <Icon icon="mingcute:flash-line" />
-                快速配置
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm ui-btn--accent gap-1"
+              onClick={onApplyRecommendedSetup}
+            >
+              <Icon icon="mingcute:flash-line" />
+              一键装好
+            </button>
             <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={onStartMcpServer}>
               <Icon icon="mingcute:play-circle-line" />
               启动
@@ -122,6 +138,43 @@ export function SettingsView({
         </div>
 
         <div className="ui-card p-4 mt-3">
+          <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+            <Icon icon="mingcute:command-line" />
+            Maple MCP（内置）
+          </h3>
+          <p className="text-muted text-sm mt-2 mb-0">
+            已支持：`query_recent_context(limit=10)`、`query_project_todos(project)`
+          </p>
+          <div className="grid gap-2 mt-3">
+            <div className="flex gap-2">
+              <input
+                className="ui-input ui-input--sm w-full"
+                value={mcpProjectQuery}
+                onChange={(event) => onMcpProjectQueryChange(event.target.value)}
+                placeholder="输入项目名，例如 maple"
+              />
+              <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={onRunMcpTodoQuery}>
+                <Icon icon="mingcute:search-line" />
+                查 TODO
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <input
+                className="ui-input ui-input--sm w-full"
+                value={mcpKeywordQuery}
+                onChange={(event) => onMcpKeywordQueryChange(event.target.value)}
+                placeholder="输入关键词（可空），返回最近 10 条上下文"
+              />
+              <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={onRunMcpRecentQuery}>
+                <Icon icon="mingcute:time-line" />
+                查上下文
+              </button>
+            </div>
+            <textarea className="ui-textarea w-full" rows={8} readOnly value={mcpQueryResult || "暂无查询结果"} />
+          </div>
+        </div>
+
+        <div className="ui-card p-4 mt-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="flex items-center gap-1.5 m-0 font-semibold">
               <Icon icon="mingcute:ai-line" />
@@ -144,6 +197,9 @@ export function SettingsView({
               </button>
             </div>
           </div>
+          <p className="text-muted text-xs mt-2 mb-0">
+            说明：验证仅检查 CLI 是否可执行，不代表该 Worker 已成功挂载 MCP。
+          </p>
           <div className="overflow-x-auto mt-3">
             <table className="ui-table">
               <thead>
@@ -199,7 +255,7 @@ export function SettingsView({
                       <td>
                         <button type="button" className="ui-btn ui-btn--xs ui-btn--outline gap-1" onClick={() => onProbeWorker(kind)}>
                           <Icon icon="mingcute:search-line" />
-                          验证
+                          验证 CLI
                         </button>
                       </td>
                     </tr>

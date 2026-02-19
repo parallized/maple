@@ -20,8 +20,8 @@ export const DEFAULT_WORKER_CONFIGS: Record<WorkerKind, WorkerConfig> = {
 };
 
 export const DEFAULT_MCP_CONFIG: McpServerConfig = {
-  executable: "npx",
-  args: "-y @modelcontextprotocol/server-filesystem .",
+  executable: "",
+  args: "",
   cwd: "",
   autoStart: true
 };
