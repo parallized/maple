@@ -24,7 +24,7 @@
   :root:not(.light) {
     color-scheme: dark;
     --color-base-100: #1c1c1e; /* Level 3: Inner Card (Elevated Dark) */
-    --color-base-200: #000000; /* Level 1: Outer Background (Pure Black) */
+    --color-base-200: #121214; /* Level 1: Outer Background (Pure Black) */
     --color-base-300: #2c2c2e;
     --color-base-content: #f5f5f7;
     --color-secondary: #9ca3af;
@@ -42,7 +42,7 @@
 :root.dark {
   color-scheme: dark;
   --color-base-100: #1c1c1e;
-  --color-base-200: #000000;
+  --color-base-200: #121214;
   --color-base-300: #2c2c2e;
   --color-base-content: #f5f5f7;
   --color-secondary: #9ca3af;
@@ -790,32 +790,32 @@ h1, h2, h3 {
   flex: 1;
   min-width: 0;
   background: var(--color-base-100);
-  border: 1px solid color-mix(in srgb, var(--color-base-300) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-base-300) 40%, transparent);
   border-radius: 12px;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 1.25rem 1rem;
   overflow: auto;
 }
 
 /* ── Detail Sidebar ── */
 
 .detail-sidebar {
-  position: fixed;
-  inset: 0 0 0 auto;
   width: 380px;
-  height: 100vh;
+  flex-shrink: 0;
+  height: 100%;
   background: var(--color-base-100);
-  border-left: 1px solid var(--color-base-300);
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.06);
+  border: 1px solid color-mix(in srgb, var(--color-base-300) 40%, transparent);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
   overflow-y: auto;
-  padding: 64px 16px 16px;
-  z-index: 85;
-  animation: slide-in-right 0.15s ease-out;
+  padding: 1.5rem;
+  position: relative;
+  animation: slide-in-right 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .detail-sidebar-close {
   position: absolute;
-  top: 16px;
-  right: 12px;
+  top: 14px;
+  right: 14px;
   z-index: 2;
 }
 

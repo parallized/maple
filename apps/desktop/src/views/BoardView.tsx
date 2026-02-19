@@ -100,65 +100,67 @@ export function BoardView({
   return (
     <section className="h-full max-w-full flex flex-col">
       <div className="board-layout">
-        <aside className="board-sidebar">
-          <div className="flex items-center justify-between gap-1 mb-2">
-            <div className="flex items-center gap-2 min-w-0 px-1">
-              <span className="text-[1.35rem] font-medium truncate tracking-tight text-primary">{boardProject.name}</span>
+        {(!selectedTask || detailMode !== "sidebar") && (
+          <aside className="board-sidebar">
+            <div className="flex items-center justify-between gap-1 mb-2">
+              <div className="flex items-center gap-2 min-w-0 px-1">
+                <span className="text-[1.35rem] font-medium truncate tracking-tight text-primary">{boardProject.name}</span>
+              </div>
+              <PopoverMenu
+                label=""
+                icon="mingcute:more-1-line"
+                align="left"
+                items={
+                  [
+                    { kind: "item", key: "release-draft", label: "版本草稿", icon: "mingcute:send-plane-line", onSelect: () => onCreateReleaseDraft(boardProject.id) },
+                    { kind: "heading", label: "Worker" },
+                    ...WORKER_KINDS.map(({ kind, label }) => ({
+                      kind: "item" as const,
+                      key: `worker-${kind}`,
+                      label,
+                      icon: "mingcute:ai-line",
+                      checked: boardProject.workerKind === kind,
+                      onSelect: () => onAssignWorkerKind(boardProject.id, kind)
+                    })),
+                    { kind: "heading", label: "详情展示" },
+                    { kind: "item", key: "detail-sidebar", label: "右侧边栏", icon: "mingcute:layout-right-line", checked: detailMode === "sidebar", onSelect: () => onSetDetailMode("sidebar") },
+                    { kind: "item", key: "detail-modal", label: "弹出式", icon: "mingcute:layout-grid-line", checked: detailMode === "modal", onSelect: () => onSetDetailMode("modal") },
+                    { kind: "heading", label: "" },
+                    { kind: "item", key: "remove-project", label: "删除项目", icon: "mingcute:delete-2-line", onSelect: () => onRemoveProject(boardProject.id) }
+                  ] satisfies PopoverMenuItem[]
+                }
+              />
             </div>
-            <PopoverMenu
-              label=""
-              icon="mingcute:more-1-line"
-              align="left"
-              items={
-                [
-                  { kind: "item", key: "release-draft", label: "版本草稿", icon: "mingcute:send-plane-line", onSelect: () => onCreateReleaseDraft(boardProject.id) },
-                  { kind: "heading", label: "Worker" },
-                  ...WORKER_KINDS.map(({ kind, label }) => ({
-                    kind: "item" as const,
-                    key: `worker-${kind}`,
-                    label,
-                    icon: "mingcute:ai-line",
-                    checked: boardProject.workerKind === kind,
-                    onSelect: () => onAssignWorkerKind(boardProject.id, kind)
-                  })),
-                  { kind: "heading", label: "详情展示" },
-                  { kind: "item", key: "detail-sidebar", label: "右侧边栏", icon: "mingcute:layout-right-line", checked: detailMode === "sidebar", onSelect: () => onSetDetailMode("sidebar") },
-                  { kind: "item", key: "detail-modal", label: "弹出式", icon: "mingcute:layout-grid-line", checked: detailMode === "modal", onSelect: () => onSetDetailMode("modal") },
-                  { kind: "heading", label: "" },
-                  { kind: "item", key: "remove-project", label: "删除项目", icon: "mingcute:delete-2-line", onSelect: () => onRemoveProject(boardProject.id) }
-                ] satisfies PopoverMenuItem[]
-              }
-            />
-          </div>
 
-          <div className="flex flex-col gap-2.5 mt-2 px-1 mb-8">
-            <div className="flex items-center gap-2 text-[13px] text-muted font-medium">
-              <span className="w-2 h-2 rounded-full bg-(--color-primary) opacity-40" />
-              <span>Version {boardProject.version}</span>
+            <div className="flex flex-col gap-2.5 mt-2 px-1 mb-8">
+              <div className="flex items-center gap-2 text-[13px] text-muted font-medium">
+                <span className="w-2 h-2 rounded-full bg-(--color-primary) opacity-40" />
+                <span>Version {boardProject.version}</span>
+              </div>
+              <div className="flex items-center gap-2 text-[13px] text-muted">
+                <span className="w-2 h-2 rounded-full bg-(--color-base-content) opacity-20" />
+                <span className="truncate opacity-80" title={boardProject.directory}>
+                  {boardProject.directory}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-[13px] text-muted">
-              <span className="w-2 h-2 rounded-full bg-(--color-base-content) opacity-20" />
-              <span className="truncate opacity-80" title={boardProject.directory}>
-                {boardProject.directory}
-              </span>
-            </div>
-          </div>
 
-          <div className="board-sidebar-nav">
-            <button type="button" className="ui-btn ui-btn--sm ui-btn--accent gap-2" onClick={() => onAddTask(boardProject.id)}>
-              <Icon icon="mingcute:add-line" className="text-base" />
-              新建任务
-            </button>
-            <button type="button" className="ui-btn ui-btn--sm gap-2" onClick={() => onCompletePending(boardProject.id)}>
-              <Icon icon="mingcute:check-circle-line" className="text-base" />
-              执行待办
-            </button>
-            <button type="button" className="ui-btn ui-btn--sm gap-2" onClick={onOpenConsole}>
-              <Icon icon="mingcute:terminal-box-line" className="text-base" />
-              控制台
-            </button>
-          </div>
-        </aside>
+            <div className="board-sidebar-nav">
+              <button type="button" className="ui-btn ui-btn--sm ui-btn--accent gap-2" onClick={() => onAddTask(boardProject.id)}>
+                <Icon icon="mingcute:add-line" className="text-base" />
+                新建任务
+              </button>
+              <button type="button" className="ui-btn ui-btn--sm gap-2" onClick={() => onCompletePending(boardProject.id)}>
+                <Icon icon="mingcute:check-circle-line" className="text-base" />
+                执行待办
+              </button>
+              <button type="button" className="ui-btn ui-btn--sm gap-2" onClick={onOpenConsole}>
+                <Icon icon="mingcute:terminal-box-line" className="text-base" />
+                控制台
+              </button>
+            </div>
+          </aside>
+        )}
 
         <div className="board-main">
           <TaskTable
@@ -189,25 +191,25 @@ export function BoardView({
             </div>
           ) : null}
         </div>
-      </div>
 
-      {selectedTask && detailMode === "sidebar" ? (
-        <div className="detail-sidebar">
-          <button
-            type="button"
-            className="detail-sidebar-close ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn"
-            onClick={() => onSelectTask(null)}
-            aria-label="关闭侧边栏"
-          >
-            <Icon icon="mingcute:close-line" />
-          </button>
-          <TaskDetailPanel
-            task={selectedTask}
-            onClose={undefined}
-            onDelete={() => onDeleteTask(boardProject.id, selectedTask.id)}
-          />
-        </div>
-      ) : null}
+        {selectedTask && detailMode === "sidebar" ? (
+          <div className="detail-sidebar">
+            <button
+              type="button"
+              className="detail-sidebar-close ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn"
+              onClick={() => onSelectTask(null)}
+              aria-label="关闭侧边栏"
+            >
+              <Icon icon="mingcute:close-line" />
+            </button>
+            <TaskDetailPanel
+              task={selectedTask}
+              onClose={undefined}
+              onDelete={() => onDeleteTask(boardProject.id, selectedTask.id)}
+            />
+          </div>
+        ) : null}
+      </div>
 
       {detailMode === "modal" && selectedTask ? (
         <div className="ui-modal" role="dialog" aria-modal="true" aria-label="任务详情">

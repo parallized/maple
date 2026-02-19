@@ -62,7 +62,7 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
     <div ref={rootRef} className="popover">
       <button
         type="button"
-        className={`ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn ${open ? "popover-trigger active" : "popover-trigger"}`}
+        className={`ui-btn ui-btn--sm ui-btn--outline ui-icon-btn ${open ? "popover-trigger active" : "popover-trigger"}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
