@@ -25,6 +25,8 @@ This repository is initialized as a monorepo so web, desktop, and mobile clients
 
 - `docs/mcp-skills-setup.md`
 - `docs/windsurf-maple-setup.md`
+- `scripts/installers/` (one-click installers for Codex / Claude / iFlow)
+- `scripts/maple-install.sh` (single entry for all installers)
 
 ## Next milestones
 

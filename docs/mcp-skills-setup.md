@@ -7,9 +7,9 @@
 
 ## 与 Notion 的关系（关键）
 
-- `Maple MCP + Maple Skills` 是应用内能力，和 Notion 没有强依赖。
-- 只有在使用 NPT（Notion Project Tracker）同步任务时，才需要额外接入 Notion MCP。
-- 不使用 NPT 时，Maple 仍可正常运行本地 MCP/Skills 流程。
+- `Maple MCP + Maple Skills` 是应用内能力，默认不连接 Notion。
+- NPT 是 Maple 的外部辅助工具，仅在任务流转自动化场景下可选接入 Notion。
+- Maple App 自身功能不应依赖 Notion。
 
 ## 在 Maple 仓库内安装
 
@@ -43,15 +43,16 @@ pnpm typecheck
 pnpm build
 ```
 
-## （可选）接入 Notion MCP（仅 NPT 需要）
+## 默认 Maple MCP（本地）
+
+默认建议使用本地 `maple` MCP（stdio）：
 
 ```bash
-codex mcp add notion --url https://mcp.notion.com/mcp
-codex mcp login notion
+codex mcp add maple -- npx -y @modelcontextprotocol/server-filesystem /ABS/PATH/TO/maple
 codex mcp list
 ```
 
-`codex mcp list` 中出现 `notion` 且状态正常，即安装完成。
+`/ABS/PATH/TO/maple` 替换为本机路径。
 
 ## （可选）Codex 侧安装 Skills
 
@@ -64,3 +65,19 @@ codex mcp list
 如果你在 Windsurf 中使用 Maple，请参考：
 
 - `docs/windsurf-maple-setup.md`
+
+## 一键安装脚本
+
+仓库内提供三套 CLI 安装脚本（MCP + Skills）：
+
+```bash
+bash scripts/maple-install.sh
+```
+
+或按 CLI 单独安装：
+
+```bash
+bash scripts/installers/install-maple-codex.sh
+bash scripts/installers/install-maple-claude.sh
+bash scripts/installers/install-maple-iflow.sh
+```
