@@ -5,11 +5,11 @@
 - `packages/mcp-tools`：Maple MCP 工具能力（项目待办查询、最近上下文查询、工具清单）
 - `packages/worker-skills`：Maple Skills 能力（任务执行 Prompt、技能定义）
 
-## 与 Notion 的关系（关键）
+## 独立定位（关键）
 
-- `Maple MCP + Maple Skills` 是应用内能力，默认不连接 Notion。
-- NPT 是 Maple 的外部辅助工具，仅在任务流转自动化场景下可选接入 Notion。
-- Maple App 自身功能不应依赖 Notion。
+- `Maple MCP + Maple Skills` 是 Maple 的核心执行能力。
+- 默认走项目内闭环执行链路，不依赖外部任务系统。
+- 任何扩展接入都不应影响 Maple 主链路的独立性。
 
 ## 在 Maple 仓库内安装
 

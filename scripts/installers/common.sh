@@ -23,16 +23,16 @@ write_codex_skill() {
   cat > "${skill_dir}/SKILL.md" <<EOF
 ---
 name: maple
-description: "Run /maple workflow for Maple TODO auto execution."
+description: "Run /maple workflow for Maple development tasks."
 ---
 
 # maple
 
 When user asks \`/maple\`:
-1. Run NPT sync in \`${MAPLE_ROOT}\`.
-2. Execute TODO end-to-end with typecheck/build verification.
-3. Only trust \`mcp_decision.status/comment/tags[]\` for final status.
-4. Write result comments and tags back to Maple tasks.
+1. Work in \`${MAPLE_ROOT}\`.
+2. Use Maple MCP + project skills to complete the user request end-to-end.
+3. Always run typecheck/build verification before marking done.
+4. Keep Maple on its standalone execution path without external task-system dependencies.
 EOF
 }
 
@@ -43,9 +43,9 @@ write_claude_command() {
 Run Maple workflow in repository:
 
 1. cd ${MAPLE_ROOT}
-2. execute npt sync
-3. enforce mcp_decision as the only completion signal
-4. write comments/tags/status back to Maple
+2. use Maple MCP + local skills to complete the requested implementation
+3. run typecheck/build before finishing
+4. keep Maple on the standalone execution path
 EOF
 }
 
@@ -58,9 +58,9 @@ write_iflow_user_assets() {
 /maple
 
 cd ${MAPLE_ROOT}
-run npt sync
-only accept mcp_decision as completion status
-write comment/tags/status back to Maple
+use Maple MCP + local skills to complete the user request
+run typecheck/build before finishing
+keep Maple on the standalone execution path
 EOF
   cat > "${skill_root_dir}/SKILL.md" <<EOF
 ---
@@ -82,7 +82,8 @@ description: "Run maple workflow in this repository."
 
 Maple execution skill:
 - execute tasks end-to-end
-- require mcp_decision.status/comment/tags[]
+- use Maple MCP + local skills first
 - run typecheck/build before completion
+- keep Maple on the standalone execution path
 EOF
 }

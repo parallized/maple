@@ -4,7 +4,7 @@
 
 - 在 Windsurf 中接入 Maple MCP（别名）。
 - 启用仓库内的 `/maple` 工作流命令。
-- 让任务完成判定由 `mcp_decision` 输出决定（无兜底自动完成）。
+- 让任务执行与判定统一走 Maple MCP + Maple Skills 链路。
 
 ## 1) 配置 Windsurf MCP
 
@@ -39,7 +39,7 @@ Windsurf 会把 `maple.md` 映射为 `/maple` 命令。重启或刷新工作区�
 /maple
 ```
 
-执行过程会触发 NPT 同步流程，自动发现并执行 Maple TODO。
+执行过程会先查询 Maple 项目待办与近期上下文，再按技能链路执行并给出结论。
 
 ## 4) 判定规则（已生效）
 
@@ -69,10 +69,11 @@ bash scripts/installers/install-maple-iflow.sh
 bash scripts/installers/install-maple-all.sh
 ```
 
-## 6) NPT 关系说明
+## 6) 独立执行边界
 
-- NPT 是 Maple 的外部辅助工具，用于任务流转与自动执行，不是 Maple App 依赖。
-- Maple App 功能应保持 Notion 无关；仅 NPT 辅助链路可以使用 Notion 连接。
+- `/maple` 默认只使用 Maple MCP 与 Maple Skills。
+- 任务执行、验证与结论均在 Maple 链路内完成。
+- 不引入外部任务系统依赖，避免执行路径分叉。
 
 ## 7) iFlow /skills list 验证
 
