@@ -101,10 +101,9 @@ export function BoardView({
     <section className="h-full max-w-full flex flex-col">
       <div className="board-layout">
         <aside className="board-sidebar">
-          <div className="flex items-center justify-between gap-1">
-            <div className="flex items-center gap-2 min-w-0">
-              <Icon icon="mingcute:folder-3-line" className="text-base shrink-0 text-muted" />
-              <span className="text-sm font-semibold truncate tracking-tight">{boardProject.name}</span>
+          <div className="flex items-center justify-between gap-1 mb-2">
+            <div className="flex items-center gap-2 min-w-0 px-1">
+              <span className="text-2xl font-bold truncate tracking-tight text-primary">{boardProject.name}</span>
             </div>
             <PopoverMenu
               label=""
@@ -132,29 +131,30 @@ export function BoardView({
             />
           </div>
 
-          <div className="flex items-center gap-2 mt-4 px-1">
-            <span className="text-[10px] uppercase tracking-widest font-medium opacity-40">Version</span>
-            <span className="text-[11px] font-mono opacity-60">v{boardProject.version}</span>
+          <div className="flex flex-col gap-2.5 mt-2 px-1 mb-8">
+            <div className="flex items-center gap-2 text-[13px] text-muted font-medium">
+              <span className="w-2 h-2 rounded-full bg-(--color-primary) opacity-40" />
+              <span>Version {boardProject.version}</span>
+            </div>
+            <div className="flex items-center gap-2 text-[13px] text-muted">
+              <span className="w-2 h-2 rounded-full bg-(--color-base-content) opacity-20" />
+              <span className="truncate opacity-80" title={boardProject.directory}>
+                {boardProject.directory}
+              </span>
+            </div>
           </div>
-
-          <div className="mt-4 px-1">
-            <div className="text-[10px] uppercase tracking-widest font-medium opacity-40 mb-1">Directory</div>
-            <p className="text-muted text-[11px] leading-relaxed break-all opacity-50 font-mono">{boardProject.directory}</p>
-          </div>
-
-          <div className="h-px bg-(--color-base-300) my-6 mx-1" />
 
           <div className="board-sidebar-nav">
             <button type="button" className="ui-btn ui-btn--sm ui-btn--accent gap-2" onClick={() => onAddTask(boardProject.id)}>
-              <Icon icon="mingcute:add-line" className="text-sm" />
+              <Icon icon="mingcute:add-line" className="text-base" />
               新建任务
             </button>
-            <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost gap-2" onClick={() => onCompletePending(boardProject.id)}>
-              <Icon icon="mingcute:check-circle-line" className="text-sm" />
+            <button type="button" className="ui-btn ui-btn--sm gap-2" onClick={() => onCompletePending(boardProject.id)}>
+              <Icon icon="mingcute:check-circle-line" className="text-base" />
               执行待办
             </button>
-            <button type="button" className="ui-btn ui-btn--sm ui-btn--ghost gap-2" onClick={onOpenConsole}>
-              <Icon icon="mingcute:terminal-box-line" className="text-sm" />
+            <button type="button" className="ui-btn ui-btn--sm gap-2" onClick={onOpenConsole}>
+              <Icon icon="mingcute:terminal-box-line" className="text-base" />
               控制台
             </button>
           </div>

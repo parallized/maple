@@ -189,6 +189,11 @@ h1, h2, h3 {
 .ui-btn.ui-btn--ghost {
   border-color: transparent;
   background: transparent;
+  color: var(--color-secondary);
+}
+
+.ui-btn.ui-btn--ghost:hover {
+  background: color-mix(in srgb, var(--color-base-300) 40%, transparent);
 }
 
 .ui-btn.ui-btn--danger:hover {
@@ -226,13 +231,16 @@ h1, h2, h3 {
 }
 
 .ui-btn--accent {
-  background: rgba(232, 133, 58, 0.12);
-  border: 1px solid rgba(232, 133, 58, 0.3);
-  color: #c4692a;
+  background: var(--color-base-100);
+  border: 1px solid color-mix(in srgb, var(--color-base-300) 70%, transparent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  color: var(--color-primary);
+  font-weight: 500;
 }
 
 .ui-btn--accent:hover {
-  background: rgba(232, 133, 58, 0.22);
+  background: var(--row-hover);
+  border-color: color-mix(in srgb, var(--color-base-300) 90%, transparent);
 }
 
 .ui-input,
@@ -726,26 +734,54 @@ h1, h2, h3 {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  padding: 0;
+  padding: 0.5rem 0.5rem 0;
   height: 100%;
+}
+
+.board-sidebar-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 0.5rem;
+  margin-bottom: 1.5rem;
 }
 
 .board-sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 8px;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .board-sidebar-nav .ui-btn {
   justify-content: flex-start;
   width: 100%;
-  height: 32px;
-  border-radius: 6px;
-  font-size: 0.8125rem;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  padding: 0 1rem;
+  color: var(--color-secondary);
+  font-weight: 500;
 }
 
-.board-sidebar-nav .ui-btn:hover {
+.board-sidebar-nav .ui-btn .iconify {
+  opacity: 0.7;
+}
+
+.board-sidebar-nav .ui-btn.ui-btn--accent {
+  background: var(--color-base-100);
+  border: 1px solid color-mix(in srgb, var(--color-base-300) 70%, transparent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  color: var(--color-primary);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.board-sidebar-nav .ui-btn.ui-btn--accent .iconify {
+  opacity: 1;
+}
+
+.board-sidebar-nav .ui-btn:not(.ui-btn--accent):hover {
   background: var(--btn-bg);
 }
 
