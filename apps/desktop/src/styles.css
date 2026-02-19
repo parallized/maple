@@ -523,13 +523,6 @@ h1, h2, h3 {
   table-layout: fixed;
 }
 
-.task-list-card {
-  background: var(--color-base-100);
-  border: 1px solid color-mix(in srgb, var(--color-base-300) 72%, transparent);
-  border-radius: 12px;
-  padding: 0.2rem 0.45rem 0.35rem;
-}
-
 .task-table th {
   position: sticky;
   top: 0;
@@ -761,10 +754,10 @@ h1, h2, h3 {
 .board-main {
   flex: 1;
   min-width: 0;
-  background: transparent;
+  background: var(--color-base-100);
   border: 1px solid color-mix(in srgb, var(--color-base-300) 70%, transparent);
   border-radius: 12px;
-  padding: 1rem 1.25rem;
+  padding: 0.5rem 1rem;
   overflow: auto;
 }
 

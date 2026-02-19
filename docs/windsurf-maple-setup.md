@@ -76,7 +76,7 @@ bash scripts/installers/install-maple-all.sh
 
 ## 7) iFlow /skills list 验证
 
-安装后在仓库目录执行 `/skills list`，应能看到：
+安装后执行 `/skills list`，应能看到：
 
-- `.iflow/skills/SKILL.md`
-- `.iflow/skills/maple/SKILL.md`
+- `~/.iflow/skills/SKILL.md`
+- `~/.iflow/skills/maple/SKILL.md`

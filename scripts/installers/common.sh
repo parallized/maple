@@ -49,9 +49,9 @@ Run Maple workflow in repository:
 EOF
 }
 
-write_iflow_local_assets() {
-  local workflow_dir="${MAPLE_ROOT}/.iflow/workflows"
-  local skill_root_dir="${MAPLE_ROOT}/.iflow/skills"
+write_iflow_user_assets() {
+  local workflow_dir="${HOME}/.iflow/workflows"
+  local skill_root_dir="${HOME}/.iflow/skills"
   local skill_dir="${skill_root_dir}/maple"
   mkdir -p "$workflow_dir" "$skill_root_dir" "$skill_dir"
   cat > "${workflow_dir}/maple.md" <<EOF
@@ -70,7 +70,7 @@ description: "Project-local maple skill index."
 
 # maple
 
-Use \`.iflow/skills/maple/SKILL.md\` for the full maple execution skill.
+Use \`~/.iflow/skills/maple/SKILL.md\` for the full maple execution skill.
 EOF
   cat > "${skill_dir}/SKILL.md" <<EOF
 ---

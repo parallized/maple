@@ -161,28 +161,26 @@ export function BoardView({
         </aside>
 
         <div className="board-main">
-          <div className="task-list-card">
-            <TaskTable
-              tasks={boardProject.tasks}
-              projectId={boardProject.id}
-              selectedTaskId={selectedTaskId}
-              editingTaskId={editingTaskId}
-              colWidths={colWidths}
-              tableRef={tableRef}
-              onSelectTask={onSelectTask}
-              onEditTask={onEditTask}
-              onCommitTaskTitle={onCommitTaskTitle}
-              onDeleteTask={onDeleteTask}
-              onResizeStart={handleResizeStart}
-              onResizeDblClick={handleResizeDblClick}
-            />
+          <TaskTable
+            tasks={boardProject.tasks}
+            projectId={boardProject.id}
+            selectedTaskId={selectedTaskId}
+            editingTaskId={editingTaskId}
+            colWidths={colWidths}
+            tableRef={tableRef}
+            onSelectTask={onSelectTask}
+            onEditTask={onEditTask}
+            onCommitTaskTitle={onCommitTaskTitle}
+            onDeleteTask={onDeleteTask}
+            onResizeStart={handleResizeStart}
+            onResizeDblClick={handleResizeDblClick}
+          />
 
-            {boardProject.tasks.length === 0 ? (
-              <div className="py-8 text-center">
-                <p className="text-muted text-sm">还没有任务，点击左侧「新建」添加。</p>
-              </div>
-            ) : null}
-          </div>
+          {boardProject.tasks.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-muted text-sm">还没有任务，点击左侧「新建」添加。</p>
+            </div>
+          ) : null}
 
           {releaseReport ? (
             <div className="ui-card p-4 mt-3">
