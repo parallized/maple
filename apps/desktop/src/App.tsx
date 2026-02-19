@@ -4,7 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useState } from "react";
 import { queryProjectTodos, queryRecentContext } from "@maple/mcp-tools";
-import { createWorkerExecutionPrompt } from "@maple/worker-skills";
+import { buildWorkerArchiveReport, createWorkerExecutionPrompt, resolveMcpDecision } from "@maple/worker-skills";
 
 import { TopNav } from "./components/TopNav";
 import { ToastLayer } from "./components/ToastLayer";
@@ -31,9 +31,7 @@ import {
   parseArgs,
   deriveProjectName,
   createTask,
-  createTaskReport,
-  buildConclusionReport,
-  extractWorkerTags
+  createTaskReport
 } from "./lib/utils";
 import { loadProjects, loadWorkerConfigs, loadMcpServerConfig, loadTheme } from "./lib/storage";
 
@@ -445,22 +443,28 @@ export function App() {
             if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
             if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
           }
-          if (result.success) {
-            updateTask(project.id, task.id, (c) => {
-              const aiTags = extractWorkerTags(result);
-              const mergedTags = [...new Set([...c.tags, ...aiTags])].slice(0, 5);
-              return {
-                ...c,
-                status: "已完成",
-                tags: mergedTags,
-                version: nextVersion,
-                reports: [...c.reports, createTaskReport(label, buildConclusionReport(result, task.title))]
-              };
-            });
+          const decision = resolveMcpDecision(result);
+          const report = createTaskReport(label, buildWorkerArchiveReport(result, task.title));
+          if (!decision) {
+            updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, report] }));
+            appendWorkerLog(workerId, `[任务] 阻塞：${task.title || "(无标题)"}（缺少 MCP 决策输出）\n`);
+            continue;
+          }
+
+          updateTask(project.id, task.id, (c) => ({
+            ...c,
+            status: decision.status,
+            tags: decision.tags,
+            version: decision.status === "已完成" ? nextVersion : c.version,
+            reports: [...c.reports, report]
+          }));
+
+          if (decision.status === "已完成") {
             appendWorkerLog(workerId, `[任务] 完成：${task.title || "(无标题)"}\n`);
+          } else if (decision.status === "需要更多信息") {
+            appendWorkerLog(workerId, `[任务] 需要更多信息：${task.title || "(无标题)"}\n`);
           } else {
-            updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, createTaskReport(label, buildConclusionReport(result, task.title))] }));
-            appendWorkerLog(workerId, `[任务] 失败：${task.title || "(无标题)"}（exit ${result.code ?? "?"}）\n`);
+            appendWorkerLog(workerId, `[任务] 阻塞：${task.title || "(无标题)"}\n`);
           }
         } catch (error) {
           appendWorkerLog(workerId, `[error] ${task.title}: ${String(error)}\n`);

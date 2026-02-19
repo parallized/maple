@@ -64,6 +64,7 @@ body {
   overflow: hidden;
   background: transparent;
   color: var(--color-base-content);
+  border-radius: 14px;
 }
 
 body {
@@ -73,6 +74,8 @@ body {
 #root {
   height: 100%;
   color: var(--color-base-content);
+  border-radius: inherit;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -105,7 +108,7 @@ h1, h2, h3 {
   height: 100vh;
   position: relative;
   background: var(--color-base-200);
-  border-radius: 12px;
+  border-radius: 14px;
   box-shadow: var(--app-shadow);
   overflow: hidden;
 }
@@ -357,6 +360,7 @@ h1, h2, h3 {
   overflow: hidden;
   position: relative;
   background: var(--color-base-200);
+  border-radius: inherit;
 }
 
 /* ── Top Navigation ── */
@@ -609,6 +613,7 @@ h1, h2, h3 {
 .status-dot.status-active { background: #5fa0e5; }
 .status-dot.status-done { background: #4da872; }
 .status-dot.status-blocked { background: #d47049; }
+.status-dot.status-info { background: #e3b341; }
 
 /* ── Inline Task Input ── */
 

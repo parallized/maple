@@ -24,6 +24,7 @@ This repository is initialized as a monorepo so web, desktop, and mobile clients
 ## MCP / Skills setup
 
 - `docs/mcp-skills-setup.md`
+- `docs/windsurf-maple-setup.md`
 
 ## Next milestones
 

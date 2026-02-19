@@ -58,3 +58,9 @@ codex mcp list
 1. 推荐：在 Codex 会话中使用 `$skill-installer`，按技能名安装。
 2. 手动：把技能目录放入 `~/.codex/skills/<skill-name>`。
 3. 安装后重启 Codex 会话，使新技能生效。
+
+## Windsurf 接入
+
+如果你在 Windsurf 中使用 Maple，请参考：
+
+- `docs/windsurf-maple-setup.md`
