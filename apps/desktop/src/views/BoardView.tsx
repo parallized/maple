@@ -161,26 +161,28 @@ export function BoardView({
         </aside>
 
         <div className="board-main">
-          <TaskTable
-            tasks={boardProject.tasks}
-            projectId={boardProject.id}
-            selectedTaskId={selectedTaskId}
-            editingTaskId={editingTaskId}
-            colWidths={colWidths}
-            tableRef={tableRef}
-            onSelectTask={onSelectTask}
-            onEditTask={onEditTask}
-            onCommitTaskTitle={onCommitTaskTitle}
-            onDeleteTask={onDeleteTask}
-            onResizeStart={handleResizeStart}
-            onResizeDblClick={handleResizeDblClick}
-          />
+          <div className="task-list-card">
+            <TaskTable
+              tasks={boardProject.tasks}
+              projectId={boardProject.id}
+              selectedTaskId={selectedTaskId}
+              editingTaskId={editingTaskId}
+              colWidths={colWidths}
+              tableRef={tableRef}
+              onSelectTask={onSelectTask}
+              onEditTask={onEditTask}
+              onCommitTaskTitle={onCommitTaskTitle}
+              onDeleteTask={onDeleteTask}
+              onResizeStart={handleResizeStart}
+              onResizeDblClick={handleResizeDblClick}
+            />
 
-          {boardProject.tasks.length === 0 ? (
-            <div className="py-8 text-center">
-              <p className="text-muted text-sm">还没有任务，点击左侧「新建」添加。</p>
-            </div>
-          ) : null}
+            {boardProject.tasks.length === 0 ? (
+              <div className="py-8 text-center">
+                <p className="text-muted text-sm">还没有任务，点击左侧「新建」添加。</p>
+              </div>
+            ) : null}
+          </div>
 
           {releaseReport ? (
             <div className="ui-card p-4 mt-3">
@@ -344,14 +346,16 @@ function TaskTable({
             </td>
             <td className="col-lastMention text-muted">{relativeTimeZh(getLastMentionTime(task))}</td>
             <td className="col-tags">
-              {task.tags.slice(0, 3).map((tag) => (
-                <span key={tag} className="ui-badge mr-1">
-                  {tag}
-                </span>
-              ))}
-              {task.tags.length > 3 ? (
-                <span className="ui-badge opacity-60">+{task.tags.length - 3}</span>
-              ) : null}
+              <div className="tags-inline">
+                {task.tags.slice(0, 3).map((tag) => (
+                  <span key={tag} className="ui-badge mr-1">
+                    {tag}
+                  </span>
+                ))}
+                {task.tags.length > 3 ? (
+                  <span className="ui-badge opacity-60">+{task.tags.length - 3}</span>
+                ) : null}
+              </div>
             </td>
             <td className="col-actions">
               <button

@@ -1,4 +1,29 @@
-import type { Project } from "../domain";
+export type McpTodoTaskLike = {
+  title: string;
+  status: string;
+  updatedAt: string;
+  tags: string[];
+};
+
+export type McpTodoProjectLike<TTask extends McpTodoTaskLike = McpTodoTaskLike> = {
+  name: string;
+  tasks: TTask[];
+};
+
+export type McpTaskReportLike = {
+  content: string;
+  createdAt: string;
+};
+
+export type McpContextTaskLike<TReport extends McpTaskReportLike = McpTaskReportLike> = {
+  title: string;
+  reports: TReport[];
+};
+
+export type McpContextProjectLike<TTask extends McpContextTaskLike = McpContextTaskLike> = {
+  name: string;
+  tasks: TTask[];
+};
 
 export type MapleMcpTodoItem = {
   title: string;
@@ -6,6 +31,22 @@ export type MapleMcpTodoItem = {
   updatedAt: string;
   tags: string[];
 };
+
+export type MapleMcpToolDefinition = {
+  name: "query_project_todos" | "query_recent_context";
+  description: string;
+};
+
+export const MAPLE_MCP_TOOLS: MapleMcpToolDefinition[] = [
+  {
+    name: "query_project_todos",
+    description: "按项目名查询未完成任务，返回状态、更新时间与标签。"
+  },
+  {
+    name: "query_recent_context",
+    description: "查询最近任务报告与 Worker 日志，支持关键词过滤。"
+  }
+];
 
 export type MapleMcpContextItem = {
   project: string;
@@ -15,7 +56,10 @@ export type MapleMcpContextItem = {
   text: string;
 };
 
-export function queryProjectTodos(projects: Project[], projectName: string): MapleMcpTodoItem[] {
+export function queryProjectTodos<TProject extends McpTodoProjectLike>(
+  projects: TProject[],
+  projectName: string
+): MapleMcpTodoItem[] {
   const keyword = projectName.trim().toLowerCase();
   if (!keyword) return [];
   const target = projects.find((project) => project.name.toLowerCase() === keyword)
@@ -32,8 +76,8 @@ export function queryProjectTodos(projects: Project[], projectName: string): Map
     }));
 }
 
-export function queryRecentContext(
-  projects: Project[],
+export function queryRecentContext<TProject extends McpContextProjectLike>(
+  projects: TProject[],
   workerLogs: Record<string, string>,
   keyword: string,
   limit = 10
@@ -80,4 +124,12 @@ export function queryRecentContext(
   return items
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, Math.max(1, limit));
+}
+
+export function getMapleMcpToolHelpText(): string {
+  const lines = ["Maple MCP Tools:"];
+  for (const tool of MAPLE_MCP_TOOLS) {
+    lines.push(`- ${tool.name}: ${tool.description}`);
+  }
+  return lines.join("\n");
 }

@@ -7,7 +7,9 @@
     "baseUrl": ".",
     "paths": {
       "@maple/kanban-core": ["packages/kanban-core/src/index.ts"],
-      "@maple/agent-runtime": ["packages/agent-runtime/src/index.ts"]
+      "@maple/agent-runtime": ["packages/agent-runtime/src/index.ts"],
+      "@maple/mcp-tools": ["packages/mcp-tools/src/index.ts"],
+      "@maple/worker-skills": ["packages/worker-skills/src/index.ts"]
     },
     "strict": true,
     "skipLibCheck": true,

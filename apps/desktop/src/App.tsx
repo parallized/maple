@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useState } from "react";
+import { queryProjectTodos, queryRecentContext } from "@maple/mcp-tools";
+import { createWorkerExecutionPrompt } from "@maple/worker-skills";
 
 import { TopNav } from "./components/TopNav";
 import { ToastLayer } from "./components/ToastLayer";
@@ -22,8 +24,17 @@ import {
   WORKER_KINDS
 } from "./lib/constants";
 import type { ThemeMode } from "./lib/constants";
-import { hasTauriRuntime, applyTheme, bumpPatch, parseArgs, deriveProjectName, createTask, createTaskReport, buildConclusionReport } from "./lib/utils";
-import { queryProjectTodos, queryRecentContext } from "./lib/mcpTools";
+import {
+  hasTauriRuntime,
+  applyTheme,
+  bumpPatch,
+  parseArgs,
+  deriveProjectName,
+  createTask,
+  createTaskReport,
+  buildConclusionReport,
+  extractWorkerTags
+} from "./lib/utils";
 import { loadProjects, loadWorkerConfigs, loadMcpServerConfig, loadTheme } from "./lib/storage";
 
 import type {
@@ -64,6 +75,7 @@ export function App() {
   const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(`worker-${WORKER_KINDS[0]?.kind ?? "claude"}`);
   const [consoleInput, setConsoleInput] = useState("");
   const [runningWorkers, setRunningWorkers] = useState<Set<string>>(() => new Set());
+  const [executingWorkers, setExecutingWorkers] = useState<Set<string>>(() => new Set());
   const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
   const [theme, setThemeState] = useState<ThemeMode>(() => loadTheme());
   const [windowMaximized, setWindowMaximized] = useState(false);
@@ -75,8 +87,9 @@ export function App() {
   const metrics = useMemo(() => {
     const allTasks = projects.flatMap((p) => p.tasks);
     const pending = allTasks.filter((t) => t.status !== "已完成").length;
-    return { pending, runningCount: runningWorkers.size, projectCount: projects.length };
-  }, [projects, runningWorkers]);
+    const runningCount = new Set([...runningWorkers, ...executingWorkers]).size;
+    return { pending, runningCount, projectCount: projects.length };
+  }, [projects, runningWorkers, executingWorkers]);
 
   // ── Persistence ──
   useEffect(() => { applyTheme(theme); localStorage.setItem(STORAGE_THEME, theme); }, [theme]);
@@ -189,7 +202,7 @@ export function App() {
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
     const newTask = createTask("", project.version);
-    setProjects((prev) => prev.map((p) => p.id !== projectId ? p : { ...p, tasks: [...p.tasks, newTask] }));
+    setProjects((prev) => prev.map((p) => p.id !== projectId ? p : { ...p, tasks: [newTask, ...p.tasks] }));
     setEditingTaskId(newTask.id);
   }
 
@@ -290,14 +303,27 @@ export function App() {
     setNotice("已应用推荐配置：内置 Maple MCP 与默认 Worker 参数。");
   }
 
-  function openWorkerConsole(preferredKind?: WorkerKind) {
-    const fallbackKind =
-      preferredKind
-      ?? boardProject?.workerKind
-      ?? projects.find((project) => project.workerKind)?.workerKind
-      ?? WORKER_KINDS[0]?.kind
-      ?? "claude";
-    setWorkerConsoleWorkerId(`worker-${fallbackKind}`);
+  function openWorkerConsole(preferredKind?: WorkerKind, options?: { requireActive?: boolean }) {
+    const requireActive = options?.requireActive ?? false;
+    const activeWorkerIds = [...runningWorkers, ...executingWorkers];
+    if (requireActive && activeWorkerIds.length === 0) {
+      setNotice("当前没有正在工作的 Worker 实例，无法打开控制台。");
+      return;
+    }
+
+    const activePreferred = preferredKind ? `worker-${preferredKind}` : null;
+    const fallbackWorkerId =
+      (activePreferred && activeWorkerIds.includes(activePreferred) ? activePreferred : null)
+      ?? activeWorkerIds[0]
+      ?? `worker-${
+        preferredKind
+        ?? boardProject?.workerKind
+        ?? projects.find((project) => project.workerKind)?.workerKind
+        ?? WORKER_KINDS[0]?.kind
+        ?? "claude"
+      }`;
+
+    setWorkerConsoleWorkerId(fallbackWorkerId);
     setWorkerConsoleOpen(true);
   }
 
@@ -357,14 +383,11 @@ export function App() {
     if (!isTauri) return { success: false, code: null, stdout: "", stderr: "当前环境无法执行 Worker CLI。" };
     const kind = WORKER_KINDS.find((entry) => `worker-${entry.kind}` === workerId)?.kind;
     const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
-    const prompt = [
-      "[Maple Worker Task]",
-      `Project: ${project.name}`,
-      `Directory: ${project.directory}`,
-      `Task: ${task.title}`,
-      "请执行任务，并在完成后通过可用 MCP/Skills 产出结果归档。",
-      "终端最后请输出一个 JSON 代码块（```json ... ```），字段包含：conclusion, changes[], verification[]。"
-    ].join("\n");
+    const prompt = createWorkerExecutionPrompt({
+      projectName: project.name,
+      directory: project.directory,
+      taskTitle: task.title
+    });
     return invoke<WorkerCommandResult>("run_worker", { workerId, taskTitle: task.title, executable: config.executable, args, prompt, cwd: project.directory });
   }
 
@@ -409,36 +432,50 @@ export function App() {
     if (pendingTasks.length === 0) { setNotice("没有待执行任务。"); return; }
     const nextVersion = bumpPatch(project.version);
     const workerId = `worker-${kind}`;
+    setExecutingWorkers((prev) => { const next = new Set(prev); next.add(workerId); return next; });
     openWorkerConsole(kind);
     appendWorkerLog(workerId, `\n[系统] 开始执行 ${pendingTasks.length} 个待办任务。\n`);
-
-    for (const task of pendingTasks) {
-      updateTask(project.id, task.id, (c) => ({ ...c, status: "进行中" }));
-      appendWorkerLog(workerId, `[任务] 开始：${task.title || "(无标题)"}\n`);
-      try {
-        const result = await runWorkerCommand(workerId, config, task, project);
-        if (!isTauri) {
-          if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
-          if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
+    try {
+      for (const task of pendingTasks) {
+        updateTask(project.id, task.id, (c) => ({ ...c, status: "进行中" }));
+        appendWorkerLog(workerId, `[任务] 开始：${task.title || "(无标题)"}\n`);
+        try {
+          const result = await runWorkerCommand(workerId, config, task, project);
+          if (!isTauri) {
+            if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
+            if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
+          }
+          if (result.success) {
+            updateTask(project.id, task.id, (c) => {
+              const aiTags = extractWorkerTags(result);
+              const mergedTags = [...new Set([...c.tags, ...aiTags])].slice(0, 5);
+              return {
+                ...c,
+                status: "已完成",
+                tags: mergedTags,
+                version: nextVersion,
+                reports: [...c.reports, createTaskReport(label, buildConclusionReport(result, task.title))]
+              };
+            });
+            appendWorkerLog(workerId, `[任务] 完成：${task.title || "(无标题)"}\n`);
+          } else {
+            updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, createTaskReport(label, buildConclusionReport(result, task.title))] }));
+            appendWorkerLog(workerId, `[任务] 失败：${task.title || "(无标题)"}（exit ${result.code ?? "?"}）\n`);
+          }
+        } catch (error) {
+          appendWorkerLog(workerId, `[error] ${task.title}: ${String(error)}\n`);
+          updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, createTaskReport(label, `执行异常：${String(error)}`)] }));
         }
-        if (result.success) {
-          updateTask(project.id, task.id, (c) => {
-            const tags = new Set(c.tags);
-            tags.add("自动完成"); tags.add(`v${nextVersion}`); tags.add(label);
-            return { ...c, status: "已完成", tags: [...tags], version: nextVersion, reports: [...c.reports, createTaskReport(label, buildConclusionReport(result, task.title))] };
-          });
-          appendWorkerLog(workerId, `[任务] 完成：${task.title || "(无标题)"}\n`);
-        } else {
-          updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, createTaskReport(label, buildConclusionReport(result, task.title))] }));
-          appendWorkerLog(workerId, `[任务] 失败：${task.title || "(无标题)"}（exit ${result.code ?? "?"}）\n`);
-        }
-      } catch (error) {
-        appendWorkerLog(workerId, `[error] ${task.title}: ${String(error)}\n`);
-        updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, createTaskReport(label, `执行异常：${String(error)}`)] }));
       }
+      appendWorkerLog(workerId, `[系统] 批量执行结束。\n`);
+      setNotice(`已触发 ${label} 执行 ${pendingTasks.length} 个任务。`);
+    } finally {
+      setExecutingWorkers((prev) => {
+        const next = new Set(prev);
+        next.delete(workerId);
+        return next;
+      });
     }
-    appendWorkerLog(workerId, `[系统] 批量执行结束。\n`);
-    setNotice(`已触发 ${label} 执行 ${pendingTasks.length} 个任务。`);
   }
 
   // ── Console ──
@@ -582,7 +619,7 @@ export function App() {
           onCreateProject={() => void createProject()}
           onToggleConsole={() => {
             if (workerConsoleOpen) setWorkerConsoleOpen(false);
-            else openWorkerConsole();
+            else openWorkerConsole(undefined, { requireActive: true });
           }}
           onMinimize={minimizeWindow}
           onToggleMaximize={toggleWindowMaximize}
@@ -613,7 +650,7 @@ export function App() {
                 onCreateReleaseDraft={createReleaseDraft}
                 onAssignWorkerKind={assignWorkerKind}
                 onSetDetailMode={setDetailMode}
-                onOpenConsole={() => openWorkerConsole(boardProject?.workerKind)}
+                onOpenConsole={() => openWorkerConsole(boardProject?.workerKind, { requireActive: true })}
                 onRemoveProject={removeProject}
               />
             ) : null}
@@ -644,7 +681,7 @@ export function App() {
                   onStartMcpServer={() => void startMcpServer()}
                   onStopMcpServer={() => void stopMcpServer()}
                   onRefreshMcpStatus={() => void refreshMcpStatus()}
-                  onOpenConsole={() => openWorkerConsole()}
+                  onOpenConsole={() => openWorkerConsole(undefined, { requireActive: true })}
                   onThemeChange={setThemeState}
                 />
               </div>
@@ -669,6 +706,7 @@ export function App() {
             currentWorkerLog={currentWorkerLog}
             consoleInput={consoleInput}
             runningWorkers={runningWorkers}
+            executingWorkers={executingWorkers}
             onClose={() => setWorkerConsoleOpen(false)}
             onConsoleInputChange={setConsoleInput}
             onSendCommand={(wId, input) => void sendConsoleCommand(wId, input)}

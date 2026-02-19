@@ -16,6 +16,8 @@
   "dependencies": {
     "@iconify-json/mingcute": "^1.2.2",
     "@iconify/react": "^5.2.1",
+    "@maple/mcp-tools": "workspace:*",
+    "@maple/worker-skills": "workspace:*",
     "@tauri-apps/api": "^2.0.2",
     "@tauri-apps/plugin-dialog": "^2.2.2",
     "framer-motion": "^12.34.1",

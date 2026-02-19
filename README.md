@@ -11,6 +11,8 @@ This repository is initialized as a monorepo so web, desktop, and mobile clients
 - `apps/mobile`: mobile client bootstrap (Android-first)
 - `packages/kanban-core`: task domain model and status helpers
 - `packages/agent-runtime`: multi-agent execution interfaces
+- `packages/mcp-tools`: MCP query helpers for TODO/context lookup
+- `packages/worker-skills`: reusable worker prompt/skill templates
 - `docs`: product and technical planning notes
 
 ## Quick start
@@ -18,6 +20,10 @@ This repository is initialized as a monorepo so web, desktop, and mobile clients
 1. Install `pnpm` (v9 or newer).
 2. Run `pnpm install`.
 3. Run `pnpm typecheck`.
+
+## MCP / Skills setup
+
+- `docs/mcp-skills-setup.md`
 
 ## Next milestones
 

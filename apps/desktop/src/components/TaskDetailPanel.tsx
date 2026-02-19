@@ -24,16 +24,12 @@ function formatAbsoluteTime(value: string): string {
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
 }
 
-function joinTags(tags: string[]): string {
-  return tags.map((tag) => tag.trim()).filter(Boolean).join("、");
-}
-
 export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProps) {
   return (
-    <section className="grid gap-2">
+    <section className="task-detail-panel grid gap-2">
       <header className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <h3 className="m-0 font-semibold">{task.title}</h3>
+          <h3 className="m-0 task-detail-title">{task.title}</h3>
           <span className="ui-badge">提及 {task.reports.length}</span>
         </div>
         <div className="flex gap-1 shrink-0">
@@ -66,7 +62,14 @@ export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProp
         </div>
         <div className="task-prop task-prop-wide flex justify-between items-center gap-3">
           <span className="text-muted text-sm whitespace-nowrap">标签</span>
-          <span className="text-sm text-right">{joinTags(task.tags) || "无"}</span>
+          <div className="task-tag-badges">
+            {task.tags.length === 0 ? <span className="text-sm text-muted">无</span> : null}
+            {task.tags.map((tag) => (
+              <span key={tag} className="ui-badge">
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
         <div className="task-prop flex justify-between items-center gap-3">
           <span className="text-muted text-sm whitespace-nowrap">创建时间</span>
@@ -83,7 +86,7 @@ export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProp
       </div>
 
       <div>
-        <h4 className="mt-1 mb-0 text-sm font-semibold">结论记录</h4>
+        <h4 className="task-detail-section-title mt-1 mb-0">结论记录</h4>
         {task.reports.length === 0 ? <p className="text-muted text-sm mt-2">暂无结论记录。</p> : null}
 
         <div className="grid gap-2 mt-1.5">

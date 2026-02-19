@@ -7,6 +7,7 @@ type WorkerConsoleModalProps = {
   currentWorkerLog: string;
   consoleInput: string;
   runningWorkers: Set<string>;
+  executingWorkers: Set<string>;
   onClose: () => void;
   onConsoleInputChange: (value: string) => void;
   onSendCommand: (workerId: string, input: string) => void;
@@ -20,6 +21,7 @@ export function WorkerConsoleModal({
   currentWorkerLog,
   consoleInput,
   runningWorkers,
+  executingWorkers,
   onClose,
   onConsoleInputChange,
   onSendCommand,
@@ -30,7 +32,9 @@ export function WorkerConsoleModal({
   const logRef = useRef<HTMLPreElement>(null);
   const currentWorkerLabel =
     WORKER_KINDS.find((w) => `worker-${w.kind}` === workerConsoleWorkerId)?.label ?? workerConsoleWorkerId;
-  const isRunning = runningWorkers.has(workerConsoleWorkerId);
+  const isInteractiveRunning = runningWorkers.has(workerConsoleWorkerId);
+  const isExecutingTask = executingWorkers.has(workerConsoleWorkerId);
+  const isReadOnly = isExecutingTask && !isInteractiveRunning;
 
   useEffect(() => {
     if (logRef.current) {
@@ -47,12 +51,16 @@ export function WorkerConsoleModal({
             <h3 className="m-0 font-semibold">Worker 控制台</h3>
             <p className="m-0 text-muted text-xs">当前 Worker：{currentWorkerLabel}</p>
             <p className="m-0 text-muted text-xs">
-              {isRunning ? `${currentWorkerLabel} 会话运行中，输入将直接发送到 CLI。` : `${currentWorkerLabel} 未连接会话，输入后将自动开始交互。`}
+              {isInteractiveRunning
+                ? `${currentWorkerLabel} 会话运行中，输入将直接发送到 CLI。`
+                : isExecutingTask
+                  ? `${currentWorkerLabel} 正在执行任务，当前为只读日志视图。`
+                  : `${currentWorkerLabel} 未连接会话，输入后将自动开始交互。`}
             </p>
           </div>
 
           <div className="worker-console-actions">
-            {isRunning ? (
+            {isInteractiveRunning ? (
               <button
                 type="button"
                 className="ui-btn ui-btn--xs ui-btn--outline ui-btn--danger gap-1"
@@ -103,14 +111,14 @@ export function WorkerConsoleModal({
               className="ui-input ui-input--sm flex-1 font-mono text-xs"
               value={consoleInput}
               onChange={(e) => onConsoleInputChange(e.target.value)}
-              placeholder={isRunning ? "输入命令并回车…" : "输入命令并回车，自动进入交互…"}
+              placeholder={isReadOnly ? "任务执行中，当前只读…" : isInteractiveRunning ? "输入命令并回车…" : "输入命令并回车，自动进入交互…"}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   onSendCommand(workerConsoleWorkerId, consoleInput);
                 }
               }}
-              disabled={!workerConsoleWorkerId}
+              disabled={!workerConsoleWorkerId || isReadOnly}
             />
             <button
               type="button"
@@ -125,7 +133,7 @@ export function WorkerConsoleModal({
               type="button"
               className="ui-btn ui-btn--sm ui-btn--outline gap-1"
               onClick={() => onSendCommand(workerConsoleWorkerId, consoleInput)}
-              disabled={!workerConsoleWorkerId || !consoleInput.trim()}
+              disabled={!workerConsoleWorkerId || !consoleInput.trim() || isReadOnly}
             >
               <Icon icon="mingcute:send-plane-line" />
               发送

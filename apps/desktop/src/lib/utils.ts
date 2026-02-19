@@ -138,11 +138,14 @@ function extractJsonCandidate(text: string): string | null {
   return null;
 }
 
-function parseStructuredReport(text: string): {
+type StructuredWorkerOutput = {
   conclusion: string;
   changes: string[];
   verification: string[];
-} | null {
+  tags: string[];
+};
+
+function parseStructuredReport(text: string): StructuredWorkerOutput | null {
   const candidate = extractJsonCandidate(text);
   if (!candidate) return null;
   try {
@@ -150,8 +153,9 @@ function parseStructuredReport(text: string): {
     const conclusion = typeof parsed.conclusion === "string" ? parsed.conclusion.trim() : "";
     const changes = normalizeReportList(parsed.changes);
     const verification = normalizeReportList(parsed.verification);
-    if (!conclusion && changes.length === 0 && verification.length === 0) return null;
-    return { conclusion, changes, verification };
+    const tags = normalizeReportList(parsed.tags ?? parsed.tag).slice(0, 5);
+    if (!conclusion && changes.length === 0 && verification.length === 0 && tags.length === 0) return null;
+    return { conclusion, changes, verification, tags };
   } catch {
     return null;
   }
@@ -162,6 +166,14 @@ function formatSection(title: string, items: string[]): string[] {
     return [title, "- 无"];
   }
   return [title, ...items.map((item) => `- ${item}`)];
+}
+
+export function extractWorkerTags(result: WorkerCommandResult): string[] {
+  const stdout = result.stdout.trim();
+  const stderr = result.stderr.trim();
+  const structured = parseStructuredReport(stdout) ?? parseStructuredReport(stderr);
+  if (!structured) return [];
+  return [...new Set(structured.tags)].slice(0, 5);
 }
 
 export function buildConclusionReport(result: WorkerCommandResult, taskTitle: string): string {
