@@ -989,7 +989,7 @@ export function App() {
             </div>
           </div>
 
-          <div className="topnav-actions ml-auto">
+          <div className="topnav-actions ml-auto flex items-center gap-2">
             <button
               type="button"
               className="topnav-tab"
@@ -1013,7 +1013,7 @@ export function App() {
 
             <div className="w-px h-4 bg-(--color-base-300) mx-1" />
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <button type="button" className="topnav-wc" onClick={minimizeWindow} aria-label="最小化">
                 <Icon icon="mingcute:minimize-line" />
               </button>
