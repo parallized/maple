@@ -8,7 +8,13 @@
 
 ## 1) 配置 Windsurf MCP
 
-在本机创建或更新 `~/.codeium/windsurf/mcp_config.json`：
+推荐先运行一键安装脚本（会自动写入 MCP 配置并生成 workflow）：
+
+```bash
+bash scripts/installers/install-maple-windsurf.sh
+```
+
+也可以手动创建或更新 `~/.codeium/windsurf/mcp_config.json`：
 
 ```json
 {
@@ -47,7 +53,7 @@ Windsurf 会把 `maple.md` 映射为 `/maple` 命令。重启或刷新工作区�
 - 若缺少 `mcp_decision`，任务会被标记为 `已阻塞`，不会兜底为 `已完成`。
 - 标签与结论记录仅采用 `mcp_decision` 结果。
 
-## 5) 一键安装脚本（Claude / Codex / iFlow）
+## 5) 一键安装脚本（Claude / Codex / iFlow / Windsurf）
 
 仓库内提供安装脚本（MCP + Skills）：
 
@@ -61,6 +67,7 @@ bash scripts/maple-install.sh
 bash scripts/installers/install-maple-codex.sh
 bash scripts/installers/install-maple-claude.sh
 bash scripts/installers/install-maple-iflow.sh
+bash scripts/installers/install-maple-windsurf.sh
 ```
 
 也可以一次性安装全部：

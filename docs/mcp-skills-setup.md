@@ -68,7 +68,7 @@ codex mcp list
 
 ## 一键安装脚本
 
-仓库内提供三套 CLI 安装脚本（MCP + Skills）：
+仓库内提供四套 CLI 安装脚本（MCP + Skills）：
 
 ```bash
 bash scripts/maple-install.sh
@@ -80,4 +80,5 @@ bash scripts/maple-install.sh
 bash scripts/installers/install-maple-codex.sh
 bash scripts/installers/install-maple-claude.sh
 bash scripts/installers/install-maple-iflow.sh
+bash scripts/installers/install-maple-windsurf.sh
 ```

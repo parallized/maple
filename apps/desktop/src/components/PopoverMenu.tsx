@@ -62,14 +62,14 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
     <div ref={rootRef} className="popover">
       <button
         type="button"
-        className={`ui-btn ui-btn--sm ui-btn--outline gap-1 ${open ? "popover-trigger active" : "popover-trigger"}`}
+        className={`ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn ${open ? "popover-trigger active" : "popover-trigger"}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((previous) => !previous)}
       >
-        <Icon icon={icon} />
-        {label}
+        <Icon icon={icon} className="text-base" />
+        {label ? <span className="sr-only">{label}</span> : null}
       </button>
 
       {open ? (
@@ -99,7 +99,7 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
                   <Icon icon={item.icon} />
                 </span>
                 <span>{item.label}</span>
-                <span className="ml-auto w-5 inline-flex justify-end text-[color:var(--color-primary)]" aria-hidden="true">
+                <span className="ml-auto w-5 inline-flex justify-end text-(--color-primary)" aria-hidden="true">
                   {item.checked ? <Icon icon="mingcute:check-line" /> : null}
                 </span>
               </button>

@@ -6,13 +6,13 @@
 :root {
   color-scheme: light;
   --color-base-100: #ffffff; /* Card */
-  --color-base-200: #f2f2f7; /* Background */
+  --color-base-200: #f6f6f8; /* Background - Slightly lighter for harmony */
   --color-base-300: #e5e5e7;
   --color-base-content: #1d1d1f;
   --color-secondary: #6b7280;
   --color-error: #d47049;
-  --color-primary: #007aff;
-  --ring-primary: rgba(0, 122, 255, 0.2);
+  --color-primary: #f2723c; /* Maple orange */
+  --ring-primary: rgba(242, 114, 60, 0.2);
   --app-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
   --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
   --btn-bg: rgba(0, 0, 0, 0.05);
@@ -23,14 +23,14 @@
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
     color-scheme: dark;
-    --color-base-100: #1c1c1e; /* Card (Midnight) */
-    --color-base-200: #000000; /* Deep Background */
+    --color-base-100: #1e1e20; /* Card - Darker graphite */
+    --color-base-200: #141415; /* Background - Deeper */
     --color-base-300: #2c2c2e;
     --color-base-content: #f5f5f7;
     --color-secondary: #9ca3af;
     --color-error: #ff7b72;
-    --color-primary: #0a84ff;
-    --ring-primary: rgba(10, 132, 255, 0.25);
+    --color-primary: #f2723c; /* Maple orange */
+    --ring-primary: rgba(242, 114, 60, 0.25);
     --app-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
     --card-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
     --btn-bg: rgba(255, 255, 255, 0.08);
@@ -41,14 +41,14 @@
 
 :root.dark {
   color-scheme: dark;
-  --color-base-100: #1c1c1e;
-  --color-base-200: #000000;
+  --color-base-100: #1e1e20;
+  --color-base-200: #141415;
   --color-base-300: #2c2c2e;
   --color-base-content: #f5f5f7;
   --color-secondary: #9ca3af;
   --color-error: #ff7b72;
-  --color-primary: #0a84ff;
-  --ring-primary: rgba(10, 132, 255, 0.25);
+  --color-primary: #f2723c;
+  --ring-primary: rgba(242, 114, 60, 0.25);
   --app-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
   --card-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
   --btn-bg: rgba(255, 255, 255, 0.08);
@@ -721,10 +721,10 @@ h1, h2, h3 {
   display: flex;
   gap: 0.9rem;
   margin: 0 0.9rem 0.9rem;
-  padding: 0.9rem;
+  padding: 0;
   height: 100%;
   min-height: 0;
-  background: color-mix(in srgb, var(--color-base-100) 82%, var(--color-base-200));
+  background: transparent;
   border: none;
   border-radius: 18px;
 }
@@ -736,6 +736,7 @@ h1, h2, h3 {
   flex-direction: column;
   padding: 0.5rem 0.5rem 0;
   height: 100%;
+  background: transparent;
 }
 
 .board-sidebar-title {
