@@ -260,14 +260,16 @@ async fn start_interactive_worker(
       }
     };
 
-    if let (Some(mut stdin_handle), Some(value)) = (child.stdin.take(), prompt.as_ref()) {
-      let trimmed = value.trim();
-      if !trimmed.is_empty() {
-        let _ = stdin_handle.write_all(trimmed.as_bytes());
-        let _ = stdin_handle.write_all(b"\n");
-        let _ = stdin_handle.flush();
-        child.stdin = Some(stdin_handle);
+    if let Some(mut stdin_handle) = child.stdin.take() {
+      if let Some(value) = prompt.as_ref() {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+          let _ = stdin_handle.write_all(trimmed.as_bytes());
+          let _ = stdin_handle.write_all(b"\n");
+          let _ = stdin_handle.flush();
+        }
       }
+      child.stdin = Some(stdin_handle);
     }
 
     let stdin_handle = child.stdin.take();

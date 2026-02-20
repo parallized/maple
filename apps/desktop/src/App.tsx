@@ -36,6 +36,7 @@ import {
   createTask,
   createTaskReport
 } from "./lib/utils";
+import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
 import { loadProjects, loadWorkerConfigs, loadMcpServerConfig, loadTheme } from "./lib/storage";
 
 import type {
@@ -74,14 +75,14 @@ export function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [workerConsoleOpen, setWorkerConsoleOpen] = useState(false);
-  const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(`worker-${WORKER_KINDS[0]?.kind ?? "claude"}`);
+  const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(() => buildWorkerId(WORKER_KINDS[0]?.kind ?? "claude"));
   const [runningWorkers, setRunningWorkers] = useState<Set<string>>(() => new Set());
   const [executingWorkers, setExecutingWorkers] = useState<Set<string>>(() => new Set());
-  const [workerProjectMap, setWorkerProjectMap] = useState<Record<string, string>>({});
   const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
   const [theme, setThemeState] = useState<ThemeMode>(() => loadTheme());
   const [windowMaximized, setWindowMaximized] = useState(false);
   const workerLogsRef = useRef<Record<string, string>>({});
+  const projectsRef = useRef<Project[]>(projects);
   const doneProjectIdsRef = useRef<Set<string>>(new Set());
   const doneProjectInitRef = useRef(false);
 
@@ -689,7 +690,11 @@ export function App() {
     if (!isTauri || !input) return;
     if (!runningWorkers.has(workerId)) return;
     try { await invoke<boolean>("send_worker_input", { workerId, input, appendNewline: false }); }
-    catch (error) { appendWorkerLog(workerId, `\n${String(error)}\n`); }
+    catch (error) {
+      const message = String(error);
+      if (message.includes("Worker 会话不存在") || message.includes("Worker stdin 不可用")) return;
+      appendWorkerLog(workerId, `\n${message}\n`);
+    }
   }
 
   async function stopCurrentWorker(workerId: string) {
@@ -871,7 +876,7 @@ export function App() {
                 onCreateReleaseDraft={createReleaseDraft}
                 onAssignWorkerKind={assignWorkerKind}
                 onSetDetailMode={setDetailMode}
-                onOpenConsole={() => openWorkerConsole(boardProject?.workerKind)}
+                onOpenConsole={() => openWorkerConsole(boardProject?.workerKind, { requireActive: true })}
                 onRemoveProject={removeProject}
               />
             ) : null}
@@ -910,8 +915,10 @@ export function App() {
             currentWorkerLog={currentWorkerLog}
             runningWorkers={runningWorkers}
             executingWorkers={executingWorkers}
+            workerPool={workerPoolOverview}
             onClose={() => setWorkerConsoleOpen(false)}
             onStartWorker={(wId) => void startConsoleSession(wId)}
+            onSelectWorker={(wId) => setWorkerConsoleWorkerId(wId)}
             onSendRawInput={(wId, input) => void sendConsoleRawInput(wId, input)}
             onStopWorker={(wId) => void stopCurrentWorker(wId)}
           />

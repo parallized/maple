@@ -999,6 +999,93 @@ h1, h2, h3 {
   gap: 0.6rem;
 }
 
+.worker-console-pool {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--color-base-300);
+  background: color-mix(in srgb, var(--color-base-200) 55%, transparent);
+}
+
+.worker-console-pool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.55rem;
+  padding: 0 2px;
+}
+
+.worker-console-pool-empty {
+  font-size: 0.74rem;
+  color: var(--color-muted);
+  padding: 4px 2px 2px;
+}
+
+.worker-console-pool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.worker-console-pool-item {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--color-base-300) 55%, transparent);
+  background: color-mix(in srgb, var(--color-base-100) 65%, transparent);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.worker-console-pool-item:hover {
+  background: color-mix(in srgb, var(--color-base-100) 75%, transparent);
+  border-color: color-mix(in srgb, var(--color-base-300) 75%, transparent);
+}
+
+.worker-console-pool-item.active {
+  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-base-300));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.worker-console-pool-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.worker-console-pool-item-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-base-content);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.worker-console-pool-item-sub {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.worker-console-pool-item-mode {
+  font-size: 0.7rem;
+  color: var(--color-muted);
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-base-300) 45%, transparent);
+  background: color-mix(in srgb, var(--color-base-200) 60%, transparent);
+  flex: none;
+}
+
 .worker-terminal-wrap {
   position: relative;
   height: clamp(300px, 56vh, 560px);

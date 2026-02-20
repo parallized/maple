@@ -11,10 +11,17 @@ type WorkerConsoleModalProps = {
   currentWorkerLog: string;
   runningWorkers: Set<string>;
   executingWorkers: Set<string>;
+  workerPool: Array<{
+    workerId: string;
+    workerLabel: string;
+    projectName: string;
+    mode: "interactive" | "task" | "mixed";
+  }>;
   onClose: () => void;
   onStartWorker: (workerId: string) => void;
   onStopWorker: (workerId: string) => void;
   onSendRawInput: (workerId: string, input: string) => void;
+  onSelectWorker: (workerId: string) => void;
 };
 
 export function WorkerConsoleModal({
@@ -22,10 +29,12 @@ export function WorkerConsoleModal({
   currentWorkerLog,
   runningWorkers,
   executingWorkers,
+  workerPool,
   onClose,
   onStartWorker,
   onStopWorker,
-  onSendRawInput
+  onSendRawInput,
+  onSelectWorker
 }: WorkerConsoleModalProps) {
   const terminalHostRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -35,10 +44,18 @@ export function WorkerConsoleModal({
   const lastLogLengthRef = useRef(0);
 
   const currentWorkerLabel =
-    WORKER_KINDS.find((w) => `worker-${w.kind}` === workerConsoleWorkerId)?.label ?? workerConsoleWorkerId;
+    workerPool.find((w) => w.workerId === workerConsoleWorkerId)?.workerLabel
+    ?? WORKER_KINDS.find((w) => `worker-${w.kind}` === workerConsoleWorkerId)?.label
+    ?? workerConsoleWorkerId;
   const isInteractiveRunning = runningWorkers.has(workerConsoleWorkerId);
   const isExecutingTask = executingWorkers.has(workerConsoleWorkerId);
   const canStartSession = !isInteractiveRunning && !isExecutingTask;
+
+  function formatMode(mode: "interactive" | "task" | "mixed"): string {
+    if (mode === "mixed") return "交互 + 任务";
+    if (mode === "interactive") return "交互会话";
+    return "任务执行";
+  }
 
   useEffect(() => {
     runningWorkersRef.current = runningWorkers;
@@ -169,6 +186,36 @@ export function WorkerConsoleModal({
         </div>
 
         <div className="ui-modal-body worker-console-body">
+          <div className="worker-console-pool">
+            <div className="worker-console-pool-header">
+              <span className="text-xs text-muted">Worker 池</span>
+              <span className="text-xs text-muted">{workerPool.length}</span>
+            </div>
+            {workerPool.length === 0 ? (
+              <div className="worker-console-pool-empty">当前没有运行中的 Worker</div>
+            ) : (
+              <div className="worker-console-pool-list" role="list">
+                {workerPool.map((entry) => {
+                  const selected = entry.workerId === workerConsoleWorkerId;
+                  return (
+                    <button
+                      key={entry.workerId}
+                      type="button"
+                      role="listitem"
+                      className={`worker-console-pool-item ${selected ? "active" : ""}`}
+                      onClick={() => onSelectWorker(entry.workerId)}
+                    >
+                      <div className="worker-console-pool-item-main">
+                        <span className="worker-console-pool-item-title">{entry.workerLabel}</span>
+                        <span className="worker-console-pool-item-sub">{entry.projectName}</span>
+                      </div>
+                      <span className="worker-console-pool-item-mode">{formatMode(entry.mode)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <div className="worker-terminal-wrap">
             <div ref={terminalHostRef} className="worker-terminal-surface" />
             {!isInteractiveRunning && !isExecutingTask ? (
@@ -180,7 +227,7 @@ export function WorkerConsoleModal({
           </div>
           <p className="worker-terminal-hint">
             {isInteractiveRunning
-              ? "终端已连接：直接键入命令即可（支持 ANSI/TUI 输出）。"
+              ? "终端已连接：直接键入命令即可（支持 ANSI/TUI 输出）。需要加载 Maple 时：Claude/iFlow 输入 /maple，Codex 输入 $maple。"
               : isExecutingTask
                 ? "任务执行中：当前终端为只读输出，你可以实时查看执行日志。"
                 : "终端未连接：启动后可直接在窗口内输入，无需额外模拟输入框。"}
