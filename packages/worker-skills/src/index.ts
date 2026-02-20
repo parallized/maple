@@ -145,9 +145,17 @@ function parseStructuredExecution(text: string): MapleStructuredExecutionOutput 
   }
 }
 
+function stripAnsi(text: string): string {
+  return text
+    // CSI (Control Sequence Introducer)
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    // OSC (Operating System Command)
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "");
+}
+
 export function parseWorkerExecutionResult(result: WorkerExecutionResultLike): MapleStructuredExecutionOutput | null {
-  const stdout = result.stdout.trim();
-  const stderr = result.stderr.trim();
+  const stdout = stripAnsi(result.stdout).trim();
+  const stderr = stripAnsi(result.stderr).trim();
   return parseStructuredExecution(stdout) ?? parseStructuredExecution(stderr);
 }
 

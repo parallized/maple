@@ -416,22 +416,52 @@ fn run_command_stream(
     return Err("worker executable 不能为空".to_string());
   }
 
-  let mut command = Command::new(&executable);
-  command.args(&args);
+  let mut pty_command = Command::new("script");
+  pty_command
+    .arg("-q")
+    .arg("/dev/null")
+    .arg(&executable)
+    .args(&args)
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+
   if let Some(value) = prompt.as_ref() {
-    if !value.trim().is_empty() {
-      command.arg(value);
+    let trimmed = value.trim();
+    if !trimmed.is_empty() {
+      pty_command.arg(trimmed);
     }
   }
-  command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-  if let Some(dir) = normalize_cwd(cwd) {
-    command.current_dir(dir);
+  if let Some(dir) = normalize_cwd(cwd.clone()) {
+    pty_command.current_dir(dir);
   }
 
-  let mut child = command
-    .spawn()
-    .map_err(|error| format!("执行命令失败: {error}"))?;
+  let mut child = match pty_command.spawn() {
+    Ok(child) => child,
+    Err(pty_error) => {
+      let mut fallback = Command::new(&executable);
+      fallback.args(&args);
+      if let Some(value) = prompt.as_ref() {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+          fallback.arg(trimmed);
+        }
+      }
+      fallback
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+      if let Some(dir) = normalize_cwd(cwd) {
+        fallback.current_dir(dir);
+      }
+
+      fallback.spawn().map_err(|fallback_error| {
+        format!("执行命令失败（PTY+回退均失败）: PTY={pty_error}; fallback={fallback_error}")
+      })?
+    }
+  };
 
   let stdout = child.stdout.take().ok_or_else(|| "无法捕获 stdout".to_string())?;
   let stderr = child.stderr.take().ok_or_else(|| "无法捕获 stderr".to_string())?;

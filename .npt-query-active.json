@@ -4,30 +4,12 @@
   "data_source_id": "6fc6db3b-684d-41a8-90e4-e6839b5e30b1",
   "status_property": "状态",
   "counts": {
-    "total": 1,
-    "active": 1,
+    "total": 0,
+    "active": 0,
     "blocked": 0,
     "skipped": 0
   },
-  "active": [
-    {
-      "id": "30df0611-dacc-80da-96f9-db3e6a32e737",
-      "url": "https://www.notion.so/term-30df0611dacc80da96f9db3e6a32e737",
-      "created_time": "2026-02-20T02:47:00.000Z",
-      "last_edited_time": "2026-02-20T03:01:00.000Z",
-      "status": "待办",
-      "title": "term"
-    }
-  ],
+  "active": [],
   "blocked": [],
-  "all": [
-    {
-      "id": "30df0611-dacc-80da-96f9-db3e6a32e737",
-      "url": "https://www.notion.so/term-30df0611dacc80da96f9db3e6a32e737",
-      "created_time": "2026-02-20T02:47:00.000Z",
-      "last_edited_time": "2026-02-20T03:01:00.000Z",
-      "status": "待办",
-      "title": "term"
-    }
-  ]
+  "all": []
 }

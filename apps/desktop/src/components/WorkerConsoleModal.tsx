@@ -54,7 +54,7 @@ export function WorkerConsoleModal({
 
     const terminal = new Terminal({
       cursorBlink: true,
-      convertEol: false,
+      convertEol: true,
       fontFamily: "\"SF Mono\", \"Menlo\", \"Monaco\", \"Courier New\", monospace",
       fontSize: 12,
       lineHeight: 1.35,
@@ -101,8 +101,6 @@ export function WorkerConsoleModal({
     if (currentWorkerLog.length > 0) {
       terminal.write(currentWorkerLog);
       lastLogLengthRef.current = currentWorkerLog.length;
-    } else {
-      terminal.write("$ ");
     }
     fitAddonRef.current?.fit();
   }, [workerConsoleWorkerId]);
@@ -118,8 +116,6 @@ export function WorkerConsoleModal({
       if (currentWorkerLog.length > 0) {
         terminal.write(currentWorkerLog);
         lastLogLengthRef.current = currentWorkerLog.length;
-      } else {
-        terminal.write("$ ");
       }
       return;
     }

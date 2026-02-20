@@ -1,5 +1,8 @@
 import { Icon } from "@iconify/react";
 import { CountUp, FadeContent, SpotlightCard, SplitText } from "../components/ReactBits";
+import BlurText from "../components/reactbits/BlurText";
+import ShinyText from "../components/reactbits/ShinyText";
+import GradientText from "../components/reactbits/GradientText";
 import type { McpServerStatus, WorkerKind } from "../domain";
 
 type OverviewViewProps = {
@@ -68,9 +71,22 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
               总消耗 Token
             </div>
             <div className="text-4xl font-bold tracking-tight text-(--color-base-content)">
-              {formatTokenCompact(metrics.tokenUsageTotal)}
+              <GradientText
+                colors={["#40ffaa", "#4079ff", "#40ffaa", "#4079ff"]}
+                animationSpeed={3}
+                showBorder={false}
+              >
+                {formatTokenCompact(metrics.tokenUsageTotal)}
+              </GradientText>
             </div>
-            <p className="m-0 text-xs text-muted">原始值：{metrics.tokenUsageTotal.toLocaleString("en-US")} tokens</p>
+            <BlurText 
+              text={`原始值：${metrics.tokenUsageTotal.toLocaleString("en-US")} tokens`}
+              className="m-0 text-xs text-muted"
+              delay={50}
+              animationFrom={{ filter: 'blur(10px)', opacity: 0, y: -50 }}
+              animationTo={[{ filter: 'blur(5px)', opacity: 0.5, y: 5 }, { filter: 'blur(0px)', opacity: 1, y: 0 }]}
+              onAnimationComplete={() => {}}
+            />
           </SpotlightCard>
         </FadeContent>
 
@@ -82,7 +98,9 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
             </div>
             <div className="flex items-center gap-2 text-sm">
               <span className={`w-2 h-2 rounded-full ${mcpStatus.running ? "bg-green-500" : "bg-red-500"}`} />
-              <span className="font-medium">{mcpStatus.running ? "运行中" : "未运行"}</span>
+              <span className="font-medium">
+                <ShinyText text={mcpStatus.running ? "运行中" : "未运行"} disabled={false} speed={3} className="" />
+              </span>
             </div>
             <p className="m-0 text-xs text-muted break-all">PID: {mcpStatus.pid ?? "—"} | {mcpStatus.command || "Built-in / N/A"}</p>
           </SpotlightCard>
