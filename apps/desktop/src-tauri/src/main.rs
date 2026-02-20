@@ -2,10 +2,9 @@
 
 use serde::Serialize;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::io::Write;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri::State;
@@ -227,20 +226,39 @@ async fn start_interactive_worker(
   let ttitle = task_title.clone();
 
   tauri::async_runtime::spawn_blocking(move || {
-    let mut command = Command::new(&executable_trimmed);
-    command.args(&args);
-    command
+    let mut pty_command = Command::new("script");
+    pty_command
+      .arg("-q")
+      .arg("/dev/null")
+      .arg(&executable_trimmed)
+      .args(&args)
       .stdin(Stdio::piped())
       .stdout(Stdio::piped())
       .stderr(Stdio::piped());
 
-    if let Some(dir) = normalize_cwd(cwd) {
-      command.current_dir(dir);
+    if let Some(dir) = normalize_cwd(cwd.clone()) {
+      pty_command.current_dir(dir);
     }
 
-    let mut child = command
-      .spawn()
-      .map_err(|error| format!("启动 Worker 失败: {error}"))?;
+    let mut child = match pty_command.spawn() {
+      Ok(child) => child,
+      Err(pty_error) => {
+        let mut fallback = Command::new(&executable_trimmed);
+        fallback
+          .args(&args)
+          .stdin(Stdio::piped())
+          .stdout(Stdio::piped())
+          .stderr(Stdio::piped());
+
+        if let Some(dir) = normalize_cwd(cwd) {
+          fallback.current_dir(dir);
+        }
+
+        fallback
+          .spawn()
+          .map_err(|fallback_error| format!("启动 Worker 失败（PTY+回退均失败）: PTY={pty_error}; fallback={fallback_error}"))?
+      }
+    };
 
     if let (Some(mut stdin_handle), Some(value)) = (child.stdin.take(), prompt.as_ref()) {
       let trimmed = value.trim();
@@ -266,14 +284,14 @@ async fn start_interactive_worker(
     let stdout_wid = wid.clone();
     let stdout_ttitle = ttitle.clone();
     let stdout_handle = std::thread::spawn(move || {
-      stream_lines_app(stdout_app, stdout_wid, stdout_ttitle, "stdout", stdout)
+      stream_chunks_app(stdout_app, stdout_wid, stdout_ttitle, "stdout", stdout)
     });
 
     let stderr_app = app_handle.clone();
     let stderr_wid = wid.clone();
     let stderr_ttitle = ttitle.clone();
     let stderr_handle = std::thread::spawn(move || {
-      stream_lines_app(stderr_app, stderr_wid, stderr_ttitle, "stderr", stderr)
+      stream_chunks_app(stderr_app, stderr_wid, stderr_ttitle, "stderr", stderr)
     });
 
     let status = child.wait().map_err(|error| format!("等待 Worker 退出失败: {error}"))?;
@@ -306,6 +324,7 @@ async fn start_interactive_worker(
 fn send_worker_input(
   worker_id: String,
   input: String,
+  append_newline: Option<bool>,
   state: State<'_, AppState>,
 ) -> Result<bool, String> {
   let mut sessions = state
@@ -325,9 +344,11 @@ fn send_worker_input(
   stdin
     .write_all(input.as_bytes())
     .map_err(|error| format!("写入 stdin 失败: {error}"))?;
-  stdin
-    .write_all(b"\n")
-    .map_err(|error| format!("写入换行失败: {error}"))?;
+  if append_newline.unwrap_or(true) {
+    stdin
+      .write_all(b"\n")
+      .map_err(|error| format!("写入换行失败: {error}"))?;
+  }
   stdin
     .flush()
     .map_err(|error| format!("flush stdin 失败: {error}"))?;
@@ -419,14 +440,14 @@ fn run_command_stream(
   let stdout_worker_id = worker_id.clone();
   let stdout_task_title = task_title.clone();
   let stdout_handle = std::thread::spawn(move || {
-    stream_lines(stdout_window, stdout_worker_id, stdout_task_title, "stdout", stdout)
+    stream_chunks(stdout_window, stdout_worker_id, stdout_task_title, "stdout", stdout)
   });
 
   let stderr_window = window.clone();
   let stderr_worker_id = worker_id.clone();
   let stderr_task_title = task_title.clone();
   let stderr_handle = std::thread::spawn(move || {
-    stream_lines(stderr_window, stderr_worker_id, stderr_task_title, "stderr", stderr)
+    stream_chunks(stderr_window, stderr_worker_id, stderr_task_title, "stderr", stderr)
   });
 
   let status = child
@@ -444,35 +465,31 @@ fn run_command_stream(
   })
 }
 
-fn stream_lines<R: std::io::Read>(
+fn stream_chunks<R: Read>(
   window: tauri::Window,
   worker_id: String,
   task_title: String,
   stream: &str,
-  reader: R,
+  mut reader: R,
 ) -> String {
   let mut out = String::new();
-  let mut buf_reader = BufReader::new(reader);
-  let mut line = String::new();
+  let mut buffer = [0u8; 4096];
 
   loop {
-    line.clear();
-    match buf_reader.read_line(&mut line) {
+    match reader.read(&mut buffer) {
       Ok(0) => break,
-      Ok(_) => {
-        out.push_str(&line);
-        let trimmed = line.trim_end_matches(&['\n', '\r']);
-        if !trimmed.is_empty() {
-          let _ = window.emit(
-            "maple://worker-log",
-            WorkerLogEvent {
-              worker_id: worker_id.clone(),
-              task_title: task_title.clone(),
-              stream: stream.to_string(),
-              line: trimmed.to_string(),
-            },
-          );
-        }
+      Ok(size) => {
+        let chunk = String::from_utf8_lossy(&buffer[..size]).to_string();
+        out.push_str(&chunk);
+        let _ = window.emit(
+          "maple://worker-log",
+          WorkerLogEvent {
+            worker_id: worker_id.clone(),
+            task_title: task_title.clone(),
+            stream: stream.to_string(),
+            line: chunk,
+          },
+        );
       }
       Err(_) => break,
     }
@@ -481,35 +498,31 @@ fn stream_lines<R: std::io::Read>(
   out
 }
 
-fn stream_lines_app<R: std::io::Read>(
+fn stream_chunks_app<R: Read>(
   app_handle: AppHandle,
   worker_id: String,
   task_title: String,
   stream: &str,
-  reader: R,
+  mut reader: R,
 ) -> String {
   let mut out = String::new();
-  let mut buf_reader = BufReader::new(reader);
-  let mut line = String::new();
+  let mut buffer = [0u8; 4096];
 
   loop {
-    line.clear();
-    match buf_reader.read_line(&mut line) {
+    match reader.read(&mut buffer) {
       Ok(0) => break,
-      Ok(_) => {
-        out.push_str(&line);
-        let trimmed = line.trim_end_matches(&['\n', '\r']);
-        if !trimmed.is_empty() {
-          let _ = app_handle.emit(
-            "maple://worker-log",
-            WorkerLogEvent {
-              worker_id: worker_id.clone(),
-              task_title: task_title.clone(),
-              stream: stream.to_string(),
-              line: trimmed.to_string(),
-            },
-          );
-        }
+      Ok(size) => {
+        let chunk = String::from_utf8_lossy(&buffer[..size]).to_string();
+        out.push_str(&chunk);
+        let _ = app_handle.emit(
+          "maple://worker-log",
+          WorkerLogEvent {
+            worker_id: worker_id.clone(),
+            task_title: task_title.clone(),
+            stream: stream.to_string(),
+            line: chunk,
+          },
+        );
       }
       Err(_) => break,
     }

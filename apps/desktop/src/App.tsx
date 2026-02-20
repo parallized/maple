@@ -75,7 +75,6 @@ export function App() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [workerConsoleOpen, setWorkerConsoleOpen] = useState(false);
   const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(`worker-${WORKER_KINDS[0]?.kind ?? "claude"}`);
-  const [consoleInput, setConsoleInput] = useState("");
   const [runningWorkers, setRunningWorkers] = useState<Set<string>>(() => new Set());
   const [executingWorkers, setExecutingWorkers] = useState<Set<string>>(() => new Set());
   const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
@@ -185,7 +184,7 @@ export function App() {
     let cleanup: (() => void) | undefined;
     void listen<WorkerLogEvent>("maple://worker-log", (event) => {
       const { workerId, line } = event.payload;
-      setWorkerLogs((prev) => ({ ...prev, [workerId]: `${prev[workerId] ?? ""}${line}\n` }));
+      setWorkerLogs((prev) => ({ ...prev, [workerId]: `${prev[workerId] ?? ""}${line}` }));
       const permissionPattern = /\b(allow|approve|permit|confirm|accept)\b.*\?|\[y\/n\]|\[Y\/n\]|\[y\/N\]|\(yes\/no\)|\(y\/n\)/i;
       if (permissionPattern.test(line)) setPermissionPrompt({ workerId, question: line });
     }).then((unlisten) => {
@@ -562,16 +561,14 @@ export function App() {
   }
 
   // ── Console ──
-  async function sendConsoleCommand(workerId: string, input: string) {
-    if (!isTauri || !input.trim()) return;
-    const trimmed = input.trim();
-    appendWorkerLog(workerId, `> ${trimmed}\n`);
-    setConsoleInput("");
-    if (runningWorkers.has(workerId)) {
-      try { await invoke<boolean>("send_worker_input", { workerId, input: trimmed }); }
-      catch (error) { appendWorkerLog(workerId, `\n${String(error)}\n`); }
+  async function startConsoleSession(workerId: string) {
+    if (!isTauri) return;
+    if (runningWorkers.has(workerId)) return;
+    if (executingWorkers.has(workerId)) {
+      setNotice("当前 Worker 正在执行任务，暂不可启动交互终端。");
       return;
     }
+
     const kindEntry = WORKER_KINDS.find((w) => `worker-${w.kind}` === workerId);
     if (!kindEntry) return;
     const config = workerConfigs[kindEntry.kind];
@@ -581,11 +578,18 @@ export function App() {
     const args = buildWorkerConsoleArgs(kindEntry.kind, config);
     setRunningWorkers((prev) => { const next = new Set(prev); next.add(workerId); return next; });
     try {
-      await invoke<boolean>("start_interactive_worker", { workerId, taskTitle: "", executable: config.executable, args, prompt: trimmed, cwd });
+      await invoke<boolean>("start_interactive_worker", { workerId, taskTitle: "", executable: config.executable, args, prompt: "", cwd });
     } catch (error) {
       appendWorkerLog(workerId, `\n${String(error)}\n`);
       setRunningWorkers((prev) => { const next = new Set(prev); next.delete(workerId); return next; });
     }
+  }
+
+  async function sendConsoleRawInput(workerId: string, input: string) {
+    if (!isTauri || !input) return;
+    if (!runningWorkers.has(workerId)) return;
+    try { await invoke<boolean>("send_worker_input", { workerId, input, appendNewline: false }); }
+    catch (error) { appendWorkerLog(workerId, `\n${String(error)}\n`); }
   }
 
   async function stopCurrentWorker(workerId: string) {
@@ -598,7 +602,7 @@ export function App() {
     setPermissionPrompt(null);
     if (!isTauri) return;
     appendWorkerLog(workerId, `> ${answer}\n`);
-    try { await invoke<boolean>("send_worker_input", { workerId, input: answer }); }
+    try { await invoke<boolean>("send_worker_input", { workerId, input: answer, appendNewline: true }); }
     catch (error) { appendWorkerLog(workerId, `\n${String(error)}\n`); }
   }
 
@@ -799,12 +803,11 @@ export function App() {
           <WorkerConsoleModal
             workerConsoleWorkerId={workerConsoleWorkerId}
             currentWorkerLog={currentWorkerLog}
-            consoleInput={consoleInput}
             runningWorkers={runningWorkers}
             executingWorkers={executingWorkers}
             onClose={() => setWorkerConsoleOpen(false)}
-            onConsoleInputChange={setConsoleInput}
-            onSendCommand={(wId, input) => void sendConsoleCommand(wId, input)}
+            onStartWorker={(wId) => void startConsoleSession(wId)}
+            onSendRawInput={(wId, input) => void sendConsoleRawInput(wId, input)}
             onStopWorker={(wId) => void stopCurrentWorker(wId)}
           />
         ) : null}

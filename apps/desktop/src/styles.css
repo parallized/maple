@@ -598,7 +598,7 @@ h1, h2, h3 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: clip;
-  max-width: 1px;
+  max-width: 0;
   width: 100%;
 }
 
@@ -999,23 +999,47 @@ h1, h2, h3 {
   gap: 0.6rem;
 }
 
-.worker-console-log {
-  margin: 0;
-  min-height: 360px;
-  max-height: 56vh;
-  overflow: auto;
-  padding: 12px;
+.worker-terminal-wrap {
+  position: relative;
+  height: clamp(300px, 56vh, 560px);
+  overflow: hidden;
   border-radius: 10px;
   border: 1px solid var(--color-base-300);
   background: var(--color-base-200);
-  font-size: 0.75rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
-.console-input-row .ui-input {
-  font-family: "SF Mono", "Menlo", "Monaco", "Courier New", monospace;
+.worker-terminal-surface {
+  height: 100%;
+  width: 100%;
+  padding: 10px 8px;
+}
+
+.worker-terminal-surface .xterm {
+  height: 100%;
+}
+
+.worker-terminal-surface .xterm-viewport {
+  background: transparent !important;
+}
+
+.worker-terminal-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  background: color-mix(in srgb, var(--color-base-200) 72%, transparent);
+  backdrop-filter: blur(1.5px);
+  pointer-events: none;
+}
+
+.worker-terminal-hint {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--color-muted);
 }
 
 @media (max-width: 980px) {
