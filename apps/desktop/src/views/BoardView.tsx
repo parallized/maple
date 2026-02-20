@@ -31,7 +31,7 @@ type BoardViewProps = {
 
 const TASK_TITLE_MAX_WIDTH = 340;
 const DEFAULT_COL_WIDTHS: Record<string, number> = {
-  taskIcon: 44,
+  taskIcon: 48,
   task: TASK_TITLE_MAX_WIDTH,
   status: 100,
   lastMention: 100,
@@ -288,7 +288,7 @@ function TaskTable({
           >
             <td className="col-taskIcon text-center">
               <span className="task-icon-pill" title={task.title || "(无标题)"}>
-                <Icon icon={resolveTaskIcon(task)} className="text-sm" />
+                <Icon icon={resolveTaskIcon(task)} className="text-base" />
               </span>
             </td>
             <td className="col-task">

@@ -598,6 +598,7 @@ h1, h2, h3 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: clip;
+  max-width: 0;
 }
 
 .task-row:hover td {
@@ -686,12 +687,20 @@ h1, h2, h3 {
   max-width: 100%;
 }
 
+.tags-inline .ui-badge {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .task-icon-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--color-base-200) 65%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-base-300) 55%, transparent);

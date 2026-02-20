@@ -77,7 +77,7 @@ export function WorkerConsoleModal({
 
         <div className="ui-modal-body worker-console-body">
           <pre ref={logRef} className="worker-console-log">
-            {currentWorkerLog || " "}
+            {currentWorkerLog || "$ "}
           </pre>
           <div className="console-input-row flex gap-2 mt-2">
             <input

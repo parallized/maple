@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useMemo, useState } from "react";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { queryProjectTodos, queryRecentContext } from "@maple/mcp-tools";
 import { buildWorkerArchiveReport, createWorkerExecutionPrompt, resolveMcpDecision } from "@maple/worker-skills";
 
@@ -80,6 +81,9 @@ export function App() {
   const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
   const [theme, setThemeState] = useState<ThemeMode>(() => loadTheme());
   const [windowMaximized, setWindowMaximized] = useState(false);
+  const workerLogsRef = useRef<Record<string, string>>({});
+  const doneProjectIdsRef = useRef<Set<string>>(new Set());
+  const doneProjectInitRef = useRef(false);
 
   // ── Derived ──
   const boardProject = boardProjectId ? projects.find((p) => p.id === boardProjectId) ?? null : null;
@@ -106,11 +110,65 @@ export function App() {
   }, [notice]);
 
   useEffect(() => {
+    workerLogsRef.current = workerLogs;
+  }, [workerLogs]);
+
+  useEffect(() => {
     if (boardProjectId && !projects.some((p) => p.id === boardProjectId)) {
       setBoardProjectId(null);
       setSelectedTaskId(null);
     }
   }, [boardProjectId, projects]);
+
+  async function notifyProjectAllDone(projectName: string) {
+    const title = `${projectName} 待办已全部完成`;
+    const body = "当前项目已没有待办任务。";
+
+    if (isTauri) {
+      try {
+        let granted = await isPermissionGranted();
+        if (!granted) {
+          const permission = await requestPermission();
+          granted = permission === "granted";
+        }
+        if (granted) {
+          await sendNotification({ title, body });
+          return;
+        }
+      } catch {
+        // fallback to in-app notice
+      }
+    }
+
+    setNotice(`项目「${projectName}」所有待办已完成。`);
+  }
+
+  useEffect(() => {
+    const allDone = (project: Project) => project.tasks.length > 0 && project.tasks.every((task) => task.status === "已完成");
+
+    if (!doneProjectInitRef.current) {
+      doneProjectIdsRef.current = new Set(projects.filter(allDone).map((project) => project.id));
+      doneProjectInitRef.current = true;
+      return;
+    }
+
+    const currentProjectIds = new Set(projects.map((project) => project.id));
+    for (const cachedId of [...doneProjectIdsRef.current]) {
+      if (!currentProjectIds.has(cachedId)) {
+        doneProjectIdsRef.current.delete(cachedId);
+      }
+    }
+
+    for (const project of projects) {
+      const completed = allDone(project);
+      if (completed && !doneProjectIdsRef.current.has(project.id)) {
+        doneProjectIdsRef.current.add(project.id);
+        void notifyProjectAllDone(project.name);
+      } else if (!completed) {
+        doneProjectIdsRef.current.delete(project.id);
+      }
+    }
+  }, [projects]);
 
   // ── Tauri Event Listeners ──
   useEffect(() => {
@@ -447,8 +505,10 @@ export function App() {
     try {
       for (const task of pendingTasks) {
         try {
+          const beforeLen = workerLogsRef.current[workerId]?.length ?? 0;
           const result = await runWorkerCommand(workerId, config, task, project);
-          if (!isTauri) {
+          const afterLen = workerLogsRef.current[workerId]?.length ?? 0;
+          if (!isTauri || afterLen === beforeLen) {
             if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
             if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
           }
@@ -654,7 +714,7 @@ export function App() {
           onCreateProject={() => void createProject()}
           onToggleConsole={() => {
             if (workerConsoleOpen) setWorkerConsoleOpen(false);
-            else openWorkerConsole(undefined, { requireActive: true });
+            else openWorkerConsole(undefined);
           }}
           onMinimize={minimizeWindow}
           onToggleMaximize={toggleWindowMaximize}
@@ -683,7 +743,7 @@ export function App() {
                 onCreateReleaseDraft={createReleaseDraft}
                 onAssignWorkerKind={assignWorkerKind}
                 onSetDetailMode={setDetailMode}
-                onOpenConsole={() => openWorkerConsole(boardProject?.workerKind, { requireActive: true })}
+                onOpenConsole={() => openWorkerConsole(boardProject?.workerKind)}
                 onRemoveProject={removeProject}
               />
             ) : null}
