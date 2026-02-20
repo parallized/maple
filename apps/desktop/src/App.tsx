@@ -244,6 +244,17 @@ export function App() {
     return [...buildDangerArgs(kind, config.dangerMode), ...parseArgs(config.consoleArgs)];
   }
 
+  function buildWorkerRunPayload(workerId: string, config: WorkerConfig, task: Task, project: Project): { args: string[]; prompt: string } {
+    const kind = WORKER_KINDS.find((entry) => `worker-${entry.kind}` === workerId)?.kind;
+    const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
+    const prompt = createWorkerExecutionPrompt({
+      projectName: project.name,
+      directory: project.directory,
+      taskTitle: task.title
+    });
+    return { args, prompt };
+  }
+
   // ── Task CRUD ──
   function updateTask(projectId: string, taskId: string, updater: (task: Task) => Task) {
     const now = new Date().toISOString();
@@ -436,16 +447,23 @@ export function App() {
   }
 
   // ── Worker Execution ──
-  async function runWorkerCommand(workerId: string, config: WorkerConfig, task: Task, project: Project): Promise<WorkerCommandResult> {
+  async function runWorkerCommand(
+    workerId: string,
+    config: WorkerConfig,
+    task: Task,
+    project: Project,
+    payload?: { args: string[]; prompt: string }
+  ): Promise<WorkerCommandResult> {
     if (!isTauri) return { success: false, code: null, stdout: "", stderr: "当前环境无法执行 Worker CLI。" };
-    const kind = WORKER_KINDS.find((entry) => `worker-${entry.kind}` === workerId)?.kind;
-    const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
-    const prompt = createWorkerExecutionPrompt({
-      projectName: project.name,
-      directory: project.directory,
-      taskTitle: task.title
+    const runPayload = payload ?? buildWorkerRunPayload(workerId, config, task, project);
+    return invoke<WorkerCommandResult>("run_worker", {
+      workerId,
+      taskTitle: task.title,
+      executable: config.executable,
+      args: runPayload.args,
+      prompt: runPayload.prompt,
+      cwd: project.directory
     });
-    return invoke<WorkerCommandResult>("run_worker", { workerId, taskTitle: task.title, executable: config.executable, args, prompt, cwd: project.directory });
   }
 
   async function probeWorker(kind: WorkerKind) {
@@ -505,8 +523,9 @@ export function App() {
     try {
       for (const task of pendingTasks) {
         try {
+          const payload = buildWorkerRunPayload(workerId, config, task, project);
           const beforeLen = workerLogsRef.current[workerId]?.length ?? 0;
-          const result = await runWorkerCommand(workerId, config, task, project);
+          const result = await runWorkerCommand(workerId, config, task, project, payload);
           const afterLen = workerLogsRef.current[workerId]?.length ?? 0;
           if (!isTauri || afterLen === beforeLen) {
             if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);

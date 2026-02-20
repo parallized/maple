@@ -335,8 +335,8 @@ function TaskTable({
                 {task.tags.length === 0 ? <span className="text-xs text-muted">—</span> : null}
                 {task.tags.map((tag, index) => (
                   <span key={`${tag}-${index}`} className="ui-badge">
-                    <Icon icon={resolveTagIcon(tag)} className="text-[11px] opacity-70" />
-                    {tag}
+                    <Icon icon={resolveTagIcon(tag)} className="text-[11px] opacity-70 shrink-0" />
+                    <span className="truncate flex-1 min-w-0">{tag}</span>
                   </span>
                 ))}
               </div>

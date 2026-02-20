@@ -598,7 +598,8 @@ h1, h2, h3 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: clip;
-  max-width: 0;
+  max-width: 1px;
+  width: 100%;
 }
 
 .task-row:hover td {
@@ -685,6 +686,7 @@ h1, h2, h3 {
   align-items: center;
   overflow: hidden;
   max-width: 100%;
+  min-width: 0;
 }
 
 .tags-inline .ui-badge {
@@ -693,6 +695,7 @@ h1, h2, h3 {
   white-space: nowrap;
   max-width: 100%;
   min-width: 0;
+  flex-shrink: 1;
 }
 
 .task-icon-pill {
