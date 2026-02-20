@@ -175,17 +175,19 @@ export function WorkerConsoleModal({
         <div className="ui-modal-body worker-console-body">
           <div className="worker-terminal-wrap">
             <div ref={terminalHostRef} className="worker-terminal-surface" />
-            {!isInteractiveRunning ? (
+            {!isInteractiveRunning && !isExecutingTask ? (
               <div className="worker-terminal-overlay">
                 <Icon icon="mingcute:terminal-box-line" />
-                <span>{isExecutingTask ? "任务执行中，终端只读。" : "点击「启动」连接真实终端会话。"}</span>
+                <span>点击「启动」连接真实终端会话。</span>
               </div>
             ) : null}
           </div>
           <p className="worker-terminal-hint">
             {isInteractiveRunning
               ? "终端已连接：直接键入命令即可（支持 ANSI/TUI 输出）。"
-              : "终端未连接：启动后可直接在窗口内输入，无需额外模拟输入框。"}
+              : isExecutingTask
+                ? "任务执行中：当前终端为只读输出，你可以实时查看执行日志。"
+                : "终端未连接：启动后可直接在窗口内输入，无需额外模拟输入框。"}
           </p>
         </div>
       </div>

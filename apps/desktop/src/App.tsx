@@ -77,6 +77,7 @@ export function App() {
   const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(`worker-${WORKER_KINDS[0]?.kind ?? "claude"}`);
   const [runningWorkers, setRunningWorkers] = useState<Set<string>>(() => new Set());
   const [executingWorkers, setExecutingWorkers] = useState<Set<string>>(() => new Set());
+  const [workerProjectMap, setWorkerProjectMap] = useState<Record<string, string>>({});
   const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
   const [theme, setThemeState] = useState<ThemeMode>(() => loadTheme());
   const [windowMaximized, setWindowMaximized] = useState(false);
@@ -91,10 +92,42 @@ export function App() {
   const metrics = useMemo(() => {
     const allTasks = projects.flatMap((p) => p.tasks);
     const pending = allTasks.filter((t) => t.status !== "已完成").length;
+    const completedCount = allTasks.filter((t) => t.status === "已完成").length;
     const inProgressCount = allTasks.filter((t) => t.status === "进行中").length;
     const runningCount = new Set([...runningWorkers, ...executingWorkers]).size;
-    return { pending, inProgressCount, runningCount, projectCount: projects.length };
-  }, [projects, runningWorkers, executingWorkers]);
+    const tokenUsageTotal = collectTokenUsage(projects, workerLogs);
+    return { pending, completedCount, inProgressCount, runningCount, projectCount: projects.length, tokenUsageTotal };
+  }, [projects, runningWorkers, executingWorkers, workerLogs]);
+
+  const workerAvailability = useMemo(
+    () =>
+      WORKER_KINDS.map((worker) => {
+        const executable = workerConfigs[worker.kind]?.executable?.trim() ?? "";
+        return {
+          kind: worker.kind,
+          label: worker.label,
+          executable,
+          available: executable.length > 0
+        };
+      }),
+    [workerConfigs]
+  );
+
+  const workerPoolOverview = useMemo(() => {
+    const workerIds = [...new Set([...runningWorkers, ...executingWorkers])];
+    return workerIds.map((workerId) => {
+      const kindEntry = WORKER_KINDS.find((entry) => `worker-${entry.kind}` === workerId);
+      const interactive = runningWorkers.has(workerId);
+      const executing = executingWorkers.has(workerId);
+      const mode: "interactive" | "task" | "mixed" = interactive && executing ? "mixed" : interactive ? "interactive" : "task";
+      return {
+        workerId,
+        workerLabel: kindEntry?.label ?? workerId,
+        mode,
+        projectName: workerProjectMap[workerId] ?? "未绑定项目"
+      };
+    });
+  }, [runningWorkers, executingWorkers, workerProjectMap]);
 
   // ── Persistence ──
   useEffect(() => { applyTheme(theme); localStorage.setItem(STORAGE_THEME, theme); }, [theme]);
@@ -207,6 +240,12 @@ export function App() {
     void listen<WorkerDoneEvent>("maple://worker-done", (event) => {
       const { workerId, success, code } = event.payload;
       setRunningWorkers((prev) => { const next = new Set(prev); next.delete(workerId); return next; });
+      setWorkerProjectMap((prev) => {
+        if (!(workerId in prev)) return prev;
+        const next = { ...prev };
+        delete next[workerId];
+        return next;
+      });
       const kindEntry = WORKER_KINDS.find((w) => `worker-${w.kind}` === workerId);
       appendWorkerLog(workerId, `\n[exit ${code ?? "?"}] ${success ? "完成" : "失败"}\n`);
       setNotice(`${kindEntry?.label ?? workerId} 会话已结束（exit ${code ?? "?"}）`);
@@ -241,6 +280,57 @@ export function App() {
 
   function buildWorkerConsoleArgs(kind: WorkerKind, config: WorkerConfig): string[] {
     return [...buildDangerArgs(kind, config.dangerMode), ...parseArgs(config.consoleArgs)];
+  }
+
+  function quoteShellArg(value: string): string {
+    if (value.length === 0) return "''";
+    if (!/[^\w@%+=:,./-]/.test(value)) return value;
+    return `'${value.replace(/'/g, "'\"'\"'")}'`;
+  }
+
+  function formatCommandForLog(executable: string, args: string[], prompt?: string): string {
+    const parts = [executable, ...args];
+    if (prompt && prompt.length > 0) parts.push(prompt);
+    return parts.map(quoteShellArg).join(" ");
+  }
+
+  function normalizeTokenNumber(raw: string, unitRaw: string | undefined): number {
+    const base = Number(raw.replace(/,/g, ""));
+    if (!Number.isFinite(base)) return 0;
+    const unit = (unitRaw ?? "").trim().toLowerCase();
+    if (unit === "k") return base * 1_000;
+    if (unit === "m") return base * 1_000_000;
+    if (unit === "b") return base * 1_000_000_000;
+    return base;
+  }
+
+  function extractTokenUsageFromText(text: string): number {
+    if (!text) return 0;
+    let total = 0;
+    const tokenAfterNumber = /(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\s*(?:tokens?|token)\b/gi;
+    for (const match of text.matchAll(tokenAfterNumber)) {
+      total += normalizeTokenNumber(match[1] ?? "", match[2]);
+    }
+    const tokenAfterLabel = /(?:tokens?|token)\s*[:=]\s*(\d[\d,]*(?:\.\d+)?)(?:\s*([kmb]))?/gi;
+    for (const match of text.matchAll(tokenAfterLabel)) {
+      total += normalizeTokenNumber(match[1] ?? "", match[2]);
+    }
+    return Math.round(total);
+  }
+
+  function collectTokenUsage(projectList: Project[], logs: Record<string, string>): number {
+    let total = 0;
+    for (const project of projectList) {
+      for (const task of project.tasks) {
+        for (const report of task.reports) {
+          total += extractTokenUsageFromText(report.content);
+        }
+      }
+    }
+    for (const log of Object.values(logs)) {
+      total += extractTokenUsageFromText(log);
+    }
+    return total;
   }
 
   function buildWorkerRunPayload(workerId: string, config: WorkerConfig, task: Task, project: Project): { args: string[]; prompt: string } {
@@ -517,12 +607,14 @@ export function App() {
     });
     const nextVersion = bumpPatch(project.version);
     const workerId = `worker-${kind}`;
+    setWorkerProjectMap((prev) => ({ ...prev, [workerId]: project.name }));
     setExecutingWorkers((prev) => { const next = new Set(prev); next.add(workerId); return next; });
     openWorkerConsole(kind);
     try {
       for (const task of pendingTasks) {
         try {
           const payload = buildWorkerRunPayload(workerId, config, task, project);
+          appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, payload.args)}\n`);
           const beforeLen = workerLogsRef.current[workerId]?.length ?? 0;
           const result = await runWorkerCommand(workerId, config, task, project, payload);
           const afterLen = workerLogsRef.current[workerId]?.length ?? 0;
@@ -557,6 +649,12 @@ export function App() {
         next.delete(workerId);
         return next;
       });
+      setWorkerProjectMap((prev) => {
+        if (runningWorkers.has(workerId) || !(workerId in prev)) return prev;
+        const next = { ...prev };
+        delete next[workerId];
+        return next;
+      });
     }
   }
 
@@ -576,6 +674,8 @@ export function App() {
     const project = boardProject ?? projects[0];
     const cwd = project?.directory ?? "";
     const args = buildWorkerConsoleArgs(kindEntry.kind, config);
+    appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, args)}\n`);
+    setWorkerProjectMap((prev) => ({ ...prev, [workerId]: project?.name ?? "未绑定项目" }));
     setRunningWorkers((prev) => { const next = new Set(prev); next.add(workerId); return next; });
     try {
       await invoke<boolean>("start_interactive_worker", { workerId, taskTitle: "", executable: config.executable, args, prompt: "", cwd });
@@ -747,7 +847,12 @@ export function App() {
         <div className="main-column">
           <main className="flex-1 overflow-hidden flex flex-col">
             {view === "overview" ? (
-              <OverviewView metrics={metrics} mcpStatus={mcpStatus} />
+              <OverviewView
+                metrics={metrics}
+                mcpStatus={mcpStatus}
+                workerAvailability={workerAvailability}
+                workerPool={workerPoolOverview}
+              />
             ) : null}
 
             {view === "board" ? (
