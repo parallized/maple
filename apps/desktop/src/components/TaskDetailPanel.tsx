@@ -132,120 +132,139 @@ function renderReportDescription(description: string): ReactNode {
 
 export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProps) {
   return (
-    <section className="task-detail-panel flex flex-col pb-8 px-2">
-      <header className="mb-6">
-        <div className="flex items-start justify-between gap-4">
-          <h2 className="m-0 text-[32px] font-serif font-bold tracking-tight text-primary leading-snug">
+    <section className="task-detail-panel flex flex-col pb-10">
+      <header className="mb-6 relative">
+        <div className="flex items-start justify-between gap-6">
+          <h2 className="m-0 text-[26px] font-semibold tracking-tight text-primary leading-[1.3]">
             {task.title || "(无标题)"}
           </h2>
-          {onDelete ? (
-            <button
-              type="button"
-              className="ui-btn ui-btn--sm ui-btn--ghost ui-btn--danger ui-icon-btn shrink-0 mt-1"
-              onClick={onDelete}
-              aria-label="删除任务"
-            >
-              <Icon icon="mingcute:delete-2-line" className="text-base" />
-            </button>
-          ) : null}
+          <div className="flex items-center gap-1 shrink-0">
+            {onDelete ? (
+              <button
+                type="button"
+                className="ui-btn ui-btn--xs ui-btn--ghost ui-btn--danger ui-icon-btn opacity-40 hover:opacity-100 transition-opacity"
+                onClick={onDelete}
+                aria-label="删除任务"
+              >
+                <Icon icon="mingcute:delete-2-line" className="text-base" />
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 
-      <div className="task-properties grid grid-cols-[120px_1fr] gap-y-1.5 items-center mb-8">
-        <span className="text-muted text-[14px] flex items-center gap-2">
-          <Icon icon="mingcute:signal-line" className="text-[16px] opacity-70" />
-          状态
-        </span>
-        <div className="flex items-center min-h-[32px]">
-          <span className={`ui-badge ${task.status === "已完成" ? "ui-badge--success" : task.status === "已阻塞" ? "ui-badge--error" : task.status === "进行中" ? "ui-badge--solid" : task.status === "需要更多信息" ? "ui-badge--warning" : ""}`}>
-            <span className={`status-dot status-${task.status === "已完成" ? "done" : task.status === "已阻塞" ? "blocked" : task.status === "进行中" ? "active" : task.status === "需要更多信息" ? "info" : "pending"}`} />
-            {task.status}
-          </span>
-        </div>
-
-        <span className="text-muted text-[14px] flex items-center gap-2">
-          <Icon icon="mingcute:version-line" className="text-[16px] opacity-70" />
-          版本
-        </span>
-        <div className="flex items-center min-h-[32px] text-[14px] text-primary">
-          {task.version ? <span className="ui-badge">{task.version}</span> : <span className="text-muted opacity-50">空白</span>}
-        </div>
-
-        <span className="text-muted text-[14px] flex items-center gap-2">
-          <Icon icon="mingcute:tag-line" className="text-[16px] opacity-70" />
-          标签
-        </span>
-        <div className="flex flex-wrap gap-1.5 items-center min-h-[32px]">
-          {task.tags.length === 0 ? <span className="text-muted text-[14px] opacity-50">空白</span> : null}
-          {task.tags.map((tag) => (
-            <span key={tag} className="ui-badge">
-              {tag}
+      <div className="task-properties flex flex-col gap-y-3 mb-8">
+        <div className="grid grid-cols-2 gap-x-8">
+          <div className="flex items-center gap-4">
+            <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
+              <Icon icon="mingcute:signal-line" className="text-[15px] opacity-60" />
+              状态
             </span>
-          ))}
+            <div className="flex items-center">
+              <span className={`ui-badge ui-badge--sm ${task.status === "已完成" ? "ui-badge--success" : task.status === "已阻塞" ? "ui-badge--error" : task.status === "进行中" ? "ui-badge--solid" : task.status === "需要更多信息" ? "ui-badge--warning" : ""}`}>
+                <span className={`status-dot status-${task.status === "已完成" ? "done" : task.status === "已阻塞" ? "blocked" : task.status === "进行中" ? "active" : task.status === "需要更多信息" ? "info" : "pending"}`} />
+                {task.status}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
+              <Icon icon="mingcute:version-line" className="text-[15px] opacity-60" />
+              版本
+            </span>
+            <div className="flex items-center text-[13px] text-primary">
+              {task.version ? <span className="ui-badge ui-badge--sm">{task.version}</span> : <span className="text-muted opacity-40">未指定</span>}
+            </div>
+          </div>
         </div>
 
-        <span className="text-muted text-[14px] flex items-center gap-2">
-          <Icon icon="mingcute:time-line" className="text-[16px] opacity-70" />
-          创建
-        </span>
-        <div className="flex items-center min-h-[32px] text-[14px] text-primary" title={formatAbsoluteTime(task.createdAt)}>
-          {formatRelativeTime(task.createdAt)}
+        <div className="grid grid-cols-2 gap-x-8">
+          <div className="flex items-center gap-4">
+            <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
+              <Icon icon="mingcute:time-line" className="text-[15px] opacity-60" />
+              创建
+            </span>
+            <div className="flex items-center text-[13px] text-secondary/80" title={formatAbsoluteTime(task.createdAt)}>
+              {formatRelativeTime(task.createdAt)}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
+              <Icon icon="mingcute:history-line" className="text-[15px] opacity-60" />
+              更新
+            </span>
+            <div className="flex items-center text-[13px] text-secondary/80" title={formatAbsoluteTime(task.updatedAt)}>
+              {formatRelativeTime(task.updatedAt)}
+            </div>
+          </div>
         </div>
 
-        <span className="text-muted text-[14px] flex items-center gap-2">
-          <Icon icon="mingcute:history-line" className="text-[16px] opacity-70" />
-          更新
-        </span>
-        <div className="flex items-center min-h-[32px] text-[14px] text-primary" title={formatAbsoluteTime(task.updatedAt)}>
-          {formatRelativeTime(task.updatedAt)}
+        <div className="flex items-start gap-4">
+          <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] pt-1">
+            <Icon icon="mingcute:tag-line" className="text-[15px] opacity-60" />
+            标签
+          </span>
+          <div className="flex flex-wrap gap-1.5 items-center">
+            {task.tags.length === 0 ? <span className="text-muted text-[13px] opacity-40">无标签</span> : null}
+            {task.tags.map((tag) => (
+              <span key={tag} className="ui-badge ui-badge--sm">
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="h-px bg-(--color-base-300) mb-8" />
+      <div className="h-px bg-(--color-base-300) mb-4" />
 
-      <div>
-        <h3 className="text-[14px] font-medium mb-4 mt-2 flex items-center gap-2 text-muted">
-          <Icon icon="mingcute:comment-line" className="text-[16px] opacity-70" />
+      <div className="pt-2">
+        <h3 className="text-[13px] font-semibold mb-4 flex items-center gap-2 text-primary/80 tracking-wide uppercase">
+          <Icon icon="mingcute:comment-line" className="text-[16px] opacity-60" />
           执行报告
-          <span className="ui-badge px-1.5 py-0.5 text-[12px] ml-1 opacity-80">{task.reports.length}</span>
+          <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-(--color-base-300) rounded text-[10px] font-bold ml-1 text-secondary">{task.reports.length}</span>
         </h3>
         
         {task.reports.length === 0 ? (
-          <div className="py-6 text-center border border-dashed border-(--color-base-300) rounded-xl">
-            <p className="text-muted text-sm m-0">暂无执行报告</p>
+          <div className="py-10 text-center border border-dashed border-(--color-base-300) rounded-2xl bg-(--color-base-200)/30">
+            <Icon icon="mingcute:empty-line" className="text-2xl text-muted/30 mb-2 mx-auto" />
+            <p className="text-muted/60 text-[13px] m-0">暂无执行报告</p>
           </div>
         ) : null}
 
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-10">
           {task.reports.map((report) => {
             const parsed = parseTaskReport(report.content);
             return (
-              <article key={report.id} className="flex flex-col gap-3 group mt-2">
-                <div className="flex items-center gap-2 text-[14px]">
-                  <div className="w-6 h-6 rounded-full bg-(--color-base-200) border border-(--color-base-300) flex items-center justify-center text-[12px] font-bold text-secondary">
+              <article key={report.id} className="flex flex-col gap-4 relative">
+                <div className="flex items-center gap-2.5 text-[13px]">
+                  <div className="w-7 h-7 rounded-full bg-primary/5 border border-primary/10 flex items-center justify-center text-[11px] font-bold text-primary">
                     {report.author.charAt(0).toUpperCase()}
                   </div>
-                  <strong className="font-medium text-primary">{report.author}</strong>
-                  <span
-                    className="text-muted text-[13px] ml-auto opacity-60 group-hover:opacity-100 transition-opacity"
-                    title={formatAbsoluteTime(report.createdAt)}
-                  >
-                    {formatRelativeTime(report.createdAt)}
-                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    <strong className="font-semibold text-primary">{report.author}</strong>
+                    <span
+                      className="text-muted text-[11px] opacity-60"
+                      title={formatAbsoluteTime(report.createdAt)}
+                    >
+                      {formatRelativeTime(report.createdAt)}
+                    </span>
+                  </div>
                 </div>
-                <div className="pt-1">
-                  <div className="bg-(--color-base-200)/50 rounded-2xl p-4">
+                <div className="pl-0">
+                  <div className="bg-(--color-base-200)/40 border border-(--color-base-300)/50 rounded-2xl p-5 shadow-sm">
                     {parsed ? (
-                      <div className="flex flex-col gap-3">
+                      <div className="flex flex-col gap-4">
                         <div className="flex items-center gap-2">
-                          <span className={`ui-badge ${reportBadgeClass(parsed.status)}`}>{parsed.status}</span>
+                          <span className={`ui-badge ui-badge--sm ${reportBadgeClass(parsed.status)} font-medium`}>{parsed.status}</span>
                         </div>
-                        <div className="text-[14px] leading-relaxed text-base-content">
+                        <div className="text-[14px] leading-[1.6] text-primary/90">
                           {renderReportDescription(parsed.description)}
                         </div>
                       </div>
                     ) : (
-                      <div className="text-[14px] leading-relaxed text-base-content whitespace-pre-wrap">{report.content}</div>
+                      <div className="text-[14px] leading-[1.6] text-primary/90 whitespace-pre-wrap">{report.content}</div>
                     )}
                   </div>
                 </div>
