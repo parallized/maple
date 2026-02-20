@@ -28,10 +28,10 @@ description: "Run /maple workflow for Maple development tasks."
 # maple
 
 When user asks \`/maple\`:
-1. Work in \`${MAPLE_ROOT}\`.
-2. Use Maple MCP + project skills to complete the user request end-to-end.
+1. Work in the current working directory (do NOT cd elsewhere).
+2. Use Maple MCP tools to query tasks and submit results.
 3. Always run typecheck/build verification before marking done.
-4. Keep Maple on its standalone execution path without external task-system dependencies.
+4. Output \`mcp_decision\` with status, comment, and tags.
 EOF
 }
 
@@ -39,12 +39,13 @@ write_claude_command() {
   local command_dir="${HOME}/.claude/commands"
   mkdir -p "$command_dir"
   cat > "${command_dir}/maple.md" <<EOF
-Run Maple workflow in repository:
+Run Maple workflow in the current working directory:
 
-1. cd ${MAPLE_ROOT}
-2. use Maple MCP + local skills to complete the requested implementation
-3. run typecheck/build before finishing
-4. keep Maple on the standalone execution path
+1. Use Maple MCP tools (query_project_todos, query_recent_context) to get tasks
+2. Implement the requested changes in the current project
+3. Run typecheck/build before finishing
+4. Output mcp_decision with status, comment, and tags
+5. Use submit_task_report to report results, then finish_worker when done
 EOF
 }
 
@@ -56,10 +57,10 @@ write_iflow_user_assets() {
   cat > "${workflow_dir}/maple.md" <<EOF
 /maple
 
-cd ${MAPLE_ROOT}
-use Maple MCP + local skills to complete the user request
-run typecheck/build before finishing
-keep Maple on the standalone execution path
+Work in the current working directory (do NOT cd elsewhere).
+Use Maple MCP tools to query tasks and submit results.
+Run typecheck/build before finishing.
+Output mcp_decision with status, comment, and tags.
 EOF
   cat > "${skill_root_dir}/SKILL.md" <<EOF
 ---
