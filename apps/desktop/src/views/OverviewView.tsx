@@ -3,6 +3,7 @@ import { CountUp, FadeContent, SpotlightCard, SplitText } from "../components/Re
 import BlurText from "../components/reactbits/BlurText";
 import ShinyText from "../components/reactbits/ShinyText";
 import GradientText from "../components/reactbits/GradientText";
+import AnimatedList from "../components/reactbits/AnimatedList";
 import type { McpServerStatus, WorkerKind } from "../domain";
 
 type OverviewViewProps = {
@@ -42,7 +43,7 @@ function formatMode(mode: "interactive" | "task" | "mixed"): string {
 
 export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPool }: OverviewViewProps) {
   return (
-    <section className="h-full flex flex-col p-2">
+    <section className="h-full flex flex-col p-2 relative z-0">
       <header className="mb-4 px-2">
         <h2 className="text-2xl font-bold tracking-tight m-0 text-primary flex items-center gap-2">
           <Icon icon="mingcute:dashboard-2-fill" className="text-3xl opacity-80" />
@@ -126,9 +127,9 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
           </SpotlightCard>
         </FadeContent>
 
-        <FadeContent delay={400} className="flex md:col-span-2 lg:col-span-2">
-          <SpotlightCard className="w-full rounded-2xl bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-300)_40%,transparent)] p-6 flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-3">
+        <FadeContent delay={400} className="flex md:col-span-2 lg:col-span-2 relative">
+          <SpotlightCard className="w-full h-full rounded-2xl bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-300)_40%,transparent)] p-6 flex flex-col gap-3 overflow-hidden">
+            <div className="flex items-center justify-between gap-3 relative z-10">
               <div className="text-muted text-sm font-medium flex items-center gap-2">
                 <Icon icon="mingcute:layers-line" />
                 Worker 运行队列 Pool
@@ -136,22 +137,28 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
               <span className="text-xs text-muted">运行中 {metrics.runningCount} / 待办 {metrics.pending} / 项目 {metrics.projectCount}</span>
             </div>
 
-            {workerPool.length === 0 ? (
-              <p className="m-0 text-sm text-muted">当前没有运行中的 Worker。</p>
-            ) : (
-              <div className="space-y-2 text-sm">
-                {workerPool.map((entry) => (
-                  <div key={entry.workerId} className="rounded-xl border border-(--color-base-300) px-3 py-2 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Icon icon="mingcute:terminal-line" />
-                      <span className="font-medium">{entry.workerLabel}</span>
-                      <span className="text-xs text-muted">({formatMode(entry.mode)})</span>
+            <div className="flex-1 overflow-hidden relative z-10 -mx-6 px-6">
+              {workerPool.length === 0 ? (
+                <p className="m-0 text-sm text-muted">当前没有运行中的 Worker。</p>
+              ) : (
+                <AnimatedList
+                  items={workerPool.map((entry) => (
+                    <div key={entry.workerId} className="w-full flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Icon icon="mingcute:terminal-line" />
+                        <span className="font-medium">{entry.workerLabel}</span>
+                        <span className="text-xs text-muted">({formatMode(entry.mode)})</span>
+                      </div>
+                      <span className="text-xs text-muted truncate max-w-[50%]">{entry.projectName}</span>
                     </div>
-                    <span className="text-xs text-muted truncate max-w-[50%]">{entry.projectName}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                  onItemSelect={() => {}}
+                  showGradients={true}
+                  className="w-full h-full"
+                  itemClassName="!p-3 !mb-2 !bg-(--color-base-200) !border !border-[color-mix(in_srgb,var(--color-base-300)_40%,transparent)]"
+                />
+              )}
+            </div>
           </SpotlightCard>
         </FadeContent>
       </div>
