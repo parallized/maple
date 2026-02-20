@@ -12,8 +12,6 @@ type WorkerConsoleModalProps = {
   onConsoleInputChange: (value: string) => void;
   onSendCommand: (workerId: string, input: string) => void;
   onStopWorker: (workerId: string) => void;
-  onClearLog: (workerId: string) => void;
-  onNotice: (msg: string) => void;
 };
 
 export function WorkerConsoleModal({
@@ -25,9 +23,7 @@ export function WorkerConsoleModal({
   onClose,
   onConsoleInputChange,
   onSendCommand,
-  onStopWorker,
-  onClearLog,
-  onNotice
+  onStopWorker
 }: WorkerConsoleModalProps) {
   const logRef = useRef<HTMLPreElement>(null);
   const currentWorkerLabel =
@@ -35,6 +31,11 @@ export function WorkerConsoleModal({
   const isInteractiveRunning = runningWorkers.has(workerConsoleWorkerId);
   const isExecutingTask = executingWorkers.has(workerConsoleWorkerId);
   const isReadOnly = isExecutingTask && !isInteractiveRunning;
+  const inputPlaceholder = isReadOnly
+    ? "任务执行中，终端只读…"
+    : isInteractiveRunning
+      ? "输入命令并回车…"
+      : "输入命令并回车（如 /maple 或 $maple）…";
 
   useEffect(() => {
     if (logRef.current) {
@@ -47,16 +48,9 @@ export function WorkerConsoleModal({
       <div className="ui-modal-backdrop" onClick={onClose} />
       <div className="ui-modal-panel ui-modal-panel--console">
         <div className="worker-console-header">
-          <div className="worker-console-meta">
-            <h3 className="m-0 font-semibold">Worker 控制台</h3>
-            <p className="m-0 text-muted text-xs">当前 Worker：{currentWorkerLabel}</p>
-            <p className="m-0 text-muted text-xs">
-              {isInteractiveRunning
-                ? `${currentWorkerLabel} 会话运行中，输入将直接发送到 CLI。`
-                : isExecutingTask
-                  ? `${currentWorkerLabel} 正在执行任务，当前为只读日志视图。`
-                  : `${currentWorkerLabel} 未连接会话，输入后将自动开始交互。`}
-            </p>
+          <div className="worker-console-meta terminal-meta">
+            <h3 className="m-0 font-semibold">Terminal</h3>
+            <p className="m-0 text-muted text-xs">{currentWorkerLabel}</p>
           </div>
 
           <div className="worker-console-actions">
@@ -72,27 +66,6 @@ export function WorkerConsoleModal({
             ) : null}
             <button
               type="button"
-              className="ui-btn ui-btn--xs ui-btn--outline gap-1"
-              onClick={async () => {
-                const text = currentWorkerLog;
-                if (!text.trim()) {
-                  onNotice("当前没有可复制的日志。");
-                  return;
-                }
-                try {
-                  await navigator.clipboard.writeText(text);
-                  onNotice("已复制到剪贴板。");
-                } catch {
-                  onNotice("复制失败，请稍后重试。");
-                }
-              }}
-              disabled={!workerConsoleWorkerId || !currentWorkerLog.trim()}
-            >
-              <Icon icon="mingcute:copy-2-line" />
-              复制
-            </button>
-            <button
-              type="button"
               className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn"
               onClick={onClose}
               aria-label="关闭"
@@ -104,14 +77,14 @@ export function WorkerConsoleModal({
 
         <div className="ui-modal-body worker-console-body">
           <pre ref={logRef} className="worker-console-log">
-            {currentWorkerLog || "暂无日志\n输入命令后将进入交互会话…"}
+            {currentWorkerLog || " "}
           </pre>
           <div className="console-input-row flex gap-2 mt-2">
             <input
               className="ui-input ui-input--sm flex-1 font-mono text-xs"
               value={consoleInput}
               onChange={(e) => onConsoleInputChange(e.target.value)}
-              placeholder={isReadOnly ? "任务执行中，当前只读…" : isInteractiveRunning ? "输入命令并回车…" : "输入命令并回车，自动进入交互…"}
+              placeholder={inputPlaceholder}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -120,15 +93,6 @@ export function WorkerConsoleModal({
               }}
               disabled={!workerConsoleWorkerId || isReadOnly}
             />
-            <button
-              type="button"
-              className="ui-btn ui-btn--sm ui-btn--outline gap-1"
-              onClick={() => onClearLog(workerConsoleWorkerId)}
-              disabled={!workerConsoleWorkerId}
-            >
-              <Icon icon="mingcute:delete-2-line" />
-              清空
-            </button>
             <button
               type="button"
               className="ui-btn ui-btn--sm ui-btn--outline gap-1"

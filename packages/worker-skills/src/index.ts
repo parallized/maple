@@ -38,7 +38,8 @@ export type MapleStructuredExecutionOutput = {
   decision: MapleMcpDecision | null;
 };
 
-const OUTPUT_SCHEMA_HINT = "终端最后请输出一个 JSON 代码块（```json ... ```），字段包含：conclusion, changes[], verification[], mcp_decision{status, comment, tags[]}。";
+const TAG_OPTIONS = ["架构", "配置", "UI", "修复"] as const;
+const OUTPUT_SCHEMA_HINT = `终端最后请输出一个 JSON 代码块（\`\`\`json ... \`\`\`），字段包含：conclusion, changes[], verification[], mcp_decision{status, comment, tags[]}。tags 仅可用：${TAG_OPTIONS.join(" / ")}。`;
 const REQUIRED_DECISION_HINT = "若缺少 mcp_decision，则任务会被判定为已阻塞，不允许兜底标记完成。";
 
 function renderSkillChecklist(skills: MapleWorkerSkill[]): string[] {
@@ -46,15 +47,13 @@ function renderSkillChecklist(skills: MapleWorkerSkill[]): string[] {
 }
 
 export function createWorkerExecutionPrompt(input: WorkerExecutionPromptInput): string {
-  const skillLines = renderSkillChecklist(MAPLE_WORKER_SKILLS);
   return [
     "[Maple Worker Task]",
     `Project: ${input.projectName}`,
     `Directory: ${input.directory}`,
     `Task: ${input.taskTitle}`,
-    "请执行任务，并通过 Maple Skills 完成落地与归档。",
-    "执行优先技能：",
-    ...skillLines,
+    "先在会话中加载 Maple 能力：非 Codex 输入 `/maple`，Codex 输入 `$maple`。",
+    "随后按任务完成实现与验证。",
     REQUIRED_DECISION_HINT,
     OUTPUT_SCHEMA_HINT
   ].join("\n");
@@ -96,10 +95,26 @@ function normalizeDecisionStatus(value: unknown): MapleMcpDecisionStatus | null 
   return null;
 }
 
+function normalizeDecisionTag(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes("架构") || normalized.includes("arch")) return "架构";
+  if (normalized.includes("配置") || normalized.includes("config") || normalized.includes("env")) return "配置";
+  if (normalized.includes("ui") || normalized.includes("ux") || normalized.includes("界面") || normalized.includes("交互")) return "UI";
+  if (normalized.includes("修复") || normalized.includes("bug") || normalized.includes("fix") || normalized.includes("错误")) return "修复";
+  return null;
+}
+
 function parseDecisionFromRecord(record: Record<string, unknown>): MapleMcpDecision | null {
   const status = normalizeDecisionStatus(record.status);
   const comment = typeof record.comment === "string" ? record.comment.trim() : "";
-  const tags = [...new Set(normalizeList(record.tags ?? record.tag))].slice(0, 5);
+  const tags = [
+    ...new Set(
+      normalizeList(record.tags ?? record.tag)
+        .map((tag) => normalizeDecisionTag(tag))
+        .filter((tag): tag is string => Boolean(tag))
+    )
+  ].slice(0, 5);
   if (!status || !comment) return null;
   return { status, comment, tags };
 }

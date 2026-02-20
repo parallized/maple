@@ -170,9 +170,6 @@ export function App() {
   function appendWorkerLog(workerId: string, text: string) {
     setWorkerLogs((prev) => ({ ...prev, [workerId]: `${prev[workerId] ?? ""}${text}` }));
   }
-  function clearWorkerLog(workerId: string) {
-    setWorkerLogs((prev) => ({ ...prev, [workerId]: "" }));
-  }
 
   function buildDangerArgs(kind: WorkerKind, dangerMode: boolean): string[] {
     if (!dangerMode) return [];
@@ -447,10 +444,8 @@ export function App() {
     const workerId = `worker-${kind}`;
     setExecutingWorkers((prev) => { const next = new Set(prev); next.add(workerId); return next; });
     openWorkerConsole(kind);
-    appendWorkerLog(workerId, `\n[系统] 已加入队列 ${pendingTasks.length} 个待办任务。\n`);
     try {
       for (const task of pendingTasks) {
-        appendWorkerLog(workerId, `[任务] 开始：${task.title || "(无标题)"}（当前状态：队列中）\n`);
         try {
           const result = await runWorkerCommand(workerId, config, task, project);
           if (!isTauri) {
@@ -461,7 +456,6 @@ export function App() {
           const report = createTaskReport(label, buildWorkerArchiveReport(result, task.title));
           if (!decision) {
             updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, report] }));
-            appendWorkerLog(workerId, `[任务] 阻塞：${task.title || "(无标题)"}（缺少 MCP 决策输出）\n`);
             continue;
           }
 
@@ -473,23 +467,11 @@ export function App() {
             reports: [...c.reports, report]
           }));
 
-          if (decision.status === "已完成") {
-            appendWorkerLog(workerId, `[任务] 完成：${task.title || "(无标题)"}\n`);
-          } else if (decision.status === "进行中") {
-            appendWorkerLog(workerId, `[任务] 进行中：${task.title || "(无标题)"}\n`);
-          } else if (decision.status === "队列中") {
-            appendWorkerLog(workerId, `[任务] 队列中：${task.title || "(无标题)"}\n`);
-          } else if (decision.status === "需要更多信息") {
-            appendWorkerLog(workerId, `[任务] 需要更多信息：${task.title || "(无标题)"}\n`);
-          } else {
-            appendWorkerLog(workerId, `[任务] 阻塞：${task.title || "(无标题)"}\n`);
-          }
         } catch (error) {
-          appendWorkerLog(workerId, `[error] ${task.title}: ${String(error)}\n`);
+          appendWorkerLog(workerId, `\n${String(error)}\n`);
           updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, createTaskReport(label, `执行异常：${String(error)}`)] }));
         }
       }
-      appendWorkerLog(workerId, `[系统] 批量执行结束。\n`);
       setNotice(`已触发 ${label} 执行 ${pendingTasks.length} 个任务。`);
     } finally {
       setExecutingWorkers((prev) => {
@@ -508,7 +490,7 @@ export function App() {
     setConsoleInput("");
     if (runningWorkers.has(workerId)) {
       try { await invoke<boolean>("send_worker_input", { workerId, input: trimmed }); }
-      catch (error) { appendWorkerLog(workerId, `[error] 发送失败: ${String(error)}\n`); }
+      catch (error) { appendWorkerLog(workerId, `\n${String(error)}\n`); }
       return;
     }
     const kindEntry = WORKER_KINDS.find((w) => `worker-${w.kind}` === workerId);
@@ -522,15 +504,15 @@ export function App() {
     try {
       await invoke<boolean>("start_interactive_worker", { workerId, taskTitle: "", executable: config.executable, args, prompt: trimmed, cwd });
     } catch (error) {
-      appendWorkerLog(workerId, `[error] 启动失败: ${String(error)}\n`);
+      appendWorkerLog(workerId, `\n${String(error)}\n`);
       setRunningWorkers((prev) => { const next = new Set(prev); next.delete(workerId); return next; });
     }
   }
 
   async function stopCurrentWorker(workerId: string) {
     if (!isTauri) return;
-    try { await invoke<boolean>("stop_worker_session", { workerId }); appendWorkerLog(workerId, `[系统] 已发送停止信号\n`); }
-    catch (error) { appendWorkerLog(workerId, `[error] 停止失败: ${String(error)}\n`); }
+    try { await invoke<boolean>("stop_worker_session", { workerId }); }
+    catch (error) { appendWorkerLog(workerId, `\n${String(error)}\n`); }
   }
 
   async function answerPermission(workerId: string, answer: string) {
@@ -538,7 +520,7 @@ export function App() {
     if (!isTauri) return;
     appendWorkerLog(workerId, `> ${answer}\n`);
     try { await invoke<boolean>("send_worker_input", { workerId, input: answer }); }
-    catch (error) { appendWorkerLog(workerId, `[error] 发送失败: ${String(error)}\n`); }
+    catch (error) { appendWorkerLog(workerId, `\n${String(error)}\n`); }
   }
 
   // ── Release ──
@@ -745,8 +727,6 @@ export function App() {
             onConsoleInputChange={setConsoleInput}
             onSendCommand={(wId, input) => void sendConsoleCommand(wId, input)}
             onStopWorker={(wId) => void stopCurrentWorker(wId)}
-            onClearLog={clearWorkerLog}
-            onNotice={setNotice}
           />
         ) : null}
       </div>

@@ -548,7 +548,7 @@ h1, h2, h3 {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  table-layout: auto;
+  table-layout: fixed;
 }
 
 .task-table th {
@@ -563,6 +563,11 @@ h1, h2, h3 {
   font-size: 0.8125rem;
   color: color-mix(in srgb, var(--color-secondary) 50%, transparent);
   white-space: nowrap;
+}
+
+.task-table th.col-tags,
+.task-table td.col-tags {
+  min-width: 0;
 }
 
 .task-table th.col-taskIcon,
@@ -678,6 +683,7 @@ h1, h2, h3 {
   gap: 0.3rem;
   align-items: center;
   overflow: hidden;
+  max-width: 100%;
 }
 
 .task-icon-pill {
