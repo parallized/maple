@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { queryProjectTodos, queryRecentContext } from "@maple/mcp-tools";
+
 import { buildWorkerArchiveReport, resolveMcpDecision } from "@maple/worker-skills";
 
 import { TopNav } from "./components/TopNav";
@@ -437,7 +437,21 @@ export function App() {
       setNotice("请先输入项目名。");
       return;
     }
-    const todos = queryProjectTodos(projects, projectName);
+    const keyword = projectName.toLowerCase();
+    const target = projects.find((p) => p.name.toLowerCase() === keyword)
+      ?? projects.find((p) => p.name.toLowerCase().includes(keyword));
+    if (!target) {
+      setMcpQueryResult([
+        `query_project_todos(project="${projectName}")`,
+        "",
+        "未找到匹配项目，或该项目暂无未完成任务。"
+      ].join("\n"));
+      setMcpProjectQuery(projectName);
+      return;
+    }
+    const todos = target.tasks
+      .filter((t) => t.status !== "已完成")
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     if (todos.length === 0) {
       setMcpQueryResult([
         `query_project_todos(project="${projectName}")`,
@@ -459,16 +473,39 @@ export function App() {
 
   function runMcpRecentQuery() {
     const keyword = mcpKeywordQuery.trim();
-    const items = queryRecentContext(projects, workerLogs, keyword, 10);
+    const needle = keyword.toLowerCase();
     const header = keyword
       ? `query_recent_context(limit=10, keyword="${keyword}")`
       : "query_recent_context(limit=10)";
-    if (items.length === 0) {
+
+    type ContextItem = { project: string; source: string; taskTitle: string; createdAt: string; text: string };
+    const items: ContextItem[] = [];
+    for (const project of projects) {
+      for (const task of project.tasks) {
+        for (const report of task.reports) {
+          const content = report.content.trim();
+          if (!content) continue;
+          if (needle && !content.toLowerCase().includes(needle)) continue;
+          items.push({ project: project.name, source: "report", taskTitle: task.title || "(无标题)", createdAt: report.createdAt, text: content });
+        }
+      }
+    }
+    const now = new Date().toISOString();
+    for (const [workerId, log] of Object.entries(workerLogs)) {
+      const recent = log.split("\n").map((l) => l.trim()).filter(Boolean).slice(-60);
+      for (const line of recent) {
+        if (needle && !line.toLowerCase().includes(needle)) continue;
+        items.push({ project: "console", source: "worker_log", taskTitle: workerId, createdAt: now, text: line });
+      }
+    }
+    const result = items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10);
+
+    if (result.length === 0) {
       setMcpQueryResult([header, "", keyword ? "没有匹配该关键词的上下文。" : "暂无上下文记录。"].join("\n"));
       return;
     }
     const lines: string[] = [header, ""];
-    for (const [index, item] of items.entries()) {
+    for (const [index, item] of result.entries()) {
       const sourceLabel = item.source === "report" ? "任务报告" : "Worker 日志";
       lines.push(`${index + 1}. [${sourceLabel}] ${item.project} / ${item.taskTitle}`);
       lines.push(`   时间：${formatTime(item.createdAt)}`);
@@ -641,6 +678,16 @@ export function App() {
     });
     try {
       for (const task of pendingTasks) {
+        // Check if user deleted this task while worker was running
+        const currentProject = projectsRef.current.find((p) => p.id === projectId);
+        if (!currentProject || !currentProject.tasks.some((t) => t.id === task.id)) {
+          const hasActive = currentProject?.tasks.some((t) => t.status === "队列中" || t.status === "进行中");
+          if (!hasActive) {
+            appendWorkerLog(workerId, "\n[中止] 已无队列中或进行中的任务，终止 Worker。\n");
+            break;
+          }
+          continue;
+        }
         try {
           const payload = buildWorkerRunPayload(workerId, config);
           appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, payload.args)}\n`);

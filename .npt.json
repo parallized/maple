@@ -4,7 +4,11 @@
   "auto_mode": true,
   "known_task_page_ids": [
     "30df0611-dacc-8098-a41e-f4a76492b73f",
-    "30df0611-dacc-80a7-99c3-d02b565ce49c"
+    "30df0611-dacc-80a7-99c3-d02b565ce49c",
+    "30df0611-dacc-803e-9374-c6e8edcbbcb1",
+    "30df0611-dacc-8045-ad54-c07c59d9ed7c",
+    "30df0611-dacc-80c2-8331-c1c6e46cbb19",
+    "30df0611-dacc-804f-8c24-eabd6435bad1"
   ],
-  "last_discovery_at": "2026-02-21T09:30:00Z"
+  "last_discovery_at": "2026-02-21T11:00:00Z"
 }

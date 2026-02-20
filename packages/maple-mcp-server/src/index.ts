@@ -207,6 +207,32 @@ server.tool(
 
 // ── Start ──
 
+const SIGNAL_FILE = join(STATE_DIR, "worker-signal.json");
+
+server.tool(
+  "finish_worker",
+  "通知 Maple 当前 Worker 已执行完毕，可以结束进程。",
+  {
+    project: z.string().describe("项目名称"),
+    summary: z.string().optional().describe("执行总结（可选）"),
+  },
+  async ({ project, summary }) => {
+    if (!existsSync(STATE_DIR)) {
+      mkdirSync(STATE_DIR, { recursive: true });
+    }
+    const signal = {
+      project,
+      summary: summary ?? "",
+      timestamp: new Date().toISOString(),
+      action: "finish" as const,
+    };
+    writeFileSync(SIGNAL_FILE, JSON.stringify(signal, null, 2), "utf-8");
+    return {
+      content: [{ type: "text" as const, text: `已通知 Maple 项目「${project}」的 Worker 执行完毕。` }],
+    };
+  }
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);

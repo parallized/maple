@@ -61,8 +61,10 @@ export function normalizeProjects(projects: Project[]): Project[] {
         tasks: project.tasks.map((task) => {
           const createdAt = typeof task.createdAt === "string" && task.createdAt ? task.createdAt : now;
           const updatedAt = typeof task.updatedAt === "string" && task.updatedAt ? task.updatedAt : createdAt;
+          const status = task.status === "队列中" ? "待办" as const : task.status;
           return {
             ...task,
+            status,
             createdAt,
             updatedAt,
             reports: Array.isArray(task.reports) ? task.reports : []
