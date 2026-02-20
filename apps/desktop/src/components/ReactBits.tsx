@@ -45,13 +45,15 @@ export function CountUp({ from = 0, to, duration = 0.6 }: { from?: number; to: n
 
 /* ── FadeContent ── */
 
-export function FadeContent({ children, blur = false, duration = 0.3 }: { children: ReactNode; blur?: boolean; duration?: number }) {
+export function FadeContent({ children, blur = false, duration = 0.3, delay = 0, className }: { children: ReactNode; blur?: boolean; duration?: number; delay?: number; className?: string }) {
   const durationSeconds = duration > 10 ? duration / 1000 : duration;
+  const delaySeconds = delay > 10 ? delay / 1000 : delay;
   return (
     <motion.div
-      initial={{ opacity: 0, filter: blur ? "blur(4px)" : "none" }}
-      animate={{ opacity: 1, filter: blur ? "blur(0px)" : "none" }}
-      transition={{ duration: durationSeconds }}
+      className={className}
+      initial={{ opacity: 0, filter: blur ? "blur(4px)" : "none", y: 10 }}
+      animate={{ opacity: 1, filter: blur ? "blur(0px)" : "none", y: 0 }}
+      transition={{ duration: durationSeconds, delay: delaySeconds }}
     >
       {children}
     </motion.div>
