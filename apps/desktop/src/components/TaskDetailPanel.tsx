@@ -132,10 +132,10 @@ function renderReportDescription(description: string): ReactNode {
 
 export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProps) {
   return (
-    <section className="task-detail-panel flex flex-col gap-8 pb-8">
-      <header className="flex flex-col gap-4">
+    <section className="task-detail-panel flex flex-col pb-8 px-2">
+      <header className="mb-6">
         <div className="flex items-start justify-between gap-4">
-          <h2 className="m-0 text-[1.75rem] font-bold tracking-tight text-primary leading-tight">
+          <h2 className="m-0 text-[32px] font-serif font-bold tracking-tight text-primary leading-snug">
             {task.title || "(无标题)"}
           </h2>
           {onDelete ? (
@@ -151,32 +151,32 @@ export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProp
         </div>
       </header>
 
-      <div className="task-properties grid grid-cols-[80px_1fr] gap-y-4 gap-x-4 items-center">
-        <span className="text-muted text-sm flex items-center gap-1.5">
-          <Icon icon="mingcute:signal-line" className="opacity-60" />
+      <div className="task-properties grid grid-cols-[120px_1fr] gap-y-1.5 items-center mb-8">
+        <span className="text-muted text-[14px] flex items-center gap-2">
+          <Icon icon="mingcute:signal-line" className="text-[16px] opacity-70" />
           状态
         </span>
-        <div className="flex items-center">
+        <div className="flex items-center min-h-[32px]">
           <span className={`ui-badge ${task.status === "已完成" ? "ui-badge--success" : task.status === "已阻塞" ? "ui-badge--error" : task.status === "进行中" ? "ui-badge--solid" : task.status === "需要更多信息" ? "ui-badge--warning" : ""}`}>
             <span className={`status-dot status-${task.status === "已完成" ? "done" : task.status === "已阻塞" ? "blocked" : task.status === "进行中" ? "active" : task.status === "需要更多信息" ? "info" : "pending"}`} />
             {task.status}
           </span>
         </div>
 
-        <span className="text-muted text-sm flex items-center gap-1.5">
-          <Icon icon="mingcute:version-line" className="opacity-60" />
+        <span className="text-muted text-[14px] flex items-center gap-2">
+          <Icon icon="mingcute:version-line" className="text-[16px] opacity-70" />
           版本
         </span>
-        <div className="flex items-center">
-          <span className="ui-badge">{task.version}</span>
+        <div className="flex items-center min-h-[32px] text-[14px] text-primary">
+          {task.version ? <span className="ui-badge">{task.version}</span> : <span className="text-muted opacity-50">空白</span>}
         </div>
 
-        <span className="text-muted text-sm flex items-center gap-1.5">
-          <Icon icon="mingcute:tag-line" className="opacity-60" />
+        <span className="text-muted text-[14px] flex items-center gap-2">
+          <Icon icon="mingcute:tag-line" className="text-[16px] opacity-70" />
           标签
         </span>
-        <div className="flex flex-wrap gap-1.5">
-          {task.tags.length === 0 ? <span className="text-sm text-muted">无</span> : null}
+        <div className="flex flex-wrap gap-1.5 items-center min-h-[32px]">
+          {task.tags.length === 0 ? <span className="text-muted text-[14px] opacity-50">空白</span> : null}
           {task.tags.map((tag) => (
             <span key={tag} className="ui-badge">
               {tag}
@@ -184,30 +184,30 @@ export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProp
           ))}
         </div>
 
-        <span className="text-muted text-sm flex items-center gap-1.5">
-          <Icon icon="mingcute:time-line" className="opacity-60" />
+        <span className="text-muted text-[14px] flex items-center gap-2">
+          <Icon icon="mingcute:time-line" className="text-[16px] opacity-70" />
           创建
         </span>
-        <div className="flex items-center text-sm" title={formatAbsoluteTime(task.createdAt)}>
+        <div className="flex items-center min-h-[32px] text-[14px] text-primary" title={formatAbsoluteTime(task.createdAt)}>
           {formatRelativeTime(task.createdAt)}
         </div>
 
-        <span className="text-muted text-sm flex items-center gap-1.5">
-          <Icon icon="mingcute:history-line" className="opacity-60" />
+        <span className="text-muted text-[14px] flex items-center gap-2">
+          <Icon icon="mingcute:history-line" className="text-[16px] opacity-70" />
           更新
         </span>
-        <div className="flex items-center text-sm" title={formatAbsoluteTime(task.updatedAt)}>
+        <div className="flex items-center min-h-[32px] text-[14px] text-primary" title={formatAbsoluteTime(task.updatedAt)}>
           {formatRelativeTime(task.updatedAt)}
         </div>
       </div>
 
-      <div className="h-px bg-linear-to-r from-(--color-base-300) to-transparent" />
+      <div className="h-px bg-(--color-base-300) mb-8" />
 
       <div>
-        <h3 className="text-base font-semibold mb-5 flex items-center gap-2">
-          <Icon icon="mingcute:comment-line" className="text-muted" />
+        <h3 className="text-[14px] font-medium mb-4 mt-2 flex items-center gap-2 text-muted">
+          <Icon icon="mingcute:comment-line" className="text-[16px] opacity-70" />
           执行报告
-          <span className="ui-badge ml-1 opacity-80">{task.reports.length}</span>
+          <span className="ui-badge px-1.5 py-0.5 text-[12px] ml-1 opacity-80">{task.reports.length}</span>
         </h3>
         
         {task.reports.length === 0 ? (
@@ -220,32 +220,32 @@ export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProp
           {task.reports.map((report) => {
             const parsed = parseTaskReport(report.content);
             return (
-              <article key={report.id} className="flex flex-col gap-2 group">
-                <div className="flex items-center gap-2 text-sm">
-                  <div className="w-6 h-6 rounded-full bg-(--color-base-200) border border-(--color-base-300) flex items-center justify-center text-xs font-bold text-secondary">
+              <article key={report.id} className="flex flex-col gap-3 group mt-2">
+                <div className="flex items-center gap-2 text-[14px]">
+                  <div className="w-6 h-6 rounded-full bg-(--color-base-200) border border-(--color-base-300) flex items-center justify-center text-[12px] font-bold text-secondary">
                     {report.author.charAt(0).toUpperCase()}
                   </div>
                   <strong className="font-medium text-primary">{report.author}</strong>
                   <span
-                    className="text-muted text-xs ml-auto opacity-60 group-hover:opacity-100 transition-opacity"
+                    className="text-muted text-[13px] ml-auto opacity-60 group-hover:opacity-100 transition-opacity"
                     title={formatAbsoluteTime(report.createdAt)}
                   >
                     {formatRelativeTime(report.createdAt)}
                   </span>
                 </div>
-                <div className="pl-8">
-                  <div className="ui-card p-4">
+                <div className="pt-1">
+                  <div className="bg-(--color-base-200)/50 rounded-2xl p-4">
                     {parsed ? (
                       <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-2">
                           <span className={`ui-badge ${reportBadgeClass(parsed.status)}`}>{parsed.status}</span>
                         </div>
-                        <div className="text-sm leading-relaxed text-base-content">
+                        <div className="text-[14px] leading-relaxed text-base-content">
                           {renderReportDescription(parsed.description)}
                         </div>
                       </div>
                     ) : (
-                      <div className="text-sm leading-relaxed text-base-content whitespace-pre-wrap">{report.content}</div>
+                      <div className="text-[14px] leading-relaxed text-base-content whitespace-pre-wrap">{report.content}</div>
                     )}
                   </div>
                 </div>

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod mcp_http;
+mod tray_status;
 
 use serde::Serialize;
 use std::collections::HashMap;
@@ -589,6 +590,14 @@ fn write_state_file(json: String) -> Result<(), String> {
   Ok(())
 }
 
+#[tauri::command]
+fn sync_tray_task_badge(
+  snapshot: tray_status::TrayTaskSnapshot,
+  app_handle: AppHandle,
+) -> Result<(), String> {
+  tray_status::sync(&app_handle, &snapshot).map_err(|error| format!("同步托盘状态失败: {error}"))
+}
+
 fn main() {
   tauri::Builder::default()
     .manage(AppState::default())
@@ -596,6 +605,9 @@ fn main() {
     .plugin(tauri_plugin_notification::init())
     .setup(|app| {
       mcp_http::start(app.handle().clone());
+      if let Err(error) = tray_status::init(app.handle()) {
+        eprintln!("failed to initialize tray status: {error}");
+      }
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -607,7 +619,8 @@ fn main() {
       start_mcp_server,
       stop_mcp_server,
       mcp_server_status,
-      write_state_file
+      write_state_file,
+      sync_tray_task_badge
     ])
     .run(tauri::generate_context!())
     .expect("error while running maple desktop");

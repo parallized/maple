@@ -37,6 +37,7 @@ import {
 } from "./lib/utils";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
 import { loadProjects, loadMcpServerConfig, loadTheme } from "./lib/storage";
+import { buildTrayTaskSnapshot } from "./lib/task-tray";
 
 import type {
   DetailMode,
@@ -169,6 +170,11 @@ export function App() {
     if (!isTauri) return;
     invoke("write_state_file", { json: JSON.stringify(projects) }).catch(() => {});
   }, [projects]);
+  useEffect(() => {
+    if (!isTauri) return;
+    const snapshot = buildTrayTaskSnapshot(projects);
+    invoke("sync_tray_task_badge", { snapshot }).catch(() => {});
+  }, [isTauri, projects]);
   useEffect(() => { localStorage.setItem(STORAGE_MCP_CONFIG, JSON.stringify(mcpConfig)); }, [mcpConfig]);
 
   useEffect(() => {
