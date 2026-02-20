@@ -577,6 +577,16 @@ fn command_string(executable: &str, args: &[String]) -> String {
   }
 }
 
+#[tauri::command]
+fn write_state_file(json: String) -> Result<(), String> {
+  let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 目录".to_string())?;
+  let dir = PathBuf::from(home).join(".maple");
+  std::fs::create_dir_all(&dir).map_err(|e| format!("创建 .maple 目录失败: {e}"))?;
+  let path = dir.join("state.json");
+  std::fs::write(&path, json.as_bytes()).map_err(|e| format!("写入状态文件失败: {e}"))?;
+  Ok(())
+}
+
 fn main() {
   tauri::Builder::default()
     .manage(AppState::default())
@@ -590,7 +600,8 @@ fn main() {
       stop_worker_session,
       start_mcp_server,
       stop_mcp_server,
-      mcp_server_status
+      mcp_server_status,
+      write_state_file
     ])
     .run(tauri::generate_context!())
     .expect("error while running maple desktop");

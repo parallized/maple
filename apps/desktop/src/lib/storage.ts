@@ -1,6 +1,6 @@
-import type { McpServerConfig, Project, WorkerConfig, WorkerKind } from "../domain";
+import type { McpServerConfig, Project } from "../domain";
 import type { ThemeMode } from "./constants";
-import { DEFAULT_MCP_CONFIG, DEFAULT_WORKER_CONFIGS, STORAGE_MCP_CONFIG, STORAGE_PROJECTS, STORAGE_THEME, STORAGE_WORKER_CONFIGS } from "./constants";
+import { DEFAULT_MCP_CONFIG, STORAGE_MCP_CONFIG, STORAGE_PROJECTS, STORAGE_THEME } from "./constants";
 import { normalizeProjects } from "./utils";
 
 const INITIAL_PROJECTS: Project[] = [];
@@ -18,42 +18,6 @@ export function loadProjects(): Project[] {
     return normalizeProjects(parsed);
   } catch {
     return normalizeProjects(INITIAL_PROJECTS);
-  }
-}
-
-export function loadWorkerConfigs(): Record<WorkerKind, WorkerConfig> {
-  try {
-    const raw = localStorage.getItem(STORAGE_WORKER_CONFIGS);
-    if (!raw) {
-      return DEFAULT_WORKER_CONFIGS;
-    }
-    const parsed = JSON.parse(raw) as Record<WorkerKind, WorkerConfig>;
-    const normalize = (kind: WorkerKind, fallback: WorkerConfig): WorkerConfig => {
-      const value = parsed[kind] ?? fallback;
-      const runArgsValue = value.runArgs ?? fallback.runArgs;
-      const runArgsTrimmed = runArgsValue.trim();
-      const legacyPrintFlag = runArgsTrimmed === "-p" || runArgsTrimmed === "exec" || runArgsTrimmed === "run";
-      const legacyClaudeSlash = kind === "claude" && runArgsTrimmed.startsWith("/maple");
-      const normalizedRunArgs = legacyPrintFlag
-        ? fallback.runArgs
-        : legacyClaudeSlash
-          ? runArgsTrimmed.replace(/^\/maple\b/, "maple")
-          : runArgsValue;
-      return {
-        executable: value.executable ?? fallback.executable,
-        runArgs: normalizedRunArgs,
-        consoleArgs: value.consoleArgs ?? fallback.consoleArgs,
-        probeArgs: value.probeArgs ?? fallback.probeArgs,
-        dangerMode: value.dangerMode ?? fallback.dangerMode
-      };
-    };
-    return {
-      claude: normalize("claude", DEFAULT_WORKER_CONFIGS.claude),
-      codex: normalize("codex", DEFAULT_WORKER_CONFIGS.codex),
-      iflow: normalize("iflow", DEFAULT_WORKER_CONFIGS.iflow)
-    };
-  } catch {
-    return DEFAULT_WORKER_CONFIGS;
   }
 }
 

@@ -23,7 +23,6 @@ import {
   STORAGE_MCP_CONFIG,
   STORAGE_PROJECTS,
   STORAGE_THEME,
-  STORAGE_WORKER_CONFIGS,
   WORKER_KINDS
 } from "./lib/constants";
 import type { ThemeMode } from "./lib/constants";
@@ -37,7 +36,7 @@ import {
   createTaskReport
 } from "./lib/utils";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
-import { loadProjects, loadWorkerConfigs, loadMcpServerConfig, loadTheme } from "./lib/storage";
+import { loadProjects, loadMcpServerConfig, loadTheme } from "./lib/storage";
 
 import type {
   DetailMode,
@@ -59,7 +58,7 @@ export function App() {
   // ── Core State ──
   const [view, setView] = useState<ViewKey>("overview");
   const [projects, setProjects] = useState<Project[]>(() => loadProjects());
-  const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => loadWorkerConfigs());
+  const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => cloneDefaultWorkerConfigs());
   const [mcpConfig, setMcpConfig] = useState<McpServerConfig>(() => loadMcpServerConfig());
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
   const [mcpStartupError, setMcpStartupError] = useState("");
@@ -164,7 +163,10 @@ export function App() {
   // ── Persistence ──
   useEffect(() => { applyTheme(theme); localStorage.setItem(STORAGE_THEME, theme); }, [theme]);
   useEffect(() => { localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(projects)); }, [projects]);
-  useEffect(() => { localStorage.setItem(STORAGE_WORKER_CONFIGS, JSON.stringify(workerConfigs)); }, [workerConfigs]);
+  useEffect(() => {
+    if (!isTauri) return;
+    invoke("write_state_file", { json: JSON.stringify(projects) }).catch(() => {});
+  }, [projects]);
   useEffect(() => { localStorage.setItem(STORAGE_MCP_CONFIG, JSON.stringify(mcpConfig)); }, [mcpConfig]);
 
   useEffect(() => {

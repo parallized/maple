@@ -1,7 +1,6 @@
 import type { McpServerConfig, WorkerConfig, WorkerKind } from "../domain";
 
 export const STORAGE_PROJECTS = "maple.desktop.projects";
-export const STORAGE_WORKER_CONFIGS = "maple.desktop.worker-configs";
 export const STORAGE_MCP_CONFIG = "maple.desktop.mcp-config";
 export const STORAGE_THEME = "maple.desktop.theme";
 
