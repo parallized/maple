@@ -1,3 +1,4 @@
+import { Icon } from "@iconify/react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -7,6 +8,7 @@ import { queryProjectTodos, queryRecentContext } from "@maple/mcp-tools";
 import { buildWorkerArchiveReport, createWorkerExecutionPrompt, resolveMcpDecision } from "@maple/worker-skills";
 
 import { TopNav } from "./components/TopNav";
+import { TaskDetailPanel } from "./components/TaskDetailPanel";
 import { ToastLayer } from "./components/ToastLayer";
 import { WorkerPickerModal } from "./components/WorkerPickerModal";
 import { WorkerConsoleModal } from "./components/WorkerConsoleModal";
@@ -86,9 +88,9 @@ export function App() {
   const metrics = useMemo(() => {
     const allTasks = projects.flatMap((p) => p.tasks);
     const pending = allTasks.filter((t) => t.status !== "已完成").length;
-    const queuedCount = allTasks.filter((t) => t.status === "队列中").length;
+    const inProgressCount = allTasks.filter((t) => t.status === "进行中").length;
     const runningCount = new Set([...runningWorkers, ...executingWorkers]).size;
-    return { pending, queuedCount, runningCount, projectCount: projects.length };
+    return { pending, inProgressCount, runningCount, projectCount: projects.length };
   }, [projects, runningWorkers, executingWorkers]);
 
   // ── Persistence ──
@@ -448,8 +450,7 @@ export function App() {
     appendWorkerLog(workerId, `\n[系统] 已加入队列 ${pendingTasks.length} 个待办任务。\n`);
     try {
       for (const task of pendingTasks) {
-        updateTask(project.id, task.id, (c) => ({ ...c, status: "进行中" }));
-        appendWorkerLog(workerId, `[任务] 开始：${task.title || "(无标题)"}\n`);
+        appendWorkerLog(workerId, `[任务] 开始：${task.title || "(无标题)"}（当前状态：队列中）\n`);
         try {
           const result = await runWorkerCommand(workerId, config, task, project);
           if (!isTauri) {
@@ -474,6 +475,10 @@ export function App() {
 
           if (decision.status === "已完成") {
             appendWorkerLog(workerId, `[任务] 完成：${task.title || "(无标题)"}\n`);
+          } else if (decision.status === "进行中") {
+            appendWorkerLog(workerId, `[任务] 进行中：${task.title || "(无标题)"}\n`);
+          } else if (decision.status === "队列中") {
+            appendWorkerLog(workerId, `[任务] 队列中：${task.title || "(无标题)"}\n`);
           } else if (decision.status === "需要更多信息") {
             appendWorkerLog(workerId, `[任务] 需要更多信息：${task.title || "(无标题)"}\n`);
           } else {
@@ -660,7 +665,7 @@ export function App() {
           projects={projects}
           boardProjectId={boardProjectId}
           runningCount={metrics.runningCount}
-          queuedCount={metrics.queuedCount}
+          inProgressCount={metrics.inProgressCount}
           workerConsoleOpen={workerConsoleOpen}
           onViewChange={setView}
           onProjectSelect={(id) => { setBoardProjectId(id); setView("board"); setSelectedTaskId(null); }}
@@ -752,6 +757,42 @@ export function App() {
         onAnswerPermission={(wId, answer) => void answerPermission(wId, answer)}
         onDismissPermission={() => setPermissionPrompt(null)}
       />
+
+      {boardProject && selectedTaskId && detailMode === "sidebar" ? (
+        <div className="detail-drawer-layer" role="dialog" aria-modal="true" aria-label="任务详情抽屉">
+          <button type="button" className="detail-drawer-backdrop" onClick={() => setSelectedTaskId(null)} aria-label="关闭详情抽屉" />
+          <aside className="detail-drawer">
+            <button
+              type="button"
+              className="detail-sidebar-close ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn"
+              onClick={() => setSelectedTaskId(null)}
+              aria-label="关闭侧边栏"
+            >
+              <Icon icon="mingcute:close-line" />
+            </button>
+            <TaskDetailPanel
+              task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
+              onClose={() => setSelectedTaskId(null)}
+              onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
+            />
+          </aside>
+        </div>
+      ) : null}
+
+      {boardProject && selectedTaskId && detailMode === "modal" ? (
+        <div className="ui-modal" role="dialog" aria-modal="true" aria-label="任务详情">
+          <div className="ui-modal-backdrop" onClick={() => setSelectedTaskId(null)} />
+          <div className="ui-modal-panel">
+            <div className="ui-modal-body">
+              <TaskDetailPanel
+                task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
+                onClose={() => setSelectedTaskId(null)}
+                onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

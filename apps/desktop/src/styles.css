@@ -303,7 +303,7 @@ h1, h2, h3 {
 .ui-modal {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -369,6 +369,7 @@ h1, h2, h3 {
   position: relative;
   background: var(--color-base-200);
   border-radius: inherit;
+  z-index: 1;
 }
 
 /* ── Top Navigation ── */
@@ -451,12 +452,6 @@ h1, h2, h3 {
 
 .topnav-queue-count--global {
   margin-left: 0.05rem;
-}
-
-.topnav-queue-count--zero {
-  border-color: color-mix(in srgb, var(--color-base-300) 65%, transparent);
-  background: color-mix(in srgb, var(--color-base-300) 24%, transparent);
-  color: color-mix(in srgb, var(--color-secondary) 75%, transparent);
 }
 
 .topnav-tab-close {
@@ -553,7 +548,7 @@ h1, h2, h3 {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .task-table th {
@@ -578,10 +573,10 @@ h1, h2, h3 {
 
 .task-row td {
   border-bottom: 1px solid color-mix(in srgb, var(--color-base-300) 25%, transparent);
-  padding: 0.4rem 0.5rem 0.4rem 0;
+  padding: 0 0.5rem 0 0;
   font-size: 0.875rem;
   transition: background 0.1s;
-  min-height: 42px;
+  height: 36px;
   vertical-align: middle;
 }
 
@@ -595,8 +590,8 @@ h1, h2, h3 {
 }
 
 .task-row td.col-tags {
-  white-space: normal;
-  overflow: visible;
+  white-space: nowrap;
+  overflow: hidden;
   text-overflow: clip;
 }
 
@@ -679,9 +674,10 @@ h1, h2, h3 {
 
 .tags-inline {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.3rem;
   align-items: center;
+  overflow: hidden;
 }
 
 .task-icon-pill {
@@ -853,10 +849,9 @@ h1, h2, h3 {
 /* ── Detail Drawer ── */
 
 .detail-drawer-layer {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 32;
-  pointer-events: none;
+  z-index: 80;
 }
 
 .detail-drawer-backdrop {

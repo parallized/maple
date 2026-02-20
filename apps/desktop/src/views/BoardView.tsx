@@ -199,43 +199,7 @@ export function BoardView({
             </div>
           ) : null}
         </div>
-
-        {selectedTask && detailMode === "sidebar" ? (
-          <div className="detail-drawer-layer" role="dialog" aria-modal="true" aria-label="任务详情抽屉">
-            <button type="button" className="detail-drawer-backdrop" onClick={() => onSelectTask(null)} aria-label="关闭详情抽屉" />
-            <aside className="detail-drawer">
-              <button
-                type="button"
-                className="detail-sidebar-close ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn"
-                onClick={() => onSelectTask(null)}
-                aria-label="关闭侧边栏"
-              >
-                <Icon icon="mingcute:close-line" />
-              </button>
-              <TaskDetailPanel
-                task={selectedTask}
-                onClose={undefined}
-                onDelete={() => onDeleteTask(boardProject.id, selectedTask.id)}
-              />
-            </aside>
-          </div>
-        ) : null}
       </div>
-
-      {detailMode === "modal" && selectedTask ? (
-        <div className="ui-modal" role="dialog" aria-modal="true" aria-label="任务详情">
-          <div className="ui-modal-backdrop" onClick={() => onSelectTask(null)} />
-          <div className="ui-modal-panel">
-            <div className="ui-modal-body">
-              <TaskDetailPanel
-                task={selectedTask}
-                onClose={() => onSelectTask(null)}
-                onDelete={() => onDeleteTask(boardProject.id, selectedTask.id)}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
     </section>
   );
 }

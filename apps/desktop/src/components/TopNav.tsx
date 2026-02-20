@@ -10,7 +10,7 @@ type TopNavProps = {
   projects: Project[];
   boardProjectId: string | null;
   runningCount: number;
-  queuedCount: number;
+  inProgressCount: number;
   workerConsoleOpen: boolean;
   onViewChange: (view: ViewKey) => void;
   onProjectSelect: (projectId: string) => void;
@@ -28,7 +28,7 @@ export function TopNav({
   projects,
   boardProjectId,
   runningCount,
-  queuedCount,
+  inProgressCount,
   workerConsoleOpen,
   onViewChange,
   onProjectSelect,
@@ -59,7 +59,7 @@ export function TopNav({
 
         <div className="flex items-center gap-2">
           {projects.map((project) => {
-            const queueCount = project.tasks.filter((task) => task.status === "队列中").length;
+            const inProgress = project.tasks.filter((task) => task.status === "进行中").length;
             return (
               <button
                 key={project.id}
@@ -68,9 +68,7 @@ export function TopNav({
                 onClick={() => onProjectSelect(project.id)}
               >
                 {project.name}
-                <span className={`topnav-queue-count ${queueCount === 0 ? "topnav-queue-count--zero" : ""}`}>
-                  {queueCount}
-                </span>
+                {inProgress > 0 ? <span className="topnav-queue-count">{inProgress}</span> : null}
               </button>
             );
           })}
@@ -88,9 +86,7 @@ export function TopNav({
           title="控制台"
         >
           <Icon icon="mingcute:terminal-line" className="text-sm" />
-          <span className={`topnav-queue-count topnav-queue-count--global ${queuedCount === 0 ? "topnav-queue-count--zero" : ""}`}>
-            {queuedCount}
-          </span>
+          {inProgressCount > 0 ? <span className="topnav-queue-count topnav-queue-count--global">{inProgressCount}</span> : null}
           {runningCount > 0 && (
             <span className="flex h-2 w-2 rounded-full bg-primary animate-pulse" />
           )}

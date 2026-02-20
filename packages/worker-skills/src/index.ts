@@ -23,7 +23,7 @@ export const MAPLE_WORKER_SKILLS: MapleWorkerSkill[] = [
   { id: "summarize", title: "结果归档", objective: "汇总变更、影响范围与后续风险，便于回写任务系统。" }
 ];
 
-export type MapleMcpDecisionStatus = "已完成" | "已阻塞" | "需要更多信息";
+export type MapleMcpDecisionStatus = "队列中" | "进行中" | "已完成" | "已阻塞" | "需要更多信息";
 
 export type MapleMcpDecision = {
   status: MapleMcpDecisionStatus;
@@ -88,6 +88,8 @@ function normalizeDecisionStatus(value: unknown): MapleMcpDecisionStatus | null 
   if (typeof value !== "string") return null;
   const raw = value.trim().toLowerCase();
   if (!raw) return null;
+  if (raw === "队列中" || raw === "queued" || raw === "queue") return "队列中";
+  if (raw === "进行中" || raw === "in_progress" || raw === "in progress" || raw === "running") return "进行中";
   if (raw === "已完成" || raw === "done" || raw === "completed" || raw === "success") return "已完成";
   if (raw === "已阻塞" || raw === "blocked" || raw === "fail" || raw === "failed") return "已阻塞";
   if (raw === "需要更多信息" || raw === "need_more_info" || raw === "needs_info") return "需要更多信息";
@@ -139,36 +141,33 @@ export function resolveMcpDecision(result: WorkerExecutionResultLike): MapleMcpD
   return structured?.decision ?? null;
 }
 
-function formatSection(title: string, items: string[]): string[] {
-  if (items.length === 0) return [title, "- 无"];
-  return [title, ...items.map((item) => `- ${item}`)];
-}
-
 export function buildWorkerArchiveReport(result: WorkerExecutionResultLike, taskTitle: string): string {
   const structured = parseWorkerExecutionResult(result);
   const decision = structured?.decision ?? null;
 
   if (!structured || !decision) {
-    const raw = (result.stdout.trim() || result.stderr.trim()).slice(0, 2000);
+    const raw = (result.stdout.trim() || result.stderr.trim()).slice(0, 200);
     return [
-      `任务：${taskTitle}`,
-      `CLI状态：${result.success ? "成功" : `失败（exit ${result.code ?? "?"}）`}`,
-      "结论：缺少 MCP 决策输出，已按已阻塞处理。",
-      "要求：请输出 mcp_decision.status/comment/tags[]。",
-      "",
-      "输出摘录：",
-      raw || "无"
+      "状态：已阻塞（缺少 MCP 决策输出）",
+      `结论：Worker 未返回可解析的 mcp_decision。${raw ? `输出摘录：${raw}` : ""}`.trim()
     ].join("\n");
   }
 
+  const statusDetail =
+    decision.status === "已完成"
+      ? "已完成（执行成功）"
+      : decision.status === "进行中"
+        ? "进行中（等待继续处理）"
+        : decision.status === "队列中"
+          ? "队列中（等待执行）"
+          : decision.status === "需要更多信息"
+            ? "需要更多信息（请补充后继续）"
+            : "已阻塞（执行受阻）";
+
+  const briefConclusion = decision.comment.replace(/\s+/g, " ").trim();
+
   return [
-    `任务：${taskTitle}`,
-    `CLI状态：${result.success ? "成功" : `失败（exit ${result.code ?? "?"}）`}`,
-    `MCP判定：${decision.status}`,
-    `MCP评论：${decision.comment}`,
-    "",
-    ...formatSection("变更：", structured.changes),
-    "",
-    ...formatSection("验证：", structured.verification)
+    "状态：" + statusDetail,
+    `结论：${briefConclusion || taskTitle}`
   ].join("\n");
 }
