@@ -70,3 +70,13 @@ export type Project = {
   workerKind?: WorkerKind;
   tasks: Task[];
 };
+
+export type McpTaskUpdatedEvent = {
+  projectName: string;
+  task: Task;
+};
+
+export type McpWorkerFinishedEvent = {
+  project: string;
+  summary: string;
+};

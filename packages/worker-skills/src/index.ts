@@ -39,21 +39,27 @@ export type MapleStructuredExecutionOutput = {
 };
 
 const TAG_OPTIONS = ["架构", "配置", "UI", "修复"] as const;
-const OUTPUT_SCHEMA_HINT = `终端最后请输出一个 JSON 代码块（\`\`\`json ... \`\`\`），字段包含：conclusion, changes[], verification[], mcp_decision{status, comment, tags[]}。tags 仅可用：${TAG_OPTIONS.join(" / ")}。`;
+const FINAL_DECISION_STATUSES = ["已完成", "已阻塞", "需要更多信息"] as const;
+const OUTPUT_SCHEMA_HINT = `终端最后请输出一个 JSON 代码块（\`\`\`json ... \`\`\`），字段包含：conclusion, changes[], verification[], mcp_decision{status, comment, tags[]}。mcp_decision.status 仅可用：${FINAL_DECISION_STATUSES.join(" / ")}。tags 仅可用：${TAG_OPTIONS.join(" / ")}。`;
 const REQUIRED_DECISION_HINT = "若缺少 mcp_decision，则任务会被判定为已阻塞，不允许兜底标记完成。";
+const REQUIRED_MCP_FLOW_HINT = "执行时必须逐条通过 submit_task_report 驱动状态流转：每条任务开始先更新为进行中，结束后再更新为已完成/已阻塞/需要更多信息；结束前再次 query_project_todos，确认无待办/队列中/进行中任务后，再调用 finish_worker（必须作为最后一个 MCP 调用）。";
 
 function renderSkillChecklist(skills: MapleWorkerSkill[]): string[] {
   return skills.map((skill, index) => `${index + 1}. ${skill.title}：${skill.objective}`);
 }
 
 export function createWorkerExecutionPrompt(input: WorkerExecutionPromptInput): string {
+  const checklist = renderSkillChecklist(MAPLE_WORKER_SKILLS);
   return [
     "[Maple Worker Task]",
     `Project: ${input.projectName}`,
     `Directory: ${input.directory}`,
     `Task: ${input.taskTitle}`,
     "先在会话中加载 Maple 能力：非 Codex 输入 `/maple`，Codex 输入 `$maple`。",
+    "执行检查清单：",
+    ...checklist,
     "随后按任务完成实现与验证。",
+    REQUIRED_MCP_FLOW_HINT,
     REQUIRED_DECISION_HINT,
     OUTPUT_SCHEMA_HINT
   ].join("\n");

@@ -37,6 +37,13 @@ type Project = {
   tasks: Task[];
 };
 
+const TERMINAL_TASK_STATUSES: TaskStatus[] = ["已完成", "已阻塞", "需要更多信息"];
+const TERMINAL_TASK_STATUS_SET = new Set<TaskStatus>(TERMINAL_TASK_STATUSES);
+
+function isTerminalTaskStatus(status: TaskStatus): boolean {
+  return TERMINAL_TASK_STATUS_SET.has(status);
+}
+
 // ── State File ──
 
 const STATE_DIR = join(homedir(), ".maple");
@@ -211,24 +218,52 @@ const SIGNAL_FILE = join(STATE_DIR, "worker-signal.json");
 
 server.tool(
   "finish_worker",
-  "通知 Maple 当前 Worker 已执行完毕，可以结束进程。",
+  "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无待办/队列中/进行中任务。",
   {
     project: z.string().describe("项目名称"),
     summary: z.string().optional().describe("执行总结（可选）"),
   },
   async ({ project, summary }) => {
+    const projects = readState();
+    const target = findProject(projects, project);
+    if (!target) {
+      return {
+        content: [{ type: "text" as const, text: `未找到匹配项目「${project}」。` }],
+        isError: true,
+      };
+    }
+
+    const unresolvedTasks = target.tasks.filter((task) => !isTerminalTaskStatus(task.status));
+    if (unresolvedTasks.length > 0) {
+      const lines = unresolvedTasks.map((task, index) => (
+        `${index + 1}. [${task.status}] ${task.title}  (id: ${task.id})`
+      ));
+      return {
+        content: [{
+          type: "text" as const,
+          text: [
+            `项目「${target.name}」仍有 ${unresolvedTasks.length} 个任务未收敛，禁止 finish_worker。`,
+            "请先对每条任务调用 submit_task_report，将状态更新为：已完成 / 已阻塞 / 需要更多信息。",
+            "",
+            ...lines
+          ].join("\n")
+        }],
+        isError: true,
+      };
+    }
+
     if (!existsSync(STATE_DIR)) {
       mkdirSync(STATE_DIR, { recursive: true });
     }
     const signal = {
-      project,
+      project: target.name,
       summary: summary ?? "",
       timestamp: new Date().toISOString(),
       action: "finish" as const,
     };
     writeFileSync(SIGNAL_FILE, JSON.stringify(signal, null, 2), "utf-8");
     return {
-      content: [{ type: "text" as const, text: `已通知 Maple 项目「${project}」的 Worker 执行完毕。` }],
+      content: [{ type: "text" as const, text: `已通知 Maple 项目「${target.name}」的 Worker 执行完毕。` }],
     };
   }
 );

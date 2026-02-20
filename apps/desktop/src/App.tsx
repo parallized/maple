@@ -40,6 +40,8 @@ import { loadProjects, loadMcpServerConfig, loadTheme } from "./lib/storage";
 
 import type {
   DetailMode,
+  McpTaskUpdatedEvent,
+  McpWorkerFinishedEvent,
   McpServerConfig,
   McpServerStatus,
   Project,
@@ -258,6 +260,63 @@ export function App() {
       setWorkerLogs((prev) => ({ ...prev, [workerId]: `${prev[workerId] ?? ""}${line}` }));
       const permissionPattern = /\b(allow|approve|permit|confirm|accept)\b.*\?|\[y\/n\]|\[Y\/n\]|\[y\/N\]|\(yes\/no\)|\(y\/n\)/i;
       if (permissionPattern.test(line)) setPermissionPrompt({ workerId, question: line });
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        cleanup = unlisten;
+      }
+    });
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [isTauri]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    void listen<McpTaskUpdatedEvent>("maple://task-updated", (event) => {
+      const { projectName, task } = event.payload;
+      const needle = projectName.trim().toLowerCase();
+      if (!needle || !task?.id) return;
+      setProjects((prev) => {
+        let changed = false;
+        const next = prev.map((project) => {
+          const normalized = project.name.toLowerCase();
+          const matches = normalized === needle || normalized.includes(needle);
+          if (!matches) return project;
+          const index = project.tasks.findIndex((item) => item.id === task.id);
+          if (index < 0) return project;
+          const tasks = [...project.tasks];
+          tasks[index] = task;
+          changed = true;
+          return { ...project, tasks };
+        });
+        return changed ? next : prev;
+      });
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        cleanup = unlisten;
+      }
+    });
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [isTauri]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    void listen<McpWorkerFinishedEvent>("maple://worker-finished", (event) => {
+      const { project, summary } = event.payload;
+      const detail = summary.trim();
+      setNotice(detail ? `项目「${project}」执行完成：${detail}` : `项目「${project}」执行完成。`);
     }).then((unlisten) => {
       if (disposed) {
         unlisten();

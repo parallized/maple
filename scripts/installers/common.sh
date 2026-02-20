@@ -29,9 +29,12 @@ description: "Run /maple workflow for Maple development tasks."
 
 When user asks \`/maple\`:
 1. Work in the current working directory (do NOT cd elsewhere).
-2. Use Maple MCP tools to query tasks and submit results.
+2. Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
 3. Always run typecheck/build verification before marking done.
-4. Output \`mcp_decision\` with status, comment, and tags.
+4. For each task, call \`submit_task_report\` to set \`进行中\` when execution starts, then set \`已完成\` / \`已阻塞\` / \`需要更多信息\` when execution ends.
+5. Before ending, call \`query_project_todos\` and ensure no \`待办\` / \`队列中\` / \`进行中\` task remains.
+6. Call \`finish_worker\` as the final MCP call.
+7. Output \`mcp_decision\` with status, comment, and tags.
 EOF
 }
 
@@ -44,8 +47,10 @@ Run Maple workflow in the current working directory:
 1. Use Maple MCP tools (query_project_todos, query_recent_context) to get tasks
 2. Implement the requested changes in the current project
 3. Run typecheck/build before finishing
-4. Output mcp_decision with status, comment, and tags
-5. Use submit_task_report to report results, then finish_worker when done
+4. For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish
+5. Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains
+6. Call finish_worker as the final MCP call
+7. Output mcp_decision with status, comment, and tags
 EOF
 }
 
@@ -60,6 +65,9 @@ write_iflow_user_assets() {
 Work in the current working directory (do NOT cd elsewhere).
 Use Maple MCP tools to query tasks and submit results.
 Run typecheck/build before finishing.
+For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
+Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
+Call finish_worker as the final MCP call.
 Output mcp_decision with status, comment, and tags.
 EOF
   cat > "${skill_root_dir}/SKILL.md" <<EOF
@@ -84,6 +92,9 @@ Maple execution skill:
 - execute tasks end-to-end
 - use Maple MCP + local skills first
 - run typecheck/build before completion
+- use submit_task_report to mark each task as 进行中 at start, then settle to 已完成 / 已阻塞 / 需要更多信息
+- call query_project_todos before ending, and keep no 待办 / 队列中 / 进行中 tasks
+- call finish_worker as the final MCP call
 - keep Maple on the standalone execution path
 EOF
 }
@@ -104,7 +115,10 @@ write_windsurf_workflow() {
 4. 仅通过 Maple Skills 的 MCP 决策输出决定任务结果：
    - 必须产出 \`mcp_decision.status\`、\`mcp_decision.comment\`、\`mcp_decision.tags[]\`。
    - 缺少 \`mcp_decision\` 时，不得标记完成，统一标记为阻塞并说明原因。
-5. 输出本轮执行汇总（已完成 / 需更多信息 / 已阻塞 / 剩余）。
+5. 对每条任务调用 \`submit_task_report\`：开始执行先更新为 \`进行中\`，结束后再更新为 \`已完成\` / \`已阻塞\` / \`需要更多信息\`。
+6. 结束前必须再次调用 \`query_project_todos\`，确认不存在 \`待办\` / \`队列中\` / \`进行中\` 任务。
+7. 仅在第 6 步满足后，调用 \`finish_worker\`（必须作为最后一个 MCP 调用）。
+8. 输出本轮执行汇总（已完成 / 需更多信息 / 已阻塞 / 剩余）。
 
 输出语言默认使用中文，除非用户明确要求其他语言。
 EOF

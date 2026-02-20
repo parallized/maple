@@ -51,6 +51,9 @@ Windsurf 会把 `maple.md` 映射为 `/maple` 命令。重启或刷新工作区�
 - Worker 输出必须包含 `mcp_decision.status/comment/tags[]`。
 - 若缺少 `mcp_decision`，任务会被标记为 `已阻塞`，不会兜底为 `已完成`。
 - 标签与结论记录仅采用 `mcp_decision` 结果。
+- 每条任务必须通过 `submit_task_report` 驱动状态流转：开始先更新为 `进行中`，结束再更新为 `已完成/已阻塞/需要更多信息`。
+- 调用 `finish_worker` 前必须再次 `query_project_todos`，确认无 `待办/队列中/进行中` 任务。
+- `finish_worker` 必须作为最后一个 MCP 调用。
 
 ## 5) 一键安装脚本（Claude / Codex / iFlow / Windsurf）
 

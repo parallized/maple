@@ -11,12 +11,28 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tauri::Emitter;
 
 const MCP_PORT: u16 = 45819;
 
 pub struct McpHttpState {
-    #[allow(dead_code)]
     pub app_handle: tauri::AppHandle,
+}
+
+// ── Events emitted to frontend ──
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TaskUpdatedEvent {
+    project_name: String,
+    task: Task,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct WorkerFinishedEvent {
+    project: String,
+    summary: String,
 }
 
 // ── Data Types (matching frontend domain.ts) ──
@@ -102,6 +118,10 @@ fn truncate_chars(s: &str, max: usize) -> &str {
         Some((idx, _)) => &s[..idx],
         None => s,
     }
+}
+
+fn is_terminal_task_status(status: &str) -> bool {
+    matches!(status, "已完成" | "已阻塞" | "需要更多信息")
 }
 
 // ── MCP Tool Handlers ──
@@ -205,7 +225,7 @@ fn tool_query_recent_context(args: &Value) -> Value {
     json!({ "content": [{ "type": "text", "text": lines.join("\n\n") }]})
 }
 
-fn tool_submit_task_report(args: &Value) -> Value {
+fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
     let project_name = args
         .get("project")
         .and_then(|v| v.as_str())
@@ -266,8 +286,16 @@ fn tool_submit_task_report(args: &Value) -> Value {
     if !tags.is_empty() {
         task.tags = tags;
     }
+    let task_snapshot = task.clone();
 
     write_state(&projects);
+    let _ = state.app_handle.emit(
+        "maple://task-updated",
+        TaskUpdatedEvent {
+            project_name: target_name.clone(),
+            task: task_snapshot,
+        },
+    );
 
     let status_text = status
         .map(|s| format!("状态已更新为「{s}」"))
@@ -278,8 +306,8 @@ fn tool_submit_task_report(args: &Value) -> Value {
     }]})
 }
 
-fn tool_finish_worker(args: &Value) -> Value {
-    let project = args
+fn tool_finish_worker(args: &Value, state: &McpHttpState) -> Value {
+    let project_name = args
         .get("project")
         .and_then(|v| v.as_str())
         .unwrap_or("");
@@ -288,10 +316,55 @@ fn tool_finish_worker(args: &Value) -> Value {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
+    let projects = read_state();
+    let Some(idx) = find_project_index(&projects, project_name) else {
+        return json!({
+            "content": [{ "type": "text", "text": format!("未找到匹配项目「{project_name}」。") }],
+            "isError": true
+        });
+    };
+
+    let target = &projects[idx];
+    let unresolved_tasks: Vec<&Task> = target
+        .tasks
+        .iter()
+        .filter(|task| !is_terminal_task_status(&task.status))
+        .collect();
+
+    if !unresolved_tasks.is_empty() {
+        let mut lines: Vec<String> = vec![
+            format!(
+                "项目「{}」仍有 {} 个任务未收敛，禁止 finish_worker。",
+                target.name,
+                unresolved_tasks.len()
+            ),
+            "请先对每条任务调用 submit_task_report，将状态更新为：已完成 / 已阻塞 / 需要更多信息。".into(),
+            String::new(),
+        ];
+        lines.extend(
+            unresolved_tasks
+                .iter()
+                .enumerate()
+                .map(|(index, task)| {
+                    format!(
+                        "{}. [{}] {}  (id: {})",
+                        index + 1,
+                        task.status,
+                        task.title,
+                        task.id
+                    )
+                }),
+        );
+        return json!({
+            "content": [{ "type": "text", "text": lines.join("\n") }],
+            "isError": true
+        });
+    }
+
     let dir = state_dir();
     let _ = fs::create_dir_all(&dir);
     let signal = json!({
-        "project": project,
+        "project": target.name,
         "summary": summary,
         "timestamp": iso_now(),
         "action": "finish"
@@ -300,16 +373,23 @@ fn tool_finish_worker(args: &Value) -> Value {
         dir.join("worker-signal.json"),
         serde_json::to_string_pretty(&signal).unwrap_or_default(),
     );
+    let _ = state.app_handle.emit(
+        "maple://worker-finished",
+        WorkerFinishedEvent {
+            project: target.name.clone(),
+            summary: summary.to_string(),
+        },
+    );
 
     json!({ "content": [{ "type": "text", "text":
-        format!("已通知 Maple 项目「{project}」的 Worker 执行完毕。")
+        format!("已通知 Maple 项目「{}」的 Worker 执行完毕。", target.name)
     }]})
 }
 
 // ── JSON-RPC / MCP Handler ──
 
 async fn handle_mcp_post(
-    AxumState(_state): AxumState<Arc<McpHttpState>>,
+    AxumState(state): AxumState<Arc<McpHttpState>>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
     let id = body.get("id").cloned();
@@ -344,8 +424,8 @@ async fn handle_mcp_post(
             match tool_name {
                 "query_project_todos" => tool_query_project_todos(&arguments),
                 "query_recent_context" => tool_query_recent_context(&arguments),
-                "submit_task_report" => tool_submit_task_report(&arguments),
-                "finish_worker" => tool_finish_worker(&arguments),
+                "submit_task_report" => tool_submit_task_report(&arguments, state.as_ref()),
+                "finish_worker" => tool_finish_worker(&arguments, state.as_ref()),
                 _ => json!({
                     "content": [{ "type": "text", "text": format!("未知工具：{tool_name}") }],
                     "isError": true
@@ -421,7 +501,7 @@ fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "finish_worker",
-            "description": "通知 Maple 当前 Worker 已执行完毕，可以结束进程。",
+            "description": "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无待办/队列中/进行中任务。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
