@@ -32,11 +32,11 @@ export function loadWorkerConfigs(): Record<WorkerKind, WorkerConfig> {
       const value = parsed[kind] ?? fallback;
       const runArgsValue = value.runArgs ?? fallback.runArgs;
       const runArgsTrimmed = runArgsValue.trim();
-      const legacyIflowRunArgs = kind === "iflow" && (runArgsTrimmed === "run" || runArgsTrimmed === "-p");
-      const legacyClaudeRunArgs = kind === "claude" && runArgsTrimmed.startsWith("/maple");
-      const normalizedRunArgs = legacyIflowRunArgs
+      const legacyPrintFlag = runArgsTrimmed === "-p" || runArgsTrimmed === "exec" || runArgsTrimmed === "run";
+      const legacyClaudeSlash = kind === "claude" && runArgsTrimmed.startsWith("/maple");
+      const normalizedRunArgs = legacyPrintFlag
         ? fallback.runArgs
-        : legacyClaudeRunArgs
+        : legacyClaudeSlash
           ? runArgsTrimmed.replace(/^\/maple\b/, "maple")
           : runArgsValue;
       return {
