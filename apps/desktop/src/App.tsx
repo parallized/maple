@@ -76,7 +76,6 @@ export function App() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [workerConsoleOpen, setWorkerConsoleOpen] = useState(false);
   const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(() => buildWorkerId(WORKER_KINDS[0]?.kind ?? "claude"));
-  const [runningWorkers, setRunningWorkers] = useState<Set<string>>(() => new Set());
   const [executingWorkers, setExecutingWorkers] = useState<Set<string>>(() => new Set());
   const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
   const [theme, setThemeState] = useState<ThemeMode>(() => loadTheme());
@@ -94,11 +93,11 @@ export function App() {
     const allTasks = projects.flatMap((p) => p.tasks);
     const pending = allTasks.filter((t) => t.status !== "已完成").length;
     const completedCount = allTasks.filter((t) => t.status === "已完成").length;
-    const inProgressCount = allTasks.filter((t) => t.status === "进行中").length;
-    const runningCount = new Set([...runningWorkers, ...executingWorkers]).size;
+    const inProgressCount = allTasks.filter((t) => t.status === "进行中" || t.status === "队列中").length;
+    const runningCount = executingWorkers.size;
     const tokenUsageTotal = collectTokenUsage(projects, workerLogs);
     return { pending, completedCount, inProgressCount, runningCount, projectCount: projects.length, tokenUsageTotal };
-  }, [projects, runningWorkers, executingWorkers, workerLogs]);
+  }, [projects, executingWorkers, workerLogs]);
 
   const workerAvailability = useMemo(
     () =>
@@ -114,21 +113,49 @@ export function App() {
     [workerConfigs]
   );
 
-  const workerPoolOverview = useMemo(() => {
-    const workerIds = [...new Set([...runningWorkers, ...executingWorkers])];
-    return workerIds.map((workerId) => {
-      const kindEntry = WORKER_KINDS.find((entry) => `worker-${entry.kind}` === workerId);
-      const interactive = runningWorkers.has(workerId);
-      const executing = executingWorkers.has(workerId);
-      const mode: "interactive" | "task" | "mixed" = interactive && executing ? "mixed" : interactive ? "interactive" : "task";
-      return {
+  type WorkerPoolMode = "task";
+  type WorkerPoolEntry = { workerId: string; workerLabel: string; projectName: string; mode: WorkerPoolMode };
+
+  const workerPool = useMemo<WorkerPoolEntry[]>(() => {
+    const entries: WorkerPoolEntry[] = [];
+    const activeWorkerIds = [...executingWorkers];
+
+    for (const kindEntry of WORKER_KINDS) {
+      const matchingProjects = projects
+        .filter((project) => project.workerKind === kindEntry.kind)
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      for (const [index, project] of matchingProjects.entries()) {
+        const workerId = buildWorkerId(kindEntry.kind, project.id);
+        const executing = executingWorkers.has(workerId);
+        if (!executing) continue;
+        const mode: WorkerPoolMode = "task";
+        entries.push({
+          workerId,
+          workerLabel: `${kindEntry.label} ${index + 1}`,
+          projectName: project.name,
+          mode
+        });
+      }
+    }
+
+    const knownWorkerIds = new Set(entries.map((entry) => entry.workerId));
+    for (const workerId of activeWorkerIds) {
+      if (knownWorkerIds.has(workerId)) continue;
+      const parsed = parseWorkerId(workerId);
+      const kindLabel = parsed.kind ? WORKER_KINDS.find((entry) => entry.kind === parsed.kind)?.label : null;
+      const projectName = parsed.projectId ? projects.find((project) => project.id === parsed.projectId)?.name ?? "未绑定项目" : "未绑定项目";
+      const mode: WorkerPoolMode = "task";
+      entries.push({
         workerId,
-        workerLabel: kindEntry?.label ?? workerId,
-        mode,
-        projectName: workerProjectMap[workerId] ?? "未绑定项目"
-      };
-    });
-  }, [runningWorkers, executingWorkers, workerProjectMap]);
+        workerLabel: kindLabel ?? workerId,
+        projectName,
+        mode
+      });
+    }
+
+    return entries;
+  }, [projects, executingWorkers]);
 
   // ── Persistence ──
   useEffect(() => { applyTheme(theme); localStorage.setItem(STORAGE_THEME, theme); }, [theme]);
@@ -145,6 +172,10 @@ export function App() {
   useEffect(() => {
     workerLogsRef.current = workerLogs;
   }, [workerLogs]);
+
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
 
   useEffect(() => {
     if (boardProjectId && !projects.some((p) => p.id === boardProjectId)) {
@@ -241,15 +272,12 @@ export function App() {
     void listen<WorkerDoneEvent>("maple://worker-done", (event) => {
       const { workerId, success, code } = event.payload;
       setRunningWorkers((prev) => { const next = new Set(prev); next.delete(workerId); return next; });
-      setWorkerProjectMap((prev) => {
-        if (!(workerId in prev)) return prev;
-        const next = { ...prev };
-        delete next[workerId];
-        return next;
-      });
-      const kindEntry = WORKER_KINDS.find((w) => `worker-${w.kind}` === workerId);
+      const parsed = parseWorkerId(workerId);
+      const kindLabel = parsed.kind ? WORKER_KINDS.find((w) => w.kind === parsed.kind)?.label : null;
+      const projectName = parsed.projectId ? projectsRef.current.find((p) => p.id === parsed.projectId)?.name : null;
+      const label = kindLabel && projectName ? `${kindLabel} · ${projectName}` : kindLabel ?? workerId;
       appendWorkerLog(workerId, `\n[exit ${code ?? "?"}] ${success ? "完成" : "失败"}\n`);
-      setNotice(`${kindEntry?.label ?? workerId} 会话已结束（exit ${code ?? "?"}）`);
+      setNotice(`${label} 会话已结束（exit ${code ?? "?"}）`);
     }).then((unlisten) => {
       if (disposed) {
         unlisten();
@@ -335,7 +363,7 @@ export function App() {
   }
 
   function buildWorkerRunPayload(workerId: string, config: WorkerConfig, task: Task, project: Project): { args: string[]; prompt: string } {
-    const kind = WORKER_KINDS.find((entry) => `worker-${entry.kind}` === workerId)?.kind;
+    const kind = parseWorkerId(workerId).kind;
     const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
     const prompt = createWorkerExecutionPrompt({
       projectName: project.name,
@@ -461,25 +489,31 @@ export function App() {
     setNotice("已应用推荐配置：内置 Maple MCP 与默认 Worker 参数。");
   }
 
-  function openWorkerConsole(preferredKind?: WorkerKind, options?: { requireActive?: boolean }) {
+  function openWorkerConsole(preferredKind?: WorkerKind, options?: { requireActive?: boolean; projectId?: string | null }) {
     const requireActive = options?.requireActive ?? false;
-    const activeWorkerIds = [...runningWorkers, ...executingWorkers];
+    const activeWorkerIds = [...executingWorkers];
     if (requireActive && activeWorkerIds.length === 0) {
       setNotice("当前没有正在工作的 Worker 实例，无法打开控制台。");
       return;
     }
 
-    const activePreferred = preferredKind ? `worker-${preferredKind}` : null;
+    const preferredProjectId = options?.projectId ?? null;
+    const preferredWorkerId = preferredKind && preferredProjectId ? buildWorkerId(preferredKind, preferredProjectId) : null;
+    if (requireActive && preferredWorkerId && !activeWorkerIds.includes(preferredWorkerId)) {
+      setNotice("该项目当前没有正在工作的 Worker 实例，无法打开控制台。");
+      return;
+    }
+
     const fallbackWorkerId =
-      (activePreferred && activeWorkerIds.includes(activePreferred) ? activePreferred : null)
+      (preferredWorkerId && (!requireActive || activeWorkerIds.includes(preferredWorkerId)) ? preferredWorkerId : null)
+      ?? (preferredKind ? activeWorkerIds.find((workerId) => isWorkerKindId(workerId, preferredKind)) ?? null : null)
       ?? activeWorkerIds[0]
-      ?? `worker-${
-        preferredKind
-        ?? boardProject?.workerKind
-        ?? projects.find((project) => project.workerKind)?.workerKind
-        ?? WORKER_KINDS[0]?.kind
-        ?? "claude"
-      }`;
+      ?? (boardProject?.workerKind ? buildWorkerId(boardProject.workerKind, boardProject.id) : null)
+      ?? (() => {
+        const first = projects.find((project) => project.workerKind);
+        return first?.workerKind ? buildWorkerId(first.workerKind, first.id) : null;
+      })()
+      ?? buildWorkerId(preferredKind ?? WORKER_KINDS[0]?.kind ?? "claude");
 
     setWorkerConsoleWorkerId(fallbackWorkerId);
     setWorkerConsoleOpen(true);
@@ -567,7 +601,7 @@ export function App() {
     const args = parseArgs(config.probeArgs);
     try {
       const result = await invoke<WorkerCommandResult>("probe_worker", { executable: config.executable, args, cwd: "" });
-      const workerId = `worker-${kind}`;
+      const workerId = buildWorkerId(kind);
       appendWorkerLog(workerId, `\n$ ${config.executable} ${args.join(" ")}\n`);
       if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
       if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
@@ -576,7 +610,7 @@ export function App() {
       }
       setNotice(result.success ? `${label} CLI 可用（未校验 MCP 挂载）` : `${label} 不可用（exit: ${result.code ?? "?"}）`);
     } catch (error) {
-      appendWorkerLog(`worker-${kind}`, `\n${label} 探测失败：${String(error)}\n`);
+      appendWorkerLog(buildWorkerId(kind), `\n${label} 探测失败：${String(error)}\n`);
       setNotice(`${label} 探测失败。`);
     }
   }
@@ -607,10 +641,9 @@ export function App() {
       });
     });
     const nextVersion = bumpPatch(project.version);
-    const workerId = `worker-${kind}`;
-    setWorkerProjectMap((prev) => ({ ...prev, [workerId]: project.name }));
+    const workerId = buildWorkerId(kind, project.id);
     setExecutingWorkers((prev) => { const next = new Set(prev); next.add(workerId); return next; });
-    openWorkerConsole(kind);
+    openWorkerConsole(kind, { projectId: project.id });
     try {
       for (const task of pendingTasks) {
         try {
@@ -650,12 +683,6 @@ export function App() {
         next.delete(workerId);
         return next;
       });
-      setWorkerProjectMap((prev) => {
-        if (runningWorkers.has(workerId) || !(workerId in prev)) return prev;
-        const next = { ...prev };
-        delete next[workerId];
-        return next;
-      });
     }
   }
 
@@ -668,15 +695,20 @@ export function App() {
       return;
     }
 
-    const kindEntry = WORKER_KINDS.find((w) => `worker-${w.kind}` === workerId);
-    if (!kindEntry) return;
-    const config = workerConfigs[kindEntry.kind];
-    if (!config.executable.trim()) { setNotice(`请先配置 ${kindEntry.label} 的 executable。`); return; }
-    const project = boardProject ?? projects[0];
+    const parsed = parseWorkerId(workerId);
+    if (!parsed.kind) return;
+    const kindEntry = WORKER_KINDS.find((w) => w.kind === parsed.kind);
+    const label = kindEntry?.label ?? workerId;
+    const config = workerConfigs[parsed.kind];
+    if (!config.executable.trim()) { setNotice(`请先配置 ${label} 的 executable。`); return; }
+    const project =
+      parsed.projectId
+        ? projects.find((p) => p.id === parsed.projectId) ?? null
+        : boardProject ?? projects[0] ?? null;
     const cwd = project?.directory ?? "";
-    const args = buildWorkerConsoleArgs(kindEntry.kind, config);
+    if (!cwd) { setNotice("该 Worker 未绑定项目目录，无法启动会话。"); return; }
+    const args = buildWorkerConsoleArgs(parsed.kind, config);
     appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, args)}\n`);
-    setWorkerProjectMap((prev) => ({ ...prev, [workerId]: project?.name ?? "未绑定项目" }));
     setRunningWorkers((prev) => { const next = new Set(prev); next.add(workerId); return next; });
     try {
       await invoke<boolean>("start_interactive_worker", { workerId, taskTitle: "", executable: config.executable, args, prompt: "", cwd });
@@ -856,7 +888,7 @@ export function App() {
                 metrics={metrics}
                 mcpStatus={mcpStatus}
                 workerAvailability={workerAvailability}
-                workerPool={workerPoolOverview}
+                workerPool={workerPool}
               />
             ) : null}
 
@@ -876,7 +908,7 @@ export function App() {
                 onCreateReleaseDraft={createReleaseDraft}
                 onAssignWorkerKind={assignWorkerKind}
                 onSetDetailMode={setDetailMode}
-                onOpenConsole={() => openWorkerConsole(boardProject?.workerKind, { requireActive: true })}
+                onOpenConsole={() => openWorkerConsole(boardProject?.workerKind, { requireActive: true, projectId: boardProject?.id })}
                 onRemoveProject={removeProject}
               />
             ) : null}
@@ -915,7 +947,7 @@ export function App() {
             currentWorkerLog={currentWorkerLog}
             runningWorkers={runningWorkers}
             executingWorkers={executingWorkers}
-            workerPool={workerPoolOverview}
+            workerPool={workerPool}
             onClose={() => setWorkerConsoleOpen(false)}
             onStartWorker={(wId) => void startConsoleSession(wId)}
             onSelectWorker={(wId) => setWorkerConsoleWorkerId(wId)}

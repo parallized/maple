@@ -172,7 +172,8 @@ export function buildWorkerArchiveReport(result: WorkerExecutionResultLike, task
     const raw = (result.stdout.trim() || result.stderr.trim()).slice(0, 200);
     return [
       "状态：已阻塞（缺少 MCP 决策输出）",
-      `结论：Worker 未返回可解析的 mcp_decision。${raw ? `输出摘录：${raw}` : ""}`.trim()
+      "描述：",
+      `Worker 未返回可解析的 mcp_decision。${raw ? `\n\n输出摘录：\n${raw}` : ""}`.trim()
     ].join("\n");
   }
 
@@ -187,10 +188,11 @@ export function buildWorkerArchiveReport(result: WorkerExecutionResultLike, task
             ? "需要更多信息（请补充后继续）"
             : "已阻塞（执行受阻）";
 
-  const briefConclusion = decision.comment.replace(/\s+/g, " ").trim();
+  const description = decision.comment.trim() || taskTitle;
 
   return [
     "状态：" + statusDetail,
-    `结论：${briefConclusion || taskTitle}`
+    "描述：",
+    description
   ].join("\n");
 }

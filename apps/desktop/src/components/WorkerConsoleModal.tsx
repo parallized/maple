@@ -15,7 +15,7 @@ type WorkerConsoleModalProps = {
     workerId: string;
     workerLabel: string;
     projectName: string;
-    mode: "interactive" | "task" | "mixed";
+    mode: "idle" | "interactive" | "task" | "mixed";
   }>;
   onClose: () => void;
   onStartWorker: (workerId: string) => void;
@@ -51,7 +51,8 @@ export function WorkerConsoleModal({
   const isExecutingTask = executingWorkers.has(workerConsoleWorkerId);
   const canStartSession = !isInteractiveRunning && !isExecutingTask;
 
-  function formatMode(mode: "interactive" | "task" | "mixed"): string {
+  function formatMode(mode: "idle" | "interactive" | "task" | "mixed"): string {
+    if (mode === "idle") return "空闲";
     if (mode === "mixed") return "交互 + 任务";
     if (mode === "interactive") return "交互会话";
     return "任务执行";
