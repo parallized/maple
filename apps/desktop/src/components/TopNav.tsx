@@ -59,7 +59,7 @@ export function TopNav({
 
         <div className="flex items-center gap-2">
           {projects.map((project) => {
-            const inProgress = project.tasks.filter((task) => task.status === "进行中").length;
+            const inProgress = project.tasks.filter((task) => task.status === "进行中" || task.status === "队列中").length;
             return (
               <button
                 key={project.id}

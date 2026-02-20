@@ -3,6 +3,7 @@ import { FadeContent } from "../components/ReactBits";
 import { InlineTaskInput } from "../components/InlineTaskInput";
 import { PopoverMenu, type PopoverMenuItem } from "../components/PopoverMenu";
 import { TaskDetailPanel } from "../components/TaskDetailPanel";
+import { WorkerLogo } from "../components/WorkerLogo";
 import { WORKER_KINDS } from "../lib/constants";
 import { resolveTagIcon, resolveTaskIcon } from "../lib/task-icons";
 import { relativeTimeZh, getLastMentionTime } from "../lib/utils";
@@ -145,6 +146,16 @@ export function BoardView({
             <div className="flex items-center gap-2 text-[13px] text-muted font-medium">
               <span className="w-2 h-2 rounded-full bg-(--color-primary) opacity-40" />
               <span>Version {boardProject.version}</span>
+            </div>
+            <div className="flex items-center gap-2 text-[13px] text-muted">
+              {boardProject.workerKind ? (
+                <WorkerLogo kind={boardProject.workerKind} size={14} className="opacity-80" />
+              ) : (
+                <Icon icon="mingcute:ai-line" className="opacity-60" />
+              )}
+              <span className="truncate opacity-80">
+                Worker {WORKER_KINDS.find((w) => w.kind === boardProject.workerKind)?.label ?? "未分配"}
+              </span>
             </div>
             <div className="flex items-center gap-2 text-[13px] text-muted">
               <span className="w-2 h-2 rounded-full bg-(--color-base-content) opacity-20" />

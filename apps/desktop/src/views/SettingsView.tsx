@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react";
 import { FadeContent } from "../components/ReactBits";
+import { WorkerLogo } from "../components/WorkerLogo";
 import { WORKER_KINDS } from "../lib/constants";
 import type { ThemeMode } from "../lib/constants";
 import type { DetailMode, McpServerStatus, WorkerKind } from "../domain";
@@ -118,7 +119,12 @@ export function SettingsView({
               <tbody>
                 {WORKER_KINDS.map(({ kind, label }) => (
                   <tr key={kind}>
-                    <td className="font-medium">{label}</td>
+                    <td className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <WorkerLogo kind={kind} size={16} />
+                        <span>{label}</span>
+                      </div>
+                    </td>
                     <td>
                       <button type="button" className="ui-btn ui-btn--xs ui-btn--outline gap-1" onClick={() => onProbeWorker(kind)}>
                         <Icon icon="mingcute:search-line" />

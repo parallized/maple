@@ -114,7 +114,7 @@ export function App() {
   );
 
   type WorkerPoolMode = "task";
-  type WorkerPoolEntry = { workerId: string; workerLabel: string; projectName: string; mode: WorkerPoolMode };
+  type WorkerPoolEntry = { workerId: string; workerLabel: string; projectName: string; mode: WorkerPoolMode; kind: WorkerKind | null };
 
   const workerPool = useMemo<WorkerPoolEntry[]>(() => {
     const entries: WorkerPoolEntry[] = [];
@@ -125,16 +125,19 @@ export function App() {
         .filter((project) => project.workerKind === kindEntry.kind)
         .sort((a, b) => a.name.localeCompare(b.name));
 
-      for (const [index, project] of matchingProjects.entries()) {
+      let activeIndex = 0;
+      for (const project of matchingProjects) {
         const workerId = buildWorkerId(kindEntry.kind, project.id);
         const executing = executingWorkers.has(workerId);
         if (!executing) continue;
+        activeIndex += 1;
         const mode: WorkerPoolMode = "task";
         entries.push({
           workerId,
-          workerLabel: `${kindEntry.label} ${index + 1}`,
+          workerLabel: `${kindEntry.label} ${activeIndex}`,
           projectName: project.name,
-          mode
+          mode,
+          kind: kindEntry.kind
         });
       }
     }
@@ -150,7 +153,8 @@ export function App() {
         workerId,
         workerLabel: kindLabel ?? workerId,
         projectName,
-        mode
+        mode,
+        kind: parsed.kind
       });
     }
 
@@ -271,7 +275,6 @@ export function App() {
     let cleanup: (() => void) | undefined;
     void listen<WorkerDoneEvent>("maple://worker-done", (event) => {
       const { workerId, success, code } = event.payload;
-      setRunningWorkers((prev) => { const next = new Set(prev); next.delete(workerId); return next; });
       const parsed = parseWorkerId(workerId);
       const kindLabel = parsed.kind ? WORKER_KINDS.find((w) => w.kind === parsed.kind)?.label : null;
       const projectName = parsed.projectId ? projectsRef.current.find((p) => p.id === parsed.projectId)?.name : null;
@@ -305,10 +308,6 @@ export function App() {
 
   function buildWorkerRunArgs(kind: WorkerKind, config: WorkerConfig): string[] {
     return [...buildDangerArgs(kind, config.dangerMode), ...parseArgs(config.runArgs)];
-  }
-
-  function buildWorkerConsoleArgs(kind: WorkerKind, config: WorkerConfig): string[] {
-    return [...buildDangerArgs(kind, config.dangerMode), ...parseArgs(config.consoleArgs)];
   }
 
   function quoteShellArg(value: string): string {
@@ -492,10 +491,6 @@ export function App() {
   function openWorkerConsole(preferredKind?: WorkerKind, options?: { requireActive?: boolean; projectId?: string | null }) {
     const requireActive = options?.requireActive ?? false;
     const activeWorkerIds = [...executingWorkers];
-    if (requireActive && activeWorkerIds.length === 0) {
-      setNotice("当前没有正在工作的 Worker 实例，无法打开控制台。");
-      return;
-    }
 
     const preferredProjectId = options?.projectId ?? null;
     const preferredWorkerId = preferredKind && preferredProjectId ? buildWorkerId(preferredKind, preferredProjectId) : null;
@@ -642,8 +637,11 @@ export function App() {
     });
     const nextVersion = bumpPatch(project.version);
     const workerId = buildWorkerId(kind, project.id);
-    setExecutingWorkers((prev) => { const next = new Set(prev); next.add(workerId); return next; });
-    openWorkerConsole(kind, { projectId: project.id });
+    setExecutingWorkers((prev) => {
+      const next = new Set(prev);
+      next.add(workerId);
+      return next;
+    });
     try {
       for (const task of pendingTasks) {
         try {
@@ -684,55 +682,6 @@ export function App() {
         return next;
       });
     }
-  }
-
-  // ── Console ──
-  async function startConsoleSession(workerId: string) {
-    if (!isTauri) return;
-    if (runningWorkers.has(workerId)) return;
-    if (executingWorkers.has(workerId)) {
-      setNotice("当前 Worker 正在执行任务，暂不可启动交互终端。");
-      return;
-    }
-
-    const parsed = parseWorkerId(workerId);
-    if (!parsed.kind) return;
-    const kindEntry = WORKER_KINDS.find((w) => w.kind === parsed.kind);
-    const label = kindEntry?.label ?? workerId;
-    const config = workerConfigs[parsed.kind];
-    if (!config.executable.trim()) { setNotice(`请先配置 ${label} 的 executable。`); return; }
-    const project =
-      parsed.projectId
-        ? projects.find((p) => p.id === parsed.projectId) ?? null
-        : boardProject ?? projects[0] ?? null;
-    const cwd = project?.directory ?? "";
-    if (!cwd) { setNotice("该 Worker 未绑定项目目录，无法启动会话。"); return; }
-    const args = buildWorkerConsoleArgs(parsed.kind, config);
-    appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, args)}\n`);
-    setRunningWorkers((prev) => { const next = new Set(prev); next.add(workerId); return next; });
-    try {
-      await invoke<boolean>("start_interactive_worker", { workerId, taskTitle: "", executable: config.executable, args, prompt: "", cwd });
-    } catch (error) {
-      appendWorkerLog(workerId, `\n${String(error)}\n`);
-      setRunningWorkers((prev) => { const next = new Set(prev); next.delete(workerId); return next; });
-    }
-  }
-
-  async function sendConsoleRawInput(workerId: string, input: string) {
-    if (!isTauri || !input) return;
-    if (!runningWorkers.has(workerId)) return;
-    try { await invoke<boolean>("send_worker_input", { workerId, input, appendNewline: false }); }
-    catch (error) {
-      const message = String(error);
-      if (message.includes("Worker 会话不存在") || message.includes("Worker stdin 不可用")) return;
-      appendWorkerLog(workerId, `\n${message}\n`);
-    }
-  }
-
-  async function stopCurrentWorker(workerId: string) {
-    if (!isTauri) return;
-    try { await invoke<boolean>("stop_worker_session", { workerId }); }
-    catch (error) { appendWorkerLog(workerId, `\n${String(error)}\n`); }
   }
 
   async function answerPermission(workerId: string, answer: string) {
@@ -945,14 +894,10 @@ export function App() {
           <WorkerConsoleModal
             workerConsoleWorkerId={workerConsoleWorkerId}
             currentWorkerLog={currentWorkerLog}
-            runningWorkers={runningWorkers}
             executingWorkers={executingWorkers}
             workerPool={workerPool}
             onClose={() => setWorkerConsoleOpen(false)}
-            onStartWorker={(wId) => void startConsoleSession(wId)}
             onSelectWorker={(wId) => setWorkerConsoleWorkerId(wId)}
-            onSendRawInput={(wId, input) => void sendConsoleRawInput(wId, input)}
-            onStopWorker={(wId) => void stopCurrentWorker(wId)}
           />
         ) : null}
       </div>

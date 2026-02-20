@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react";
 import type { WorkerKind } from "../domain";
 import { WORKER_KINDS } from "../lib/constants";
+import { WorkerLogo } from "./WorkerLogo";
 
 type WorkerPickerModalProps = {
   onSelect: (kind: WorkerKind) => void;
@@ -36,7 +37,7 @@ export function WorkerPickerModal({ onSelect, onClose }: WorkerPickerModalProps)
                 className="ui-btn ui-btn--sm ui-btn--outline gap-1"
                 onClick={() => onSelect(kind)}
               >
-                <Icon icon="mingcute:ai-line" />
+                <WorkerLogo kind={kind} size={18} />
                 {label}
               </button>
             ))}

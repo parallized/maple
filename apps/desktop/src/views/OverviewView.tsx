@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react";
 import { CountUp, FadeContent, SpotlightCard, SplitText } from "../components/ReactBits";
+import { WorkerLogo } from "../components/WorkerLogo";
 import AnimatedList from "../components/reactbits/AnimatedList";
 import type { McpServerStatus, WorkerKind } from "../domain";
 
@@ -22,7 +23,8 @@ type OverviewViewProps = {
     workerId: string;
     workerLabel: string;
     projectName: string;
-    mode: "interactive" | "task" | "mixed";
+    mode: "task";
+    kind: WorkerKind | null;
   }>;
 };
 
@@ -32,9 +34,7 @@ function formatTokenCompact(value: number): string {
   return value.toLocaleString("en-US");
 }
 
-function formatMode(mode: "interactive" | "task" | "mixed"): string {
-  if (mode === "mixed") return "混合模式";
-  if (mode === "interactive") return "交互会话";
+function formatMode(mode: "task"): string {
   return "任务执行";
 }
 
@@ -134,7 +134,13 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                 <div key={worker.kind} className="group p-3 lg:p-4 rounded-[12px] lg:rounded-[14px] border border-[color-mix(in_srgb,var(--color-base-content)_4%,transparent)] bg-[color-mix(in_srgb,var(--color-base-content)_1%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-base-content)_3%,transparent)] hover:border-[color-mix(in_srgb,var(--color-base-content)_10%,transparent)] transition-all duration-300 flex flex-col gap-1.5 lg:gap-2 flex-none">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className={`w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full flex-none ${worker.available ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "bg-(--color-base-300)"}`} />
+                      <div className="relative w-6 h-6 rounded-lg bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-content)_8%,transparent)] flex items-center justify-center flex-none">
+                        <WorkerLogo kind={worker.kind} size={16} />
+                        <span
+                          className={`absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-(--color-base-100) ${worker.available ? "bg-green-500" : "bg-(--color-base-300)"}`}
+                          aria-label={worker.available ? "可用" : "未配置"}
+                        />
+                      </div>
                       <span className="font-medium text-[13px] lg:text-[14px] font-sans text-(--color-base-content) truncate">{worker.label}</span>
                     </div>
                   </div>
@@ -178,7 +184,11 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                       <div key={entry.workerId} className="flex items-center justify-between p-3 lg:p-4 rounded-[12px] lg:rounded-[14px] border border-[color-mix(in_srgb,var(--color-base-content)_4%,transparent)] bg-(--color-base-100) mb-2 hover:border-[color-mix(in_srgb,var(--color-base-content)_15%,transparent)] transition-colors shadow-sm group">
                         <div className="flex items-center gap-3 lg:gap-4 min-w-0">
                           <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-lg lg:rounded-xl bg-[color-mix(in_srgb,var(--color-base-content)_3%,transparent)] flex items-center justify-center flex-none border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] group-hover:bg-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] transition-colors">
-                            <Icon icon="mingcute:terminal-box-line" className="text-[16px] lg:text-lg opacity-70 group-hover:opacity-100 transition-opacity" />
+                            {entry.kind ? (
+                              <WorkerLogo kind={entry.kind} size={18} className="opacity-90 group-hover:opacity-100 transition-opacity" />
+                            ) : (
+                              <Icon icon="mingcute:terminal-box-line" className="text-[16px] lg:text-lg opacity-70 group-hover:opacity-100 transition-opacity" />
+                            )}
                           </div>
                           <div className="flex flex-col gap-0.5 min-w-0">
                             <span className="text-[13px] lg:text-[14px] font-medium font-sans text-(--color-base-content) truncate tracking-wide">{entry.workerLabel}</span>
