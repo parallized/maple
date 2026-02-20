@@ -16,7 +16,7 @@ export const WORKER_KINDS: { kind: WorkerKind; label: string }[] = [
 export const DEFAULT_WORKER_CONFIGS: Record<WorkerKind, WorkerConfig> = {
   claude: {
     executable: "claude",
-    runArgs: "/maple --verbose --dangerously-skip-permissions",
+    runArgs: "maple --verbose --dangerously-skip-permissions",
     consoleArgs: "",
     probeArgs: "--version",
     dangerMode: false,

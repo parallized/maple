@@ -1,0 +1,15 @@
+{
+  "query_confidence": "high",
+  "source": "notion_api_key",
+  "data_source_id": "6fc6db3b-684d-41a8-90e4-e6839b5e30b1",
+  "status_property": "状态",
+  "counts": {
+    "total": 0,
+    "active": 0,
+    "blocked": 0,
+    "skipped": 0
+  },
+  "active": [],
+  "blocked": [],
+  "all": []
+}

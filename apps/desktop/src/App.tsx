@@ -6,7 +6,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { queryProjectTodos, queryRecentContext } from "@maple/mcp-tools";
-import { buildWorkerArchiveReport, createWorkerExecutionPrompt, resolveMcpDecision } from "@maple/worker-skills";
+import { buildWorkerArchiveReport, resolveMcpDecision } from "@maple/worker-skills";
 
 import { TopNav } from "./components/TopNav";
 import { TaskDetailPanel } from "./components/TaskDetailPanel";
@@ -361,15 +361,10 @@ export function App() {
     return total;
   }
 
-  function buildWorkerRunPayload(workerId: string, config: WorkerConfig, task: Task, project: Project): { args: string[]; prompt: string } {
+  function buildWorkerRunPayload(workerId: string, config: WorkerConfig): { args: string[]; prompt: string } {
     const kind = parseWorkerId(workerId).kind;
     const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
-    const prompt = createWorkerExecutionPrompt({
-      projectName: project.name,
-      directory: project.directory,
-      taskTitle: task.title
-    });
-    return { args, prompt };
+    return { args, prompt: "" };
   }
 
   // ── Task CRUD ──
@@ -574,7 +569,7 @@ export function App() {
     payload?: { args: string[]; prompt: string }
   ): Promise<WorkerCommandResult> {
     if (!isTauri) return { success: false, code: null, stdout: "", stderr: "当前环境无法执行 Worker CLI。" };
-    const runPayload = payload ?? buildWorkerRunPayload(workerId, config, task, project);
+    const runPayload = payload ?? buildWorkerRunPayload(workerId, config);
     return invoke<WorkerCommandResult>("run_worker", {
       workerId,
       taskTitle: task.title,
@@ -645,7 +640,7 @@ export function App() {
     try {
       for (const task of pendingTasks) {
         try {
-          const payload = buildWorkerRunPayload(workerId, config, task, project);
+          const payload = buildWorkerRunPayload(workerId, config);
           appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, payload.args)}\n`);
           const beforeLen = workerLogsRef.current[workerId]?.length ?? 0;
           const result = await runWorkerCommand(workerId, config, task, project, payload);

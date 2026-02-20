@@ -31,10 +31,17 @@ export function loadWorkerConfigs(): Record<WorkerKind, WorkerConfig> {
     const normalize = (kind: WorkerKind, fallback: WorkerConfig): WorkerConfig => {
       const value = parsed[kind] ?? fallback;
       const runArgsValue = value.runArgs ?? fallback.runArgs;
-      const legacyRunArgs = kind === "iflow" && runArgsValue.trim() === "run";
+      const runArgsTrimmed = runArgsValue.trim();
+      const legacyIflowRunArgs = kind === "iflow" && (runArgsTrimmed === "run" || runArgsTrimmed === "-p");
+      const legacyClaudeRunArgs = kind === "claude" && runArgsTrimmed.startsWith("/maple");
+      const normalizedRunArgs = legacyIflowRunArgs
+        ? fallback.runArgs
+        : legacyClaudeRunArgs
+          ? runArgsTrimmed.replace(/^\/maple\b/, "maple")
+          : runArgsValue;
       return {
         executable: value.executable ?? fallback.executable,
-        runArgs: legacyRunArgs ? "-p" : runArgsValue,
+        runArgs: normalizedRunArgs,
         consoleArgs: value.consoleArgs ?? fallback.consoleArgs,
         probeArgs: value.probeArgs ?? fallback.probeArgs,
         dangerMode: value.dangerMode ?? fallback.dangerMode
