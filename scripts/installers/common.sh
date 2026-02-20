@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 
 MAPLE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MAPLE_MCP_COMMAND="npx"
-MAPLE_MCP_ARGS=(-y @modelcontextprotocol/server-filesystem "$MAPLE_ROOT")
+MAPLE_MCP_URL="http://localhost:45819/mcp"
 
 print_step() {
   echo

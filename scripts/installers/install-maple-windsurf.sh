@@ -11,10 +11,10 @@ WINDSURF_CONFIG_DIR="${HOME}/.codeium/windsurf"
 WINDSURF_CONFIG_PATH="${WINDSURF_CONFIG_DIR}/mcp_config.json"
 mkdir -p "${WINDSURF_CONFIG_DIR}"
 
-node - "${WINDSURF_CONFIG_PATH}" "${MAPLE_ROOT}" <<'NODE'
+node - "${WINDSURF_CONFIG_PATH}" "${MAPLE_MCP_URL}" <<'NODE'
 const fs = require("fs");
 
-const [configPath, mapleRoot] = process.argv.slice(2);
+const [configPath, mcpUrl] = process.argv.slice(2);
 let config = {};
 
 if (fs.existsSync(configPath)) {
@@ -36,10 +36,7 @@ if (!config.mcpServers || typeof config.mcpServers !== "object" || Array.isArray
   config.mcpServers = {};
 }
 
-config.mcpServers.maple = {
-  command: "npx",
-  args: ["-y", "@modelcontextprotocol/server-filesystem", mapleRoot]
-};
+config.mcpServers.maple = { url: mcpUrl };
 
 fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 NODE

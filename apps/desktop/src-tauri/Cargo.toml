@@ -14,6 +14,9 @@ serde_json = "1"
 tauri = { version = "2.1.1", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
+axum = "0.7"
+tokio = { version = "1", features = ["net"] }
+chrono = "0.4"
 
 [features]
 default = ["custom-protocol"]

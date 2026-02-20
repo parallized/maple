@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod mcp_http;
+
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -592,6 +594,10 @@ fn main() {
     .manage(AppState::default())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_notification::init())
+    .setup(|app| {
+      mcp_http::start(app.handle().clone());
+      Ok(())
+    })
     .invoke_handler(tauri::generate_handler![
       probe_worker,
       run_worker,

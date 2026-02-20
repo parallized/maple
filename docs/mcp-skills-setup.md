@@ -43,16 +43,29 @@ pnpm typecheck
 pnpm build
 ```
 
-## 默认 Maple MCP（本地）
+## 默认 Maple MCP（内置 HTTP）
 
-默认建议使用本地 `maple` MCP（stdio）：
+Maple 桌面应用内置 HTTP MCP 服务器，启动后自动监听 `127.0.0.1:45819`。
 
-```bash
-codex mcp add maple -- npx -y @modelcontextprotocol/server-filesystem /ABS/PATH/TO/maple
-codex mcp list
+无需单独安装或配置 MCP 进程，打开 Maple 桌面应用即可使用。
+
+Worker 通过以下地址连接：
+
+```
+http://localhost:45819/mcp
 ```
 
-`/ABS/PATH/TO/maple` 替换为本机路径。
+项目根目录的 `.mcp.json` 已配置好：
+
+```json
+{
+  "mcpServers": {
+    "maple": {
+      "url": "http://localhost:45819/mcp"
+    }
+  }
+}
+```
 
 ## （可选）Codex 侧安装 Skills
 

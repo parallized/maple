@@ -20,14 +20,13 @@ bash scripts/installers/install-maple-windsurf.sh
 {
   "mcpServers": {
     "maple": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/ABS/PATH/TO/maple"]
+      "url": "http://localhost:45819/mcp"
     }
   }
 }
 ```
 
-把 `/ABS/PATH/TO/maple` 替换为你的仓库绝对路径，然后重启 Windsurf。
+确保 Maple 桌面应用已启动（MCP 服务器随应用自动运行），然后重启 Windsurf。
 
 ## 2) 启用 /maple 工作流
 

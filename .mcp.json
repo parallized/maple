@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "maple": {
-      "command": "node",
-      "args": ["packages/maple-mcp-server/dist/index.js"]
+      "url": "http://localhost:45819/mcp"
     }
   }
 }
