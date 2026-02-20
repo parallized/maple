@@ -424,16 +424,9 @@ fn run_command_stream(
     .arg("/dev/null")
     .arg(&executable)
     .args(&args)
-    .stdin(Stdio::null())
+    .stdin(Stdio::piped())
     .stdout(Stdio::piped())
     .stderr(Stdio::piped());
-
-  if let Some(value) = prompt.as_ref() {
-    let trimmed = value.trim();
-    if !trimmed.is_empty() {
-      pty_command.arg(trimmed);
-    }
-  }
 
   if let Some(dir) = normalize_cwd(cwd.clone()) {
     pty_command.current_dir(dir);
@@ -444,14 +437,8 @@ fn run_command_stream(
     Err(pty_error) => {
       let mut fallback = Command::new(&executable);
       fallback.args(&args);
-      if let Some(value) = prompt.as_ref() {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-          fallback.arg(trimmed);
-        }
-      }
       fallback
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -464,6 +451,16 @@ fn run_command_stream(
       })?
     }
   };
+
+  if let Some(mut stdin_handle) = child.stdin.take() {
+    if let Some(value) = prompt.as_ref() {
+      if !value.trim().is_empty() {
+        let _ = stdin_handle.write_all(value.as_bytes());
+        let _ = stdin_handle.write_all(b"\n");
+        let _ = stdin_handle.flush();
+      }
+    }
+  }
 
   let stdout = child.stdout.take().ok_or_else(|| "无法捕获 stdout".to_string())?;
   let stderr = child.stderr.take().ok_or_else(|| "无法捕获 stderr".to_string())?;
