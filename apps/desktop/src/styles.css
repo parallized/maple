@@ -434,6 +434,31 @@ h1, h2, h3 {
   font-weight: 500;
 }
 
+.topnav-queue-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: var(--color-primary);
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.topnav-queue-count--global {
+  margin-left: 0.05rem;
+}
+
+.topnav-queue-count--zero {
+  border-color: color-mix(in srgb, var(--color-base-300) 65%, transparent);
+  background: color-mix(in srgb, var(--color-base-300) 24%, transparent);
+  color: color-mix(in srgb, var(--color-secondary) 75%, transparent);
+}
+
 .topnav-tab-close {
   display: inline-flex;
   align-items: center;
@@ -545,18 +570,34 @@ h1, h2, h3 {
   white-space: nowrap;
 }
 
+.task-table th.col-taskIcon,
+.task-table td.col-taskIcon {
+  text-align: center;
+  padding-right: 0.2rem;
+}
+
 .task-row td {
   border-bottom: 1px solid color-mix(in srgb, var(--color-base-300) 25%, transparent);
   padding: 0.4rem 0.5rem 0.4rem 0;
   font-size: 0.875rem;
   transition: background 0.1s;
-  height: 42px;
   min-height: 42px;
-  max-height: 42px;
   vertical-align: middle;
+}
+
+.task-row td.col-task,
+.task-row td.col-status,
+.task-row td.col-lastMention,
+.task-row td.col-actions {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.task-row td.col-tags {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .task-row:hover td {
@@ -633,14 +674,26 @@ h1, h2, h3 {
 /* ── Task Title Cell ── */
 
 .task-open-btn {
-  display: none;
+  display: inline-flex;
 }
 
 .tags-inline {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.task-icon-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-base-200) 65%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-base-300) 55%, transparent);
+  color: color-mix(in srgb, var(--color-secondary) 85%, transparent);
 }
 
 /* ── Popover ── */
@@ -727,6 +780,7 @@ h1, h2, h3 {
   background: color-mix(in srgb, var(--color-base-100) 82%, var(--color-base-200));
   border: none;
   border-radius: 18px;
+  position: relative;
 }
 
 .board-sidebar {
@@ -796,19 +850,40 @@ h1, h2, h3 {
   overflow: auto;
 }
 
-/* ── Detail Sidebar ── */
+/* ── Detail Drawer ── */
 
-.detail-sidebar {
-  width: 380px;
-  flex-shrink: 0;
+.detail-drawer-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 32;
+  pointer-events: none;
+}
+
+.detail-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: rgba(24, 24, 27, 0.28);
+  cursor: default;
+  pointer-events: auto;
+}
+
+.detail-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(37%, 520px);
+  min-width: 360px;
   height: 100%;
   background: var(--color-base-100);
   border: 1px solid color-mix(in srgb, var(--color-base-300) 40%, transparent);
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  border-radius: 14px;
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.16);
   overflow-y: auto;
   padding: 1.5rem;
-  position: relative;
+  pointer-events: auto;
   animation: slide-in-right 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -956,10 +1031,14 @@ h1, h2, h3 {
     max-height: calc(100vh - 24px);
   }
 
-  .detail-sidebar {
-    width: 100vw;
-    max-width: 100vw;
-    padding-top: 56px;
+  .detail-drawer {
+    width: 100%;
+    min-width: 0;
+    border-radius: 0;
+    border-left: 1px solid color-mix(in srgb, var(--color-base-300) 40%, transparent);
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 0;
   }
 
   .worker-console-header {

@@ -10,6 +10,7 @@ type TopNavProps = {
   projects: Project[];
   boardProjectId: string | null;
   runningCount: number;
+  queuedCount: number;
   workerConsoleOpen: boolean;
   onViewChange: (view: ViewKey) => void;
   onProjectSelect: (projectId: string) => void;
@@ -27,6 +28,7 @@ export function TopNav({
   projects,
   boardProjectId,
   runningCount,
+  queuedCount,
   workerConsoleOpen,
   onViewChange,
   onProjectSelect,
@@ -56,16 +58,22 @@ export function TopNav({
         <div className="w-px h-4 bg-(--color-base-300) mx-1" />
 
         <div className="flex items-center gap-2">
-          {projects.map((project) => (
-            <button
-              key={project.id}
-              type="button"
-              className={`topnav-tab ${boardProjectId === project.id && view === "board" ? "active" : ""}`}
-              onClick={() => onProjectSelect(project.id)}
-            >
-              {project.name}
-            </button>
-          ))}
+          {projects.map((project) => {
+            const queueCount = project.tasks.filter((task) => task.status === "队列中").length;
+            return (
+              <button
+                key={project.id}
+                type="button"
+                className={`topnav-tab ${boardProjectId === project.id && view === "board" ? "active" : ""}`}
+                onClick={() => onProjectSelect(project.id)}
+              >
+                {project.name}
+                <span className={`topnav-queue-count ${queueCount === 0 ? "topnav-queue-count--zero" : ""}`}>
+                  {queueCount}
+                </span>
+              </button>
+            );
+          })}
           <button type="button" className="topnav-tab px-2" onClick={onCreateProject} aria-label="新建项目">
             <Icon icon="mingcute:add-line" className="text-sm" />
           </button>
@@ -75,11 +83,14 @@ export function TopNav({
       <div className="topnav-actions ml-auto flex items-center gap-2">
         <button
           type="button"
-          className="topnav-tab"
+          className={`topnav-tab ${workerConsoleOpen ? "active" : ""}`}
           onClick={onToggleConsole}
           title="控制台"
         >
           <Icon icon="mingcute:terminal-line" className="text-sm" />
+          <span className={`topnav-queue-count topnav-queue-count--global ${queuedCount === 0 ? "topnav-queue-count--zero" : ""}`}>
+            {queuedCount}
+          </span>
           {runningCount > 0 && (
             <span className="flex h-2 w-2 rounded-full bg-primary animate-pulse" />
           )}
