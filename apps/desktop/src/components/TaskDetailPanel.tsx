@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react";
-import type { Task, WorkerKind } from "../domain";
+import type { Task, TaskReport } from "../domain";
 import { relativeTimeZh } from "../lib/utils";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { InlineTaskInput } from "./InlineTaskInput";
 import { WorkerLogo } from "./WorkerLogo";
 
@@ -67,71 +67,240 @@ function reportBadgeClass(status: string): string {
   return "";
 }
 
-type ReportBlock = { kind: "paragraph"; text: string } | { kind: "list"; items: string[] };
+type MarkdownBlock =
+  | { kind: "heading"; level: number; text: string }
+  | { kind: "paragraph"; lines: string[] }
+  | { kind: "list"; ordered: boolean; items: string[] }
+  | { kind: "quote"; lines: string[] }
+  | { kind: "code"; language: string; code: string };
 
-function splitReportBlocks(text: string): ReportBlock[] {
-  const lines = text.split(/\r?\n/);
-  const blocks: ReportBlock[] = [];
-  let paragraph: string[] = [];
-  let listItems: string[] = [];
+function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const blocks: MarkdownBlock[] = [];
+  let index = 0;
 
-  const flushParagraph = () => {
-    const payload = paragraph.join("\n").trim();
-    if (payload) blocks.push({ kind: "paragraph", text: payload });
-    paragraph = [];
-  };
-  const flushList = () => {
-    if (listItems.length > 0) blocks.push({ kind: "list", items: listItems });
-    listItems = [];
-  };
+  while (index < lines.length) {
+    const rawLine = lines[index] ?? "";
+    const line = rawLine.trimEnd();
 
-  for (const rawLine of lines) {
-    const line = rawLine.replace(/\s+$/g, "");
     if (!line.trim()) {
-      flushList();
-      flushParagraph();
+      index += 1;
       continue;
     }
 
-    const match = /^\s*[-*]\s+(.*)$/.exec(line);
-    if (match) {
-      flushParagraph();
-      listItems.push(match[1] ?? "");
+    const codeFence = line.match(/^```([\w-]*)\s*$/);
+    if (codeFence) {
+      const language = codeFence[1] ?? "";
+      index += 1;
+      const codeLines: string[] = [];
+      while (index < lines.length) {
+        const candidate = (lines[index] ?? "").trimEnd();
+        if (/^```/.test(candidate)) break;
+        codeLines.push(lines[index] ?? "");
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      blocks.push({ kind: "code", language, code: codeLines.join("\n") });
       continue;
     }
 
-    flushList();
-    paragraph.push(line);
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      blocks.push({ kind: "heading", level: headingMatch[1]!.length, text: headingMatch[2]!.trim() });
+      index += 1;
+      continue;
+    }
+
+    if (/^>\s?/.test(line)) {
+      const quoteLines: string[] = [];
+      while (index < lines.length) {
+        const current = (lines[index] ?? "").trimEnd();
+        if (!/^>\s?/.test(current)) break;
+        quoteLines.push(current.replace(/^>\s?/, ""));
+        index += 1;
+      }
+      blocks.push({ kind: "quote", lines: quoteLines });
+      continue;
+    }
+
+    const unorderedMatch = line.match(/^[-*+]\s+(.+)$/);
+    const orderedMatch = line.match(/^\d+\.\s+(.+)$/);
+    if (unorderedMatch || orderedMatch) {
+      const ordered = Boolean(orderedMatch);
+      const matcher = ordered ? /^\d+\.\s+(.+)$/ : /^[-*+]\s+(.+)$/;
+      const items: string[] = [];
+      while (index < lines.length) {
+        const current = (lines[index] ?? "").trimEnd();
+        const itemMatch = current.match(matcher);
+        if (!itemMatch) break;
+        items.push(itemMatch[1] ?? "");
+        index += 1;
+      }
+      blocks.push({ kind: "list", ordered, items });
+      continue;
+    }
+
+    const paragraphLines: string[] = [];
+    while (index < lines.length) {
+      const current = (lines[index] ?? "").trimEnd();
+      if (!current.trim()) break;
+      if (
+        /^```/.test(current)
+        || /^(#{1,6})\s+/.test(current)
+        || /^>\s?/.test(current)
+        || /^[-*+]\s+/.test(current)
+        || /^\d+\.\s+/.test(current)
+      ) {
+        break;
+      }
+      paragraphLines.push(current);
+      index += 1;
+    }
+    if (paragraphLines.length > 0) {
+      blocks.push({ kind: "paragraph", lines: paragraphLines });
+      continue;
+    }
+
+    index += 1;
   }
 
-  flushList();
-  flushParagraph();
   return blocks;
 }
 
-function renderReportDescription(description: string): ReactNode {
-  const blocks = splitReportBlocks(description);
+function renderInlineMarkdown(text: string): ReactNode[] {
+  const pattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|\[[^\]]+\]\([^)]+\))/g;
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let matchIndex = 0;
+
+  for (const match of text.matchAll(pattern)) {
+    const token = match[0] ?? "";
+    const start = match.index ?? 0;
+    if (start > cursor) {
+      nodes.push(<span key={`plain-${matchIndex}`}>{text.slice(cursor, start)}</span>);
+      matchIndex += 1;
+    }
+
+    if (token.startsWith("`")) {
+      nodes.push(
+        <code key={`code-${matchIndex}`} className="px-1 py-0.5 rounded bg-(--color-base-200) text-[0.92em] font-mono">
+          {token.slice(1, -1)}
+        </code>
+      );
+    } else if (token.startsWith("**")) {
+      nodes.push(<strong key={`strong-${matchIndex}`}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith("*")) {
+      nodes.push(<em key={`em-${matchIndex}`}>{token.slice(1, -1)}</em>);
+    } else {
+      const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (link) {
+        const href = link[2] ?? "";
+        const safe = /^https?:\/\//i.test(href);
+        nodes.push(
+          safe
+            ? (
+              <a
+                key={`link-${matchIndex}`}
+                href={href}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-primary underline underline-offset-2"
+              >
+                {link[1]}
+              </a>
+            )
+            : <span key={`link-plain-${matchIndex}`}>{link[1]}</span>
+        );
+      } else {
+        nodes.push(<span key={`token-${matchIndex}`}>{token}</span>);
+      }
+    }
+    cursor = start + token.length;
+    matchIndex += 1;
+  }
+
+  if (cursor < text.length) {
+    nodes.push(<span key={`tail-${matchIndex}`}>{text.slice(cursor)}</span>);
+  }
+  return nodes;
+}
+
+function renderMarkdownText(markdown: string): ReactNode {
+  const blocks = parseMarkdownBlocks(markdown);
   if (blocks.length === 0) return <span className="text-muted">无</span>;
 
   return (
     <div className="flex flex-col gap-3">
-      {blocks.map((block, index) => (
-        block.kind === "list"
-          ? (
-            <ul key={`list-${index}`} className="list-disc pl-5 space-y-1">
+      {blocks.map((block, blockIndex) => {
+        if (block.kind === "heading") {
+          const headingClass = block.level <= 2 ? "text-[16px] font-semibold" : "text-[14px] font-semibold";
+          return (
+            <h4 key={`h-${blockIndex}`} className={`m-0 ${headingClass}`}>
+              {renderInlineMarkdown(block.text)}
+            </h4>
+          );
+        }
+
+        if (block.kind === "list") {
+          const ListTag = block.ordered ? "ol" : "ul";
+          return (
+            <ListTag key={`list-${blockIndex}`} className={`${block.ordered ? "list-decimal" : "list-disc"} pl-5 space-y-1`}>
               {block.items.map((item, itemIndex) => (
-                <li key={`${index}-${itemIndex}`}>{item}</li>
+                <li key={`${blockIndex}-${itemIndex}`}>{renderInlineMarkdown(item)}</li>
               ))}
-            </ul>
-          )
-          : (
-            <p key={`p-${index}`} className="m-0 whitespace-pre-wrap">
-              {block.text}
-            </p>
-          )
-      ))}
+            </ListTag>
+          );
+        }
+
+        if (block.kind === "quote") {
+          return (
+            <blockquote
+              key={`quote-${blockIndex}`}
+              className="m-0 pl-3 border-l-2 border-(--color-base-300) text-secondary/90"
+            >
+              {block.lines.map((line, lineIndex) => (
+                <p key={`${blockIndex}-${lineIndex}`} className="m-0">
+                  {renderInlineMarkdown(line)}
+                </p>
+              ))}
+            </blockquote>
+          );
+        }
+
+        if (block.kind === "code") {
+          return (
+            <pre
+              key={`code-${blockIndex}`}
+              className="m-0 p-3 rounded-lg bg-(--color-base-200) border border-(--color-base-300) overflow-x-auto"
+            >
+              <code className="font-mono text-[12px] leading-[1.6] whitespace-pre">
+                {block.code}
+              </code>
+            </pre>
+          );
+        }
+
+        return (
+          <p key={`p-${blockIndex}`} className="m-0 whitespace-pre-wrap">
+            {block.lines.map((line, lineIndex) => (
+              <span key={`${blockIndex}-${lineIndex}`}>
+                {renderInlineMarkdown(line)}
+                {lineIndex < block.lines.length - 1 ? <br /> : null}
+              </span>
+            ))}
+          </p>
+        );
+      })}
     </div>
   );
+}
+
+function isCompletedReport(report: TaskReport): boolean {
+  const parsed = parseTaskReport(report.content);
+  if (parsed?.status.includes("已完成")) return true;
+
+  const normalized = report.content.toLowerCase();
+  return /status[:：].*completed/.test(normalized) || /状态[:：].*已完成/.test(report.content);
 }
 
 function renderAuthorIcon(author: string, size = 14) {
@@ -144,14 +313,28 @@ function renderAuthorIcon(author: string, size = 14) {
 }
 
 export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: TaskDetailPanelProps) {
+  const completedReports = useMemo(
+    () => task.reports.filter(isCompletedReport),
+    [task.reports]
+  );
   const [activeReportId, setActiveReportId] = useState<string | null>(
-    task.reports.length > 0 ? task.reports[task.reports.length - 1]!.id : null
+    completedReports.length > 0 ? completedReports[completedReports.length - 1]!.id : null
   );
   const [titleEditing, setTitleEditing] = useState(false);
 
   useEffect(() => {
     setTitleEditing(false);
   }, [task.id]);
+
+  useEffect(() => {
+    if (completedReports.length === 0) {
+      setActiveReportId(null);
+      return;
+    }
+    if (!activeReportId || !completedReports.some((report) => report.id === activeReportId)) {
+      setActiveReportId(completedReports[completedReports.length - 1]!.id);
+    }
+  }, [activeReportId, completedReports]);
 
   return (
     <section className="task-detail-panel flex flex-col pb-10">
@@ -251,16 +434,16 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
         </div>
 
         <div className="flex flex-col">
-          <header className={`flex items-center gap-4 h-9 ${task.reports.length > 0 ? 'border-b border-(--color-base-300)/30 mb-4' : ''}`}>
+          <header className={`flex items-center gap-4 h-9 ${completedReports.length > 0 ? 'border-b border-(--color-base-300)/30 mb-4' : ''}`}>
             <h3 className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] m-0">
               <Icon icon="mingcute:comment-line" className="text-[15px] opacity-60" />
               执行报告
             </h3>
             
             <div className="flex-1 min-h-0 self-stretch flex items-end">
-              {task.reports.length > 0 ? (
+              {completedReports.length > 0 ? (
                 <nav className="flex items-center gap-5 overflow-x-auto scrollbar-none w-full">
-                  {task.reports.slice(-3).map((report) => {
+                  {completedReports.slice(-3).map((report) => {
                     const active = activeReportId === report.id;
                     return (
                       <button
@@ -289,15 +472,15 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
             </div>
           </header>
 
-          {task.reports.length > 0 && (
+          {completedReports.length > 0 && (
             <div className="flex flex-col flex-1 min-h-0 pt-2 px-1">
-              {task.reports.map((report) => {
+              {completedReports.map((report) => {
                 if (report.id !== activeReportId) return null;
                 const parsed = parseTaskReport(report.content);
                 return (
                   <article key={report.id} className="flex flex-col animate-in fade-in slide-in-from-bottom-1 duration-300">
                     <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90 whitespace-pre-wrap">
-                      {parsed ? renderReportDescription(parsed.description) : report.content}
+                      {parsed ? renderMarkdownText(parsed.description) : renderMarkdownText(report.content)}
                     </div>
                   </article>
                 );

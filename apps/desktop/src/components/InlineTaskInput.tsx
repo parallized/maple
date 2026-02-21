@@ -60,7 +60,9 @@ export function InlineTaskInput({
       onCompositionEnd={() => { composing.current = false; }}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
-          if (composing.current) return;
+          const native = e.nativeEvent;
+          const imeComposing = composing.current || native.isComposing || native.keyCode === 229;
+          if (imeComposing) return;
           e.preventDefault();
           commit();
         }
@@ -71,7 +73,10 @@ export function InlineTaskInput({
           else onCommit("");
         }
       }}
-      onBlur={commit}
+      onBlur={() => {
+        if (composing.current) return;
+        commit();
+      }}
       style={{ overflow: 'hidden', resize: 'none', display: 'block' }}
     />
   );
