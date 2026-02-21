@@ -86,7 +86,6 @@ export function SettingsView({
               MCP Server
             </h3>
             <span className={`ui-badge ${mcpStatus.running ? "ui-badge--success" : "ui-badge--error"}`}>
-              <span className={`status-dot ${mcpStatus.running ? "status-done" : "status-blocked"}`} />
               {mcpStatus.running ? "运行中" : "未运行"}
             </span>
           </div>
