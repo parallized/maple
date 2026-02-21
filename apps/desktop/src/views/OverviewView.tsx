@@ -106,7 +106,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                   <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-30 ${mcpStatus.running ? 'bg-green-500' : 'bg-red-500'}`}></span>
                   <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${mcpStatus.running ? 'bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.5)]'}`}></span>
                 </span>
-                <span className="text-[2rem] lg:text-[2.5rem] leading-none font-serif tracking-tight text-(--color-base-content)">
+                <span className="text-[2rem] lg:text-[2.5rem] leading-none font-sans font-semibold tracking-tight text-(--color-base-content)">
                   {mcpStatus.running ? "Active" : "Offline"}
                 </span>
               </div>
