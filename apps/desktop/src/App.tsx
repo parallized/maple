@@ -1033,6 +1033,7 @@ export function App() {
             <TaskDetailPanel
               task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
               onClose={() => setSelectedTaskId(null)}
+              onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
               onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
             />
           </aside>
@@ -1047,6 +1048,7 @@ export function App() {
               <TaskDetailPanel
                 task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
                 onClose={() => setSelectedTaskId(null)}
+                onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
                 onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
               />
             </div>

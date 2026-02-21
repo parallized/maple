@@ -1,11 +1,13 @@
 import { Icon } from "@iconify/react";
 import type { Task, WorkerKind } from "../domain";
 import { relativeTimeZh } from "../lib/utils";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { InlineTaskInput } from "./InlineTaskInput";
 import { WorkerLogo } from "./WorkerLogo";
 
 type TaskDetailPanelProps = {
   task: Task;
+  onUpdateTitle?: (title: string) => void;
   onClose?: () => void;
   onDelete?: () => void;
 };
@@ -140,18 +142,48 @@ function renderAuthorIcon(author: string, size = 14) {
   return <Icon icon="mingcute:paper-line" className="opacity-60" style={{ fontSize: size }} />;
 }
 
-export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: TaskDetailPanelProps) {
   const [activeReportId, setActiveReportId] = useState<string | null>(
     task.reports.length > 0 ? task.reports[task.reports.length - 1]!.id : null
   );
+  const [titleEditing, setTitleEditing] = useState(false);
+
+  useEffect(() => {
+    setTitleEditing(false);
+  }, [task.id]);
 
   return (
     <section className="task-detail-panel flex flex-col pb-10">
       <header className="mb-6 relative">
         <div className="flex items-start justify-between gap-6">
-          <h2 className="m-0 text-[26px] font-semibold tracking-tight text-primary leading-[1.3]">
-            {task.title || "(无标题)"}
-          </h2>
+          <div className="flex-1 min-w-0">
+            {titleEditing ? (
+              <InlineTaskInput
+                initialValue={task.title}
+                className="task-detail-title-input"
+                ariaLabel="编辑任务标题"
+                onCancel={() => setTitleEditing(false)}
+                onCommit={(nextTitle) => {
+                  const trimmed = nextTitle.trim();
+                  const current = task.title.trim();
+                  setTitleEditing(false);
+                  if (trimmed === current) return;
+                  onUpdateTitle?.(trimmed);
+                }}
+              />
+            ) : (
+              <h2 className="m-0 text-[26px] font-semibold tracking-tight text-primary leading-[1.3]">
+                <button
+                  type="button"
+                  className="task-detail-title-button"
+                  onClick={() => setTitleEditing(true)}
+                  aria-label="编辑任务标题"
+                >
+                  {task.title || "(无标题)"}
+                </button>
+              </h2>
+            )}
+          </div>
           <div className="flex items-center gap-1 shrink-0">
             {onDelete ? (
               <button

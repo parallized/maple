@@ -786,6 +786,45 @@ h1, h2, h3 {
   letter-spacing: 0.01em;
 }
 
+.task-detail-title-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0.1rem 0.15rem;
+  border-radius: 12px;
+  cursor: text;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  word-break: break-word;
+  outline: none;
+}
+
+.task-detail-title-button:hover {
+  background: color-mix(in srgb, var(--color-base-200) 55%, transparent);
+}
+
+.task-detail-title-button:focus-visible {
+  box-shadow: 0 0 0 3px var(--ring-primary);
+}
+
+.task-detail-title-input {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  padding: 0.1rem 0.15rem;
+  border-radius: 12px;
+  color: var(--color-primary);
+}
+
+.task-detail-title-input:focus {
+  background: color-mix(in srgb, var(--color-base-200) 45%, transparent);
+}
+
 .task-detail-section-title {
   font-family: var(--font-sans);
   font-size: 1.05rem;
