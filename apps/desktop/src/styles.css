@@ -703,8 +703,23 @@ h1, h2, h3 {
   font-size: 26px !important;
   font-weight: 600 !important;
   line-height: 1.3 !important;
-  letter-spacing: -0.025em !important;
-  margin-left: -1px; /* 微调以抵消 textarea 默认边距 */
+  letter-spacing: normal !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  color: var(--color-base-content) !important;
+  caret-color: var(--color-primary);
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  cursor: text;
+}
+
+.task-detail-title-input::placeholder {
+  color: var(--color-base-content);
+  opacity: 0.2;
 }
 
 .task-row.editing td {
@@ -805,10 +820,10 @@ h1, h2, h3 {
 
 .task-detail-title {
   font-family: var(--font-sans);
-  font-size: 1.6rem;
-  line-height: 1.08;
+  font-size: 26px;
+  line-height: 1.3;
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: normal;
 }
 
 .task-detail-title-button {
@@ -817,8 +832,9 @@ h1, h2, h3 {
   text-align: left;
   background: transparent;
   border: none;
-  padding: 0.1rem 0.15rem;
-  border-radius: 12px;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
   cursor: text;
   color: inherit;
   font: inherit;
@@ -826,10 +842,11 @@ h1, h2, h3 {
   letter-spacing: inherit;
   word-break: break-word;
   outline: none;
+  transition: none;
 }
 
 .task-detail-title-button:hover {
-  background: color-mix(in srgb, var(--color-base-200) 55%, transparent);
+  background: transparent;
 }
 
 .task-detail-title-button:focus-visible {

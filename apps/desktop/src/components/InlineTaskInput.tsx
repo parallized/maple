@@ -26,9 +26,15 @@ export function InlineTaskInput({
     if (ref.current) {
       ref.current.style.height = "auto";
       ref.current.style.height = `${ref.current.scrollHeight}px`;
-      ref.current.focus();
     }
-  }, []);
+  }, [value]);
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.style.height = "auto";
+      ref.current.style.height = `${ref.current.scrollHeight}px`;
+    }
+  }, [initialValue]);
 
   const handleInput = () => {
     if (ref.current) {

@@ -34,7 +34,19 @@ type ParsedTaskReport = { status: string; description: string };
 function parseTaskReport(content: string): ParsedTaskReport | null {
   const lines = content.split(/\r?\n/);
   const statusLineIndex = lines.findIndex((line) => line.trimStart().startsWith("状态："));
-  if (statusLineIndex < 0) return null;
+  if (statusLineIndex < 0) {
+    const firstNonEmptyIndex = lines.findIndex((line) => line.trim().length > 0);
+    if (firstNonEmptyIndex < 0) return null;
+    const firstLine = lines[firstNonEmptyIndex] ?? "";
+    const statusPrefix = firstLine.match(/^\s*(待办|队列中|进行中|需要更多信息|已完成|已阻塞)\s*[:：]\s*(.*)$/);
+    if (!statusPrefix) return null;
+    const status = statusPrefix[1]?.trim() ?? "";
+    const firstDetail = statusPrefix[2]?.trim() ?? "";
+    const detailLines = lines.slice(firstNonEmptyIndex + 1);
+    const rest = detailLines.join("\n").trim();
+    const description = [firstDetail, rest].filter(Boolean).join("\n").trim();
+    return { status, description };
+  }
 
   const statusLine = lines[statusLineIndex] ?? "";
   const status = statusLine.replace(/^\s*状态：/, "").trim();
@@ -312,7 +324,7 @@ function renderAuthorIcon(author: string, size = 14) {
   return <Icon icon="mingcute:paper-line" className="opacity-60" style={{ fontSize: size }} />;
 }
 
-export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ task, onUpdateTitle, onClose }: TaskDetailPanelProps) {
   const completedReports = useMemo(
     () => task.reports.filter(isCompletedReport),
     [task.reports]
@@ -320,11 +332,6 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
   const [activeReportId, setActiveReportId] = useState<string | null>(
     completedReports.length > 0 ? completedReports[completedReports.length - 1]!.id : null
   );
-  const [titleEditing, setTitleEditing] = useState(false);
-
-  useEffect(() => {
-    setTitleEditing(false);
-  }, [task.id]);
 
   useEffect(() => {
     if (completedReports.length === 0) {
@@ -339,34 +346,27 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
   return (
     <section className="task-detail-panel flex flex-col pb-10">
       <header className="mb-6 relative">
-        <div className="flex items-start justify-between gap-6">
+        <button
+          onClick={onClose}
+          className="absolute -right-2 top-0 p-2 text-muted hover:text-secondary transition-colors"
+          aria-label="关闭"
+        >
+          <Icon icon="mingcute:close-line" className="text-xl" />
+        </button>
+
+        <div className="flex items-start gap-4 pr-10">
           <div className="flex-1 min-w-0">
-            {titleEditing ? (
-              <InlineTaskInput
-                initialValue={task.title}
-                className="task-detail-title-input"
-                ariaLabel="编辑任务标题"
-                onCancel={() => setTitleEditing(false)}
-                onCommit={(nextTitle) => {
-                  const trimmed = nextTitle.trim();
-                  const current = task.title.trim();
-                  setTitleEditing(false);
-                  if (trimmed === current) return;
-                  onUpdateTitle?.(trimmed);
-                }}
-              />
-            ) : (
-              <h2 className="m-0 text-[26px] font-semibold tracking-tight text-primary leading-[1.3]">
-                <button
-                  type="button"
-                  className="task-detail-title-button"
-                  onClick={() => setTitleEditing(true)}
-                  aria-label="编辑任务标题"
-                >
-                  {task.title || "(无标题)"}
-                </button>
-              </h2>
-            )}
+            <InlineTaskInput
+              initialValue={task.title}
+              className="task-detail-title-input"
+              ariaLabel="编辑任务标题"
+              onCommit={(nextTitle) => {
+                const trimmed = nextTitle.trim();
+                const current = task.title.trim();
+                if (trimmed === current) return;
+                onUpdateTitle?.(trimmed);
+              }}
+            />
           </div>
         </div>
       </header>
