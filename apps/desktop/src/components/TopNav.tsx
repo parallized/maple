@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react";
 import { SplitText } from "./ReactBits";
 import type { ViewKey } from "../domain";
 import type { Project } from "../domain";
+import type { UiLanguage } from "../lib/constants";
 
 type TopNavProps = {
   isTauri: boolean;
@@ -12,6 +13,7 @@ type TopNavProps = {
   runningCount: number;
   inProgressCount: number;
   workerConsoleOpen: boolean;
+  uiLanguage: UiLanguage;
   onViewChange: (view: ViewKey) => void;
   onProjectSelect: (projectId: string) => void;
   onCreateProject: () => void;
@@ -30,6 +32,7 @@ export function TopNav({
   runningCount,
   inProgressCount,
   workerConsoleOpen,
+  uiLanguage,
   onViewChange,
   onProjectSelect,
   onCreateProject,
@@ -38,6 +41,8 @@ export function TopNav({
   onToggleMaximize,
   onClose
 }: TopNavProps) {
+  const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
+
   return (
     <nav className="topnav">
       <div className="topnav-brand">
@@ -52,7 +57,7 @@ export function TopNav({
           onClick={() => onViewChange("overview")}
         >
           <Icon icon="mingcute:home-4-line" className="text-sm" />
-          概览
+          {t("概览", "Overview")}
         </button>
 
         <div className="w-px h-4 bg-(--color-base-300) mx-1" />
@@ -72,7 +77,12 @@ export function TopNav({
               </button>
             );
           })}
-          <button type="button" className="topnav-tab px-2" onClick={onCreateProject} aria-label="新建项目">
+          <button
+            type="button"
+            className="topnav-tab px-2"
+            onClick={onCreateProject}
+            aria-label={t("新建项目", "New project")}
+          >
             <Icon icon="mingcute:add-line" className="text-sm" />
           </button>
         </div>
@@ -83,7 +93,7 @@ export function TopNav({
           type="button"
           className={`topnav-tab ${workerConsoleOpen ? "active" : ""}`}
           onClick={onToggleConsole}
-          title="控制台"
+          title={t("控制台", "Console")}
         >
           <Icon icon="mingcute:terminal-line" className="text-sm" />
           {inProgressCount > 0 ? <span className="topnav-queue-count topnav-queue-count--global">{inProgressCount}</span> : null}
@@ -96,7 +106,7 @@ export function TopNav({
           type="button"
           className="topnav-tab"
           onClick={() => onViewChange("settings")}
-          title="设置"
+          title={t("设置", "Settings")}
         >
           <Icon icon="mingcute:settings-3-line" className="text-sm" />
         </button>
@@ -105,13 +115,18 @@ export function TopNav({
           <>
             <div className="w-px h-4 bg-(--color-base-300) mx-1" />
             <div className="flex items-center gap-2">
-              <button type="button" className="topnav-wc" onClick={onMinimize} aria-label="最小化">
+              <button type="button" className="topnav-wc" onClick={onMinimize} aria-label={t("最小化", "Minimize")}>
                 <Icon icon="mingcute:minimize-line" />
               </button>
-              <button type="button" className="topnav-wc" onClick={onToggleMaximize} aria-label="最大化">
+              <button type="button" className="topnav-wc" onClick={onToggleMaximize} aria-label={t("最大化", "Maximize")}>
                 <Icon icon={windowMaximized ? "mingcute:minimize-line" : "mingcute:fullscreen-line"} />
               </button>
-              <button type="button" className="topnav-wc hover:bg-error/10 hover:text-error" onClick={onClose} aria-label="关闭">
+              <button
+                type="button"
+                className="topnav-wc hover:bg-error/10 hover:text-error"
+                onClick={onClose}
+                aria-label={t("关闭", "Close")}
+              >
                 <Icon icon="mingcute:close-line" />
               </button>
             </div>

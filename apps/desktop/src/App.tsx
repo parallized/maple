@@ -20,12 +20,14 @@ import { SettingsView } from "./views/SettingsView";
 import {
   DEFAULT_MCP_CONFIG,
   DEFAULT_WORKER_CONFIGS,
+  STORAGE_AI_LANGUAGE,
   STORAGE_MCP_CONFIG,
   STORAGE_PROJECTS,
   STORAGE_THEME,
+  STORAGE_UI_LANGUAGE,
   WORKER_KINDS
 } from "./lib/constants";
-import type { ThemeMode } from "./lib/constants";
+import type { AiLanguage, ThemeMode, UiLanguage } from "./lib/constants";
 import {
   hasTauriRuntime,
   applyTheme,
@@ -36,7 +38,7 @@ import {
   createTaskReport
 } from "./lib/utils";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
-import { loadProjects, loadMcpServerConfig, loadTheme } from "./lib/storage";
+import { loadAiLanguage, loadProjects, loadMcpServerConfig, loadTheme, loadUiLanguage } from "./lib/storage";
 import { buildTrayTaskSnapshot } from "./lib/task-tray";
 
 import type {
@@ -61,6 +63,8 @@ export function App() {
   // ── Core State ──
   const [view, setView] = useState<ViewKey>("overview");
   const [projects, setProjects] = useState<Project[]>(() => loadProjects());
+  const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => loadUiLanguage());
+  const [aiLanguage, setAiLanguage] = useState<AiLanguage>(() => loadAiLanguage());
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => cloneDefaultWorkerConfigs());
   const [mcpConfig, setMcpConfig] = useState<McpServerConfig>(() => loadMcpServerConfig());
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
@@ -166,6 +170,8 @@ export function App() {
   // ── Persistence ──
   useEffect(() => { applyTheme(theme); localStorage.setItem(STORAGE_THEME, theme); }, [theme]);
   useEffect(() => { localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(projects)); }, [projects]);
+  useEffect(() => { localStorage.setItem(STORAGE_UI_LANGUAGE, uiLanguage); }, [uiLanguage]);
+  useEffect(() => { localStorage.setItem(STORAGE_AI_LANGUAGE, aiLanguage); }, [aiLanguage]);
   useEffect(() => {
     if (!isTauri) return;
     invoke("write_state_file", { json: JSON.stringify(projects) }).catch(() => {});
@@ -431,7 +437,11 @@ export function App() {
   function buildWorkerRunPayload(workerId: string, config: WorkerConfig): { args: string[]; prompt: string } {
     const kind = parseWorkerId(workerId).kind;
     const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
-    return { args, prompt: "" };
+    const prompt =
+      aiLanguage === "en"
+        ? "Please write your conclusion and tags in English."
+        : "请用中文输出结论与标签。";
+    return { args, prompt };
   }
 
   // ── Task CRUD ──
@@ -494,6 +504,25 @@ export function App() {
     const plain = input.replace(/\s+/g, " ").trim();
     if (plain.length <= maxLength) return plain;
     return `${plain.slice(0, maxLength - 1)}…`;
+  }
+
+  function localizeDecisionTags(tags: string[], language: AiLanguage): string[] {
+    if (language === "en") {
+      return tags.map((tag) => {
+        if (tag === "架构") return "Architecture";
+        if (tag === "配置") return "Config";
+        if (tag === "修复") return "Fix";
+        return tag;
+      });
+    }
+    return tags.map((tag) => {
+      const normalized = tag.trim().toLowerCase();
+      if (!normalized) return tag;
+      if (normalized === "architecture" || normalized.includes("arch")) return "架构";
+      if (normalized === "config" || normalized.includes("config") || normalized.includes("env")) return "配置";
+      if (normalized === "fix" || normalized.includes("fix") || normalized.includes("bug")) return "修复";
+      return tag;
+    });
   }
 
   function runMcpTodoQuery() {
@@ -773,7 +802,7 @@ export function App() {
           updateTask(project.id, task.id, (c) => ({
             ...c,
             status: decision.status,
-            tags: decision.tags,
+            tags: localizeDecisionTags(decision.tags, aiLanguage),
             version: decision.status === "已完成" ? nextVersion : c.version,
             reports: [...c.reports, report]
           }));
@@ -927,6 +956,7 @@ export function App() {
           runningCount={metrics.runningCount}
           inProgressCount={metrics.inProgressCount}
           workerConsoleOpen={workerConsoleOpen}
+          uiLanguage={uiLanguage}
           onViewChange={setView}
           onProjectSelect={(id) => { setBoardProjectId(id); setView("board"); setSelectedTaskId(null); }}
           onCreateProject={() => void createProject()}
@@ -978,9 +1008,13 @@ export function App() {
                   mcpStartupError={mcpStartupError}
                   detailMode={detailMode}
                   theme={theme}
+                  uiLanguage={uiLanguage}
+                  aiLanguage={aiLanguage}
                   onProbeWorker={(kind) => void probeWorker(kind)}
                   onRestartMcpServer={() => void restartMcpServer()}
                   onThemeChange={setThemeState}
+                  onUiLanguageChange={setUiLanguage}
+                  onAiLanguageChange={setAiLanguage}
                   onDetailModeChange={setDetailMode}
                 />
               </div>
@@ -999,16 +1033,17 @@ export function App() {
           />
         ) : null}
 
-        {workerConsoleOpen ? (
+        {workerConsoleOpen && (
           <WorkerConsoleModal
             workerConsoleWorkerId={workerConsoleWorkerId}
             currentWorkerLog={currentWorkerLog}
             executingWorkers={executingWorkers}
             workerPool={workerPool}
+            theme={theme}
             onClose={() => setWorkerConsoleOpen(false)}
             onSelectWorker={(wId) => setWorkerConsoleWorkerId(wId)}
           />
-        ) : null}
+        )}
       </div>
 
       <ToastLayer
@@ -1034,6 +1069,7 @@ export function App() {
               task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
               onClose={() => setSelectedTaskId(null)}
               onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
+              onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
               onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
             />
           </aside>
@@ -1049,6 +1085,7 @@ export function App() {
                 task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
                 onClose={() => setSelectedTaskId(null)}
                 onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
+                onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
                 onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
               />
             </div>

@@ -334,11 +334,6 @@ function TaskTable({
                 </div>
               )}
             </td>
-            <td className="col-status">
-              <span className={`ui-badge ${task.status === "已完成" ? "ui-badge--success" : task.status === "已阻塞" ? "ui-badge--error" : task.status === "进行中" ? "ui-badge--solid" : task.status === "需要更多信息" ? "ui-badge--warning" : ""}`}>
-                {task.status}
-              </span>
-            </td>
             <td className="col-lastMention text-muted">{relativeTimeZh(getLastMentionTime(task))}</td>
             <td className="col-tags">
               <div className="tags-inline">
@@ -346,7 +341,7 @@ function TaskTable({
                 {task.tags.map((tag, index) => (
                   <span key={`${tag}-${index}`} className="ui-badge">
                     <Icon icon={resolveTagIcon(tag)} className="text-[11px] opacity-70 shrink-0" />
-                    <span className="truncate flex-1 min-w-0">{tag}</span>
+                    <span className="flex-1 min-w-0">{tag}</span>
                   </span>
                 ))}
               </div>

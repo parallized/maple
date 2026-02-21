@@ -2,7 +2,7 @@ import { Icon } from "@iconify/react";
 import { FadeContent } from "../components/ReactBits";
 import { WorkerLogo } from "../components/WorkerLogo";
 import { WORKER_KINDS } from "../lib/constants";
-import type { ThemeMode } from "../lib/constants";
+import type { AiLanguage, ThemeMode, UiLanguage } from "../lib/constants";
 import type { DetailMode, McpServerStatus, WorkerKind } from "../domain";
 
 type SettingsViewProps = {
@@ -10,9 +10,13 @@ type SettingsViewProps = {
   mcpStartupError: string;
   detailMode: DetailMode;
   theme: ThemeMode;
+  uiLanguage: UiLanguage;
+  aiLanguage: AiLanguage;
   onProbeWorker: (kind: WorkerKind) => void;
   onRestartMcpServer: () => void;
   onThemeChange: (mode: ThemeMode) => void;
+  onUiLanguageChange: (language: UiLanguage) => void;
+  onAiLanguageChange: (language: AiLanguage) => void;
   onDetailModeChange: (mode: DetailMode) => void;
 };
 
@@ -21,28 +25,34 @@ export function SettingsView({
   mcpStartupError,
   detailMode,
   theme,
+  uiLanguage,
+  aiLanguage,
   onProbeWorker,
   onRestartMcpServer,
   onThemeChange,
+  onUiLanguageChange,
+  onAiLanguageChange,
   onDetailModeChange
 }: SettingsViewProps) {
+  const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
+
   return (
     <FadeContent duration={300}>
       <section>
-        <h2 className="text-xl font-semibold m-0">设置</h2>
+        <h2 className="text-xl font-semibold m-0">{t("设置", "Settings")}</h2>
 
         <div className="ui-card p-4 mt-3">
           <h3 className="flex items-center gap-1.5 m-0 font-semibold">
             <Icon icon="mingcute:palette-line" />
-            外观
+            {t("外观", "Appearance")}
           </h3>
           <div className="flex items-center gap-3 mt-3">
-            <span className="text-sm">主题模式</span>
+            <span className="text-sm">{t("主题模式", "Theme")}</span>
             <div className="flex gap-1">
               {([
-                { mode: "system" as ThemeMode, label: "跟随系统", icon: "mingcute:computer-line" },
-                { mode: "light" as ThemeMode, label: "浅色", icon: "mingcute:sun-line" },
-                { mode: "dark" as ThemeMode, label: "深色", icon: "mingcute:moon-line" },
+                { mode: "system" as ThemeMode, label: t("跟随系统", "System"), icon: "mingcute:computer-line" },
+                { mode: "light" as ThemeMode, label: t("浅色", "Light"), icon: "mingcute:sun-line" },
+                { mode: "dark" as ThemeMode, label: t("深色", "Dark"), icon: "mingcute:moon-line" },
               ] as const).map((opt) => (
                 <button
                   key={opt.mode}
@@ -57,7 +67,7 @@ export function SettingsView({
             </div>
           </div>
           <div className="flex items-center gap-3 mt-3">
-            <span className="text-sm">任务详情</span>
+            <span className="text-sm">{t("任务详情", "Task Detail")}</span>
             <div className="flex gap-1">
               <button
                 type="button"
@@ -65,7 +75,7 @@ export function SettingsView({
                 onClick={() => onDetailModeChange("sidebar")}
               >
                 <Icon icon="mingcute:layout-right-line" className="text-sm" />
-                右侧边栏
+                {t("右侧边栏", "Sidebar")}
               </button>
               <button
                 type="button"
@@ -73,10 +83,58 @@ export function SettingsView({
                 onClick={() => onDetailModeChange("modal")}
               >
                 <Icon icon="mingcute:layout-grid-line" className="text-sm" />
-                弹出式
+                {t("弹出式", "Modal")}
               </button>
             </div>
           </div>
+        </div>
+
+        <div className="ui-card p-4 mt-3">
+          <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+            <Icon icon="mingcute:translate-line" />
+            {t("语言", "Language")}
+          </h3>
+          <div className="flex items-center gap-3 mt-3">
+            <span className="text-sm">{t("界面语言", "UI language")}</span>
+            <div className="flex gap-1">
+              {([
+                { value: "zh" as UiLanguage, label: t("中文", "Chinese") },
+                { value: "en" as UiLanguage, label: "English" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`ui-btn ui-btn--sm ${uiLanguage === opt.value ? "ui-btn--outline" : "ui-btn--ghost"}`}
+                  onClick={() => onUiLanguageChange(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 mt-3">
+            <span className="text-sm">{t("AI 语言", "AI language")}</span>
+            <div className="flex gap-1">
+              {([
+                { value: "zh" as AiLanguage, label: t("中文", "Chinese") },
+                { value: "en" as AiLanguage, label: "English" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`ui-btn ui-btn--sm ${aiLanguage === opt.value ? "ui-btn--outline" : "ui-btn--ghost"}`}
+                  onClick={() => onAiLanguageChange(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-xs text-muted mt-2 m-0">
+            {t("AI 语言用于引导 Worker 输出报告的结论与标签。", "AI language guides Worker output (conclusion and tags).")}
+          </p>
         </div>
 
         <div className="ui-card p-4 mt-3">
@@ -86,13 +144,13 @@ export function SettingsView({
               MCP Server
             </h3>
             <span className={`ui-badge ${mcpStatus.running ? "ui-badge--success" : "ui-badge--error"}`}>
-              {mcpStatus.running ? "运行中" : "未运行"}
+              {mcpStatus.running ? t("运行中", "Running") : t("未运行", "Stopped")}
             </span>
           </div>
           <div className="flex gap-2 mt-3">
             <button type="button" className="ui-btn ui-btn--sm ui-btn--outline gap-1" onClick={onRestartMcpServer}>
               <Icon icon="mingcute:refresh-2-line" />
-              重启
+              {t("重启", "Restart")}
             </button>
           </div>
           {mcpStartupError ? (
@@ -105,14 +163,14 @@ export function SettingsView({
         <div className="ui-card p-4 mt-3">
           <h3 className="flex items-center gap-1.5 m-0 font-semibold">
             <Icon icon="mingcute:ai-line" />
-            Worker 接入
+            {t("Worker 接入", "Workers")}
           </h3>
           <div className="overflow-x-auto mt-3">
             <table className="ui-table">
               <thead>
                 <tr>
                   <th>Worker</th>
-                  <th>操作</th>
+                  <th>{t("操作", "Action")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -127,7 +185,7 @@ export function SettingsView({
                     <td>
                       <button type="button" className="ui-btn ui-btn--xs ui-btn--outline gap-1" onClick={() => onProbeWorker(kind)}>
                         <Icon icon="mingcute:search-line" />
-                        验证
+                        {t("验证", "Verify")}
                       </button>
                     </td>
                   </tr>

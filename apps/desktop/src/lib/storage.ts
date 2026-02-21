@@ -1,6 +1,6 @@
 import type { McpServerConfig, Project } from "../domain";
-import type { ThemeMode } from "./constants";
-import { DEFAULT_MCP_CONFIG, STORAGE_MCP_CONFIG, STORAGE_PROJECTS, STORAGE_THEME } from "./constants";
+import type { AiLanguage, ThemeMode, UiLanguage } from "./constants";
+import { DEFAULT_MCP_CONFIG, STORAGE_AI_LANGUAGE, STORAGE_MCP_CONFIG, STORAGE_PROJECTS, STORAGE_THEME, STORAGE_UI_LANGUAGE } from "./constants";
 import { normalizeProjects } from "./utils";
 
 const INITIAL_PROJECTS: Project[] = [];
@@ -50,5 +50,26 @@ export function loadTheme(): ThemeMode {
     return "system";
   } catch {
     return "system";
+  }
+}
+
+export function loadUiLanguage(): UiLanguage {
+  try {
+    const raw = localStorage.getItem(STORAGE_UI_LANGUAGE);
+    if (raw === "en") return "en";
+    return "zh";
+  } catch {
+    return "zh";
+  }
+}
+
+export function loadAiLanguage(): AiLanguage {
+  try {
+    const raw = localStorage.getItem(STORAGE_AI_LANGUAGE);
+    if (raw === "en") return "en";
+    if (raw === "zh") return "zh";
+    return "follow_ui";
+  } catch {
+    return "follow_ui";
   }
 }

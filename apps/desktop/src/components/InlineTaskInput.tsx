@@ -20,6 +20,7 @@ export function InlineTaskInput({
   const ref = useRef<HTMLInputElement | null>(null);
   const [value, setValue] = useState(initialValue ?? "");
   const committed = useRef(false);
+  const composing = useRef(false);
 
   useEffect(() => {
     queueMicrotask(() => ref.current?.focus());
@@ -39,8 +40,11 @@ export function InlineTaskInput({
       onChange={(e) => setValue(e.target.value)}
       placeholder={placeholder}
       aria-label={ariaLabel}
+      onCompositionStart={() => { composing.current = true; }}
+      onCompositionEnd={() => { composing.current = false; }}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
+          if (e.nativeEvent.isComposing || composing.current) return;
           e.preventDefault();
           commit();
         }

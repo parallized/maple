@@ -1,10 +1,10 @@
 import { Icon } from "@iconify/react";
 import { useEffect, useRef } from "react";
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
-import { WORKER_KINDS } from "../lib/constants";
+import { WORKER_KINDS, type ThemeMode } from "../lib/constants";
 import type { WorkerKind } from "../domain";
 import { WorkerLogo } from "./WorkerLogo";
 
@@ -12,6 +12,7 @@ type WorkerConsoleModalProps = {
   workerConsoleWorkerId: string;
   currentWorkerLog: string;
   executingWorkers: Set<string>;
+  theme: ThemeMode;
   workerPool: Array<{
     workerId: string;
     workerLabel: string;
@@ -23,10 +24,60 @@ type WorkerConsoleModalProps = {
   onSelectWorker: (workerId: string) => void;
 };
 
+function readCssVar(name: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+function resolveIsDarkMode(theme: ThemeMode): boolean {
+  if (theme === "dark") return true;
+  if (theme === "light") return false;
+  return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? false;
+}
+
+function resolveTerminalFontFamily(): string {
+  const fromVar = readCssVar("--font-mono", "");
+  return fromVar || "\"SF Mono\", \"Menlo\", \"Monaco\", \"Courier New\", monospace";
+}
+
+function resolveTerminalTheme(theme: ThemeMode): ITheme {
+  const base200 = readCssVar("--color-base-200", "#f7f6f3");
+  const content = readCssVar("--color-base-content", "#2b2b29");
+  const secondary = readCssVar("--color-secondary", "#68635d");
+  const ringPrimary = readCssVar("--ring-primary", "rgba(242, 114, 60, 0.2)");
+  const isDark = resolveIsDarkMode(theme);
+
+  return {
+    background: base200,
+    foreground: content,
+    cursor: secondary,
+    cursorAccent: base200,
+    selectionBackground: ringPrimary,
+    black: isDark ? "#0f1011" : "#2b2b29",
+    red: isDark ? "#ff453a" : "#d47049",
+    green: isDark ? "#30d158" : "#4da872",
+    yellow: isDark ? "#ffd60a" : "#e3b341",
+    blue: isDark ? "#0a84ff" : "#2563eb",
+    magenta: isDark ? "#bf5af2" : "#a855f7",
+    cyan: isDark ? "#64d2ff" : "#0891b2",
+    white: isDark ? "#d1d1d6" : "#f7f6f3",
+    brightBlack: isDark ? "#3a3a3c" : "#68635d",
+    brightRed: isDark ? "#ff6961" : "#e07a54",
+    brightGreen: isDark ? "#34c759" : "#55b97c",
+    brightYellow: isDark ? "#ffe15a" : "#f0c24f",
+    brightBlue: isDark ? "#5ac8fa" : "#3b82f6",
+    brightMagenta: isDark ? "#d480ff" : "#c084fc",
+    brightCyan: isDark ? "#7ef0ff" : "#22d3ee",
+    brightWhite: "#ffffff"
+  };
+}
+
 export function WorkerConsoleModal({
   workerConsoleWorkerId,
   currentWorkerLog,
   executingWorkers,
+  theme,
   workerPool,
   onClose,
   onSelectWorker
@@ -35,6 +86,8 @@ export function WorkerConsoleModal({
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const lastLogLengthRef = useRef(0);
+  const lastFitRef = useRef(0);
+  const pendingCarriageReturnRef = useRef(false);
 
   const currentWorkerLabel =
     workerPool.find((w) => w.workerId === workerConsoleWorkerId)?.workerLabel
@@ -46,6 +99,34 @@ export function WorkerConsoleModal({
     return "任务执行";
   }
 
+  function writeToTerminal(raw: string) {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    if (!raw) return;
+
+    let text = raw;
+    if (pendingCarriageReturnRef.current) {
+      text = `\r${text}`;
+      pendingCarriageReturnRef.current = false;
+    }
+    if (text.endsWith("\r")) {
+      pendingCarriageReturnRef.current = true;
+      text = text.slice(0, -1);
+    }
+    text = text.replace(/\r\n/g, "\n");
+    if (!text) return;
+
+    const fitAddon = fitAddonRef.current;
+    terminal.write(text, () => {
+      terminal.scrollToBottom();
+      const now = Date.now();
+      if (fitAddon && now - lastFitRef.current > 650) {
+        fitAddon.fit();
+        lastFitRef.current = now;
+      }
+    });
+  }
+
   useEffect(() => {
     const host = terminalHostRef.current;
     if (!host) return;
@@ -54,28 +135,41 @@ export function WorkerConsoleModal({
       cursorBlink: false,
       convertEol: true,
       disableStdin: true,
-      fontFamily: "\"SF Mono\", \"Menlo\", \"Monaco\", \"Courier New\", monospace",
+      fontFamily: resolveTerminalFontFamily(),
       fontSize: 12,
       lineHeight: 1.35,
       scrollback: 8000,
-      theme: {
-        background: "#f7f6f3",
-        foreground: "#2b2b29",
-        cursor: "#68635d"
-      }
+      theme: resolveTerminalTheme(theme)
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(host);
-    fitAddon.fit();
+
+    const refit = () => {
+      try {
+        fitAddon.fit();
+      } catch {
+        // noop
+      }
+      lastFitRef.current = Date.now();
+    };
+    refit();
+    queueMicrotask(refit);
+    requestAnimationFrame(refit);
+    document.fonts?.ready.then(refit).catch(() => undefined);
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    const handleResize = () => fitAddon.fit();
+    const handleResize = () => refit();
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(() => refit());
+    resizeObserver?.observe(host);
     window.addEventListener("resize", handleResize);
 
     return () => {
+      resizeObserver?.disconnect();
       window.removeEventListener("resize", handleResize);
       terminal.dispose();
       terminalRef.current = null;
@@ -87,14 +181,41 @@ export function WorkerConsoleModal({
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
+    terminal.options.theme = resolveTerminalTheme(theme);
+    terminal.refresh(0, Math.max(terminal.rows - 1, 0));
+    fitAddonRef.current?.fit();
+    lastFitRef.current = Date.now();
+  }, [theme]);
+
+  useEffect(() => {
+    if (theme !== "system") return;
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!media) return;
+    const handler = () => {
+      terminal.options.theme = resolveTerminalTheme(theme);
+      terminal.refresh(0, Math.max(terminal.rows - 1, 0));
+      fitAddonRef.current?.fit();
+      lastFitRef.current = Date.now();
+    };
+    media.addEventListener("change", handler);
+    return () => media.removeEventListener("change", handler);
+  }, [theme]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
     terminal.reset();
     lastLogLengthRef.current = 0;
+    pendingCarriageReturnRef.current = false;
 
     if (currentWorkerLog.length > 0) {
-      terminal.write(currentWorkerLog);
+      writeToTerminal(currentWorkerLog);
       lastLogLengthRef.current = currentWorkerLog.length;
     }
     fitAddonRef.current?.fit();
+    lastFitRef.current = Date.now();
   }, [workerConsoleWorkerId]);
 
   useEffect(() => {
@@ -105,8 +226,9 @@ export function WorkerConsoleModal({
     if (currentWorkerLog.length < previousLength) {
       terminal.reset();
       lastLogLengthRef.current = 0;
+      pendingCarriageReturnRef.current = false;
       if (currentWorkerLog.length > 0) {
-        terminal.write(currentWorkerLog);
+        writeToTerminal(currentWorkerLog);
         lastLogLengthRef.current = currentWorkerLog.length;
       }
       return;
@@ -114,7 +236,7 @@ export function WorkerConsoleModal({
 
     const delta = currentWorkerLog.slice(previousLength);
     if (!delta) return;
-    terminal.write(delta);
+    writeToTerminal(delta);
     lastLogLengthRef.current = currentWorkerLog.length;
   }, [currentWorkerLog]);
 

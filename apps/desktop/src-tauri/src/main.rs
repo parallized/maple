@@ -235,6 +235,10 @@ async fn start_interactive_worker(
       .arg("/dev/null")
       .arg(&executable_trimmed)
       .args(&args)
+      .env("TERM", "xterm-256color")
+      .env("COLORTERM", "truecolor")
+      .env("FORCE_COLOR", "1")
+      .env("CLICOLOR_FORCE", "1")
       .stdin(Stdio::piped())
       .stdout(Stdio::piped())
       .stderr(Stdio::piped());
@@ -249,6 +253,10 @@ async fn start_interactive_worker(
         let mut fallback = Command::new(&executable_trimmed);
         fallback
           .args(&args)
+          .env("TERM", "xterm-256color")
+          .env("COLORTERM", "truecolor")
+          .env("FORCE_COLOR", "1")
+          .env("CLICOLOR_FORCE", "1")
           .stdin(Stdio::piped())
           .stdout(Stdio::piped())
           .stderr(Stdio::piped());
@@ -427,6 +435,10 @@ fn run_command_stream(
     .arg("/dev/null")
     .arg(&executable)
     .args(&args)
+    .env("TERM", "xterm-256color")
+    .env("COLORTERM", "truecolor")
+    .env("FORCE_COLOR", "1")
+    .env("CLICOLOR_FORCE", "1")
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
     .stderr(Stdio::piped());
@@ -441,6 +453,10 @@ fn run_command_stream(
       let mut fallback = Command::new(&executable);
       fallback.args(&args);
       fallback
+        .env("TERM", "xterm-256color")
+        .env("COLORTERM", "truecolor")
+        .env("FORCE_COLOR", "1")
+        .env("CLICOLOR_FORCE", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

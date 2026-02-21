@@ -54,6 +54,7 @@ export type TaskReport = {
 export type Task = {
   id: string;
   title: string;
+  details: string;
   status: TaskStatus;
   tags: string[];
   version: string;
