@@ -166,7 +166,7 @@ h1, h2, h3 {
 }
 
 .ui-badge.ui-badge--success {
-  background: #4da872;
+  background: #23835c;
   color: #ffffff;
 }
 
@@ -775,8 +775,14 @@ h1, h2, h3 {
 }
 
 .task-detail-panel {
-  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
   font-family: var(--font-sans);
+}
+
+.task-detail-panel .text-secondary,
+.task-detail-panel nav button span:last-child {
+  letter-spacing: -0.02em;
 }
 
 .task-detail-title {

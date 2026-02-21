@@ -248,11 +248,11 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
         </div>
 
         <div className="flex items-start gap-4">
-          <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] pt-1">
+          <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] pt-1.5">
             <Icon icon="mingcute:tag-line" className="text-[15px] opacity-60" />
             标签
           </span>
-          <div className="flex flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none select-none" style={{ maskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)' }}>
+          <div className="flex flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none select-none py-1.5" style={{ maskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)' }}>
             {task.tags.length === 0 ? <span className="text-muted text-[13px] opacity-40">无标签</span> : null}
             {task.tags.map((tag) => (
               <span key={tag} className="ui-badge ui-badge--sm shrink-0">
@@ -262,54 +262,55 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
           </div>
         </div>
 
-        <div className="flex flex-col flex-1 min-h-0 pt-1">
-          <header className="flex items-center gap-6 border-b border-(--color-base-300)/30 mb-6 px-1">
-            <h3 className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] m-0 pb-3">
+        <div className="flex flex-col">
+          <header className={`flex items-center gap-4 ${task.reports.length > 0 ? 'border-b border-(--color-base-300)/30 mb-4' : ''}`}>
+            <h3 className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] m-0 pb-2.5">
               <Icon icon="mingcute:comment-line" className="text-[15px] opacity-60" />
               执行报告
             </h3>
             
-            {task.reports.length > 0 && (
-              <nav className="flex items-center gap-6 flex-1 overflow-x-auto scrollbar-none">
-                {task.reports.map((report) => {
-                  const active = activeReportId === report.id;
-                  return (
-                    <button
-                      key={report.id}
-                      onClick={() => setActiveReportId(report.id)}
-                      className={`relative flex items-center gap-2 pb-3 transition-all text-[12px] font-medium group select-none whitespace-nowrap ${
-                        active ? "text-primary" : "text-muted hover:text-secondary"
-                      }`}
-                    >
-                      <span className={`transition-opacity ${active ? 'opacity-100' : 'opacity-40 group-hover:opacity-70'}`}>
-                        {renderAuthorIcon(report.author, 14)}
-                      </span>
-                      <span>{formatRelativeTime(report.createdAt)}</span>
-                      {active && (
-                        <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary rounded-full animate-in fade-in zoom-in-95 duration-300" />
-                      )}
-                    </button>
-                  );
-                })}
-              </nav>
-            )}
-          </header>
-          
-          {task.reports.length === 0 ? (
-            <div className="py-10 text-center border border-dashed border-(--color-base-300) rounded-2xl bg-(--color-base-200)/30">
-              <Icon icon="mingcute:empty-line" className="text-2xl text-muted/30 mb-2 mx-auto" />
-              <p className="text-muted/60 text-[13px] m-0">暂无执行报告</p>
+            <div className="flex-1 min-h-0">
+              {task.reports.length > 0 ? (
+                <nav className="flex items-center gap-5 overflow-x-auto scrollbar-none">
+                  {task.reports.slice(-3).map((report) => {
+                    const active = activeReportId === report.id;
+                    return (
+                      <button
+                        key={report.id}
+                        onClick={() => setActiveReportId(report.id)}
+                        className={`relative flex items-center gap-1.5 pb-2.5 transition-all text-[12px] font-medium group select-none whitespace-nowrap leading-none ${
+                          active ? "text-primary" : "text-muted hover:text-secondary"
+                        }`}
+                      >
+                        <span className={`transition-opacity flex items-center ${active ? 'opacity-100' : 'opacity-40 group-hover:opacity-70'}`}>
+                          {renderAuthorIcon(report.author, 13)}
+                        </span>
+                        <span className="flex items-center">{formatRelativeTime(report.createdAt)}</span>
+                        {active && (
+                          <div className="absolute -bottom-px left-0 right-0 h-[2px] bg-primary rounded-full animate-in fade-in duration-200" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </nav>
+              ) : (
+                <div className="flex items-center text-[13px] text-muted opacity-40 pb-2.5">
+                  暂无执行报告
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="flex flex-col flex-1 min-h-0 px-1">
+          </header>
+
+          {task.reports.length > 0 && (
+            <div className="flex flex-col flex-1 min-h-0 pt-2 px-1">
               {task.reports.map((report) => {
                 if (report.id !== activeReportId) return null;
                 const parsed = parseTaskReport(report.content);
                 return (
                   <article key={report.id} className="flex flex-col animate-in fade-in slide-in-from-bottom-1 duration-300">
-                    <div className="report-content text-[13.5px] leading-[1.7] text-secondary/90 whitespace-pre-wrap">
+                    <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90 whitespace-pre-wrap">
                       {parsed && (
-                        <div className="mb-4">
+                        <div className="mb-3">
                           <span className={`ui-badge ui-badge--sm ${reportBadgeClass(parsed.status)} font-medium opacity-90`}>
                             {parsed.status}
                           </span>

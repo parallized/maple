@@ -31,7 +31,7 @@ export function createTask(taskTitle: string, projectVersion: string): Task {
     version: nextVersion,
     createdAt: now,
     updatedAt: now,
-    reports: []
+    reports: [],
   };
 }
 
@@ -40,7 +40,7 @@ export function createTaskReport(author: string, content: string): TaskReport {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     author,
     content,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
   };
 }
 
@@ -51,7 +51,8 @@ export function normalizeProjects(projects: Project[]): Project[] {
       const directory = (project.directory ?? "").trim();
       let workerKind = project.workerKind;
       if (!workerKind && (project as Record<string, unknown>).workerId) {
-        const legacyId = (project as Record<string, unknown>).workerId as string;
+        const legacyId = (project as Record<string, unknown>)
+          .workerId as string;
         const match = WORKER_KINDS.find((w) => `worker-${w.kind}` === legacyId);
         if (match) workerKind = match.kind;
       }
@@ -60,19 +61,29 @@ export function normalizeProjects(projects: Project[]): Project[] {
         directory,
         workerKind,
         tasks: project.tasks.map((task) => {
-          const createdAt = typeof task.createdAt === "string" && task.createdAt ? task.createdAt : now;
-          const updatedAt = typeof task.updatedAt === "string" && task.updatedAt ? task.updatedAt : createdAt;
-          const status = task.status === "队列中" ? "待办" as const : task.status;
-          const details = typeof (task as Task).details === "string" ? (task as Task).details : "";
+          const createdAt =
+            typeof task.createdAt === "string" && task.createdAt
+              ? task.createdAt
+              : now;
+          const updatedAt =
+            typeof task.updatedAt === "string" && task.updatedAt
+              ? task.updatedAt
+              : createdAt;
+          const status =
+            task.status === "队列中" ? ("待办" as const) : task.status;
+          const details =
+            typeof (task as Task).details === "string"
+              ? (task as Task).details
+              : "";
           return {
             ...task,
             status,
             details,
             createdAt,
             updatedAt,
-            reports: Array.isArray(task.reports) ? task.reports : []
+            reports: Array.isArray(task.reports) ? task.reports : [],
           };
-        })
+        }),
       };
     })
     .filter((project) => project.directory.length > 0);
@@ -111,7 +122,10 @@ export function relativeTimeZh(dateStr: string): string {
 
 export function getLastMentionTime(task: Task): string {
   if (task.reports.length > 0) {
-    const sorted = [...task.reports].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const sorted = [...task.reports].sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
     return sorted[0].createdAt;
   }
   return task.createdAt;
