@@ -185,24 +185,12 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
               </h2>
             )}
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {onDelete ? (
-              <button
-                type="button"
-                className="ui-btn ui-btn--xs ui-btn--ghost ui-btn--danger ui-icon-btn opacity-40 hover:opacity-100 transition-opacity"
-                onClick={onDelete}
-                aria-label="删除任务"
-              >
-                <Icon icon="mingcute:delete-2-line" className="text-base" />
-              </button>
-            ) : null}
-          </div>
         </div>
       </header>
 
-      <div className="task-properties flex flex-col gap-y-3">
+      <div className="task-properties flex flex-col gap-y-0.5">
         <div className="grid grid-cols-2 gap-x-8">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 h-9">
             <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
               <Icon icon="mingcute:signal-line" className="text-[15px] opacity-60" />
               状态
@@ -214,7 +202,7 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 h-9">
             <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
               <Icon icon="mingcute:version-line" className="text-[15px] opacity-60" />
               版本
@@ -226,7 +214,7 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
         </div>
 
         <div className="grid grid-cols-2 gap-x-8">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 h-9">
             <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
               <Icon icon="mingcute:time-line" className="text-[15px] opacity-60" />
               创建
@@ -236,7 +224,7 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 h-9">
             <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
               <Icon icon="mingcute:history-line" className="text-[15px] opacity-60" />
               更新
@@ -247,12 +235,12 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
           </div>
         </div>
 
-        <div className="flex items-start gap-4">
-          <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] pt-1.5">
+        <div className="flex items-center gap-4 h-9">
+          <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
             <Icon icon="mingcute:tag-line" className="text-[15px] opacity-60" />
             标签
           </span>
-          <div className="flex flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none select-none py-1.5" style={{ maskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)' }}>
+          <div className="flex flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none select-none" style={{ maskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)' }}>
             {task.tags.length === 0 ? <span className="text-muted text-[13px] opacity-40">无标签</span> : null}
             {task.tags.map((tag) => (
               <span key={tag} className="ui-badge ui-badge--sm shrink-0">
@@ -263,15 +251,15 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
         </div>
 
         <div className="flex flex-col">
-          <header className={`flex items-center gap-4 ${task.reports.length > 0 ? 'border-b border-(--color-base-300)/30 mb-4' : ''}`}>
-            <h3 className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] m-0 pb-2.5">
+          <header className={`flex items-center gap-4 h-9 ${task.reports.length > 0 ? 'border-b border-(--color-base-300)/30 mb-4' : ''}`}>
+            <h3 className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] m-0">
               <Icon icon="mingcute:comment-line" className="text-[15px] opacity-60" />
               执行报告
             </h3>
             
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 self-stretch flex items-end">
               {task.reports.length > 0 ? (
-                <nav className="flex items-center gap-5 overflow-x-auto scrollbar-none">
+                <nav className="flex items-center gap-5 overflow-x-auto scrollbar-none w-full">
                   {task.reports.slice(-3).map((report) => {
                     const active = activeReportId === report.id;
                     return (
@@ -309,13 +297,6 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
                 return (
                   <article key={report.id} className="flex flex-col animate-in fade-in slide-in-from-bottom-1 duration-300">
                     <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90 whitespace-pre-wrap">
-                      {parsed && (
-                        <div className="mb-3">
-                          <span className={`ui-badge ui-badge--sm ${reportBadgeClass(parsed.status)} font-medium opacity-90`}>
-                            {parsed.status}
-                          </span>
-                        </div>
-                      )}
                       {parsed ? renderReportDescription(parsed.description) : report.content}
                     </div>
                   </article>

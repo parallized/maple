@@ -17,34 +17,50 @@ export function InlineTaskInput({
   className,
   ariaLabel
 }: InlineTaskInputProps) {
-  const ref = useRef<HTMLInputElement | null>(null);
+  const ref = useRef<HTMLTextAreaElement | null>(null);
   const [value, setValue] = useState(initialValue ?? "");
   const committed = useRef(false);
   const composing = useRef(false);
 
   useEffect(() => {
-    queueMicrotask(() => ref.current?.focus());
+    if (ref.current) {
+      ref.current.style.height = "auto";
+      ref.current.style.height = `${ref.current.scrollHeight}px`;
+      ref.current.focus();
+    }
   }, []);
+
+  const handleInput = () => {
+    if (ref.current) {
+      ref.current.style.height = "auto";
+      ref.current.style.height = `${ref.current.scrollHeight}px`;
+    }
+  };
 
   function commit() {
     if (committed.current) return;
+    const trimmed = value.trim();
     committed.current = true;
-    onCommit(value);
+    onCommit(trimmed);
   }
 
   return (
-    <input
+    <textarea
       ref={ref}
       className={["inline-task-input", className].filter(Boolean).join(" ")}
       value={value}
-      onChange={(e) => setValue(e.target.value)}
+      onChange={(e) => {
+        setValue(e.target.value);
+        handleInput();
+      }}
       placeholder={placeholder}
       aria-label={ariaLabel}
+      rows={1}
       onCompositionStart={() => { composing.current = true; }}
       onCompositionEnd={() => { composing.current = false; }}
       onKeyDown={(e) => {
         if (e.key === "Enter") {
-          if (e.nativeEvent.isComposing || composing.current) return;
+          if (composing.current) return;
           e.preventDefault();
           commit();
         }
@@ -56,6 +72,7 @@ export function InlineTaskInput({
         }
       }}
       onBlur={commit}
+      style={{ overflow: 'hidden', resize: 'none', display: 'block' }}
     />
   );
 }
