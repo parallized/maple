@@ -6,7 +6,7 @@ import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WorkerLogo } from "../components/WorkerLogo";
 import { WORKER_KINDS } from "../lib/constants";
 import { resolveTagIcon, resolveTaskIcon } from "../lib/task-icons";
-import { relativeTimeZh, getLastMentionTime } from "../lib/utils";
+import { relativeTimeZh, getLastMentionTime, getTimeLevel } from "../lib/utils";
 import type { DetailMode, Project, Task, WorkerKind } from "../domain";
 import type React from "react";
 import { useRef, useState } from "react";
@@ -322,7 +322,7 @@ function TaskTable({
                   </span>
                   <button
                     type="button"
-                    className="task-open-btn ui-btn ui-btn--xs ui-btn--outline shrink-0 gap-1 text-[color:var(--color-primary)]"
+                    className="task-open-btn ui-btn ui-btn--xs ui-btn--outline shrink-0 gap-1 text-(--color-primary)"
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelectTask(task.id);
@@ -339,8 +339,16 @@ function TaskTable({
                 {task.status}
               </span>
             </td>
-            <td className="col-lastMention text-muted text-[12px] opacity-70">
-              {relativeTimeZh(getLastMentionTime(task))}
+            <td className="col-lastMention text-[12px]">
+              {(() => {
+                const timeStr = getLastMentionTime(task);
+                const level = getTimeLevel(timeStr);
+                return (
+                  <span className={`time-level-${level}`}>
+                    {relativeTimeZh(timeStr)}
+                  </span>
+                );
+              })()}
             </td>
             <td className="col-tags">
               <div className="tags-inline">

@@ -4,7 +4,9 @@
 
 /* ── Theme tokens ── */
 :root {
-  --font-sans: "Maple Mono", "Smiley Sans", "得意黑", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    "Maple Mono", "Smiley Sans", "得意黑", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Maple Mono", "Smiley Sans", monospace;
 
   color-scheme: light;
@@ -95,7 +97,9 @@ pre,
   font-family: var(--font-sans);
 }
 
-h1, h2, h3 {
+h1,
+h2,
+h3 {
   font-family: var(--font-sans);
 }
 
@@ -380,8 +384,14 @@ h1, h2, h3 {
 }
 
 @keyframes toast-in {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ── Shell Layout ── */
@@ -489,7 +499,9 @@ h1, h2, h3 {
   margin-left: -0.1rem;
   margin-right: -0.2rem;
   opacity: 0;
-  transition: opacity 0.12s, background 0.12s;
+  transition:
+    opacity 0.12s,
+    background 0.12s;
 }
 
 .topnav-tab:hover .topnav-tab-close {
@@ -581,7 +593,8 @@ h1, h2, h3 {
   top: 0;
   z-index: 10;
   background: var(--color-base-100);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-base-300) 25%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-base-300) 25%, transparent);
   text-align: left;
   padding: 0.6rem 0.5rem 0.6rem 0;
   font-weight: 500;
@@ -602,7 +615,8 @@ h1, h2, h3 {
 }
 
 .task-row td {
-  border-bottom: 1px solid color-mix(in srgb, var(--color-base-300) 25%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-base-300) 25%, transparent);
   padding: 0 0.5rem 0 0;
   font-size: 0.875rem;
   transition: background 0.1s;
@@ -672,11 +686,21 @@ h1, h2, h3 {
   display: none;
 }
 
-.status-dot.status-pending { background: #d4cfc6; }
-.status-dot.status-active { background: #5fa0e5; }
-.status-dot.status-done { background: #4da872; }
-.status-dot.status-blocked { background: #d47049; }
-.status-dot.status-info { background: #e3b341; }
+.status-dot.status-pending {
+  background: #d4cfc6;
+}
+.status-dot.status-active {
+  background: #5fa0e5;
+}
+.status-dot.status-done {
+  background: #4da872;
+}
+.status-dot.status-blocked {
+  background: #d47049;
+}
+.status-dot.status-info {
+  background: #e3b341;
+}
 
 /* ── Inline Task Input ── */
 
@@ -722,8 +746,24 @@ h1, h2, h3 {
   opacity: 0.2;
 }
 
-.task-row.editing td {
-  background: var(--row-selected);
+.time-level-just_now {
+  color: var(--color-base-content);
+  font-weight: 500;
+}
+.time-level-minutes {
+  color: color-mix(in srgb, var(--color-base-content) 85%, transparent);
+}
+.time-level-hours {
+  color: color-mix(in srgb, var(--color-base-content) 70%, transparent);
+}
+.time-level-days {
+  color: color-mix(in srgb, var(--color-base-content) 50%, transparent);
+}
+.time-level-months {
+  color: color-mix(in srgb, var(--color-base-content) 35%, transparent);
+}
+.time-level-years {
+  color: color-mix(in srgb, var(--color-base-content) 25%, transparent);
 }
 
 /* ── Task Title Cell ── */
@@ -741,8 +781,16 @@ h1, h2, h3 {
   scrollbar-width: none;
   max-width: 100%;
   min-width: 0;
-  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(
+    to right,
+    black calc(100% - 24px),
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black calc(100% - 24px),
+    transparent 100%
+  );
 }
 
 .tags-inline::-webkit-scrollbar {
@@ -787,8 +835,12 @@ h1, h2, h3 {
   gap: 0.25rem;
 }
 
-.popover-menu.right { right: 0; }
-.popover-menu.left { left: 0; }
+.popover-menu.right {
+  right: 0;
+}
+.popover-menu.left {
+  left: 0;
+}
 
 .popover-item:hover {
   border-color: transparent;
@@ -878,7 +930,9 @@ h1, h2, h3 {
   padding: 0.55rem 0.6rem;
   cursor: text;
   outline: none;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 
 .task-details-surface:hover {
@@ -943,7 +997,11 @@ h1, h2, h3 {
   padding: 0.9rem;
   height: 100%;
   min-height: 0;
-  background: color-mix(in srgb, var(--color-base-100) 82%, var(--color-base-200));
+  background: color-mix(
+    in srgb,
+    var(--color-base-100) 82%,
+    var(--color-base-200)
+  );
   border: none;
   border-radius: 18px;
   position: relative;
@@ -1061,8 +1119,14 @@ h1, h2, h3 {
 }
 
 @keyframes slide-in-right {
-  from { transform: translateX(16px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 /* ── Toast ── */
@@ -1192,7 +1256,10 @@ h1, h2, h3 {
   gap: 10px;
   cursor: pointer;
   text-align: left;
-  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .worker-console-pool-item:hover {
@@ -1201,8 +1268,13 @@ h1, h2, h3 {
 }
 
 .worker-console-pool-item.active {
-  border-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-base-300));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  border-color: color-mix(
+    in srgb,
+    var(--color-primary) 55%,
+    var(--color-base-300)
+  );
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--color-primary) 18%, transparent);
 }
 
 .worker-console-pool-item-main {
@@ -1312,7 +1384,8 @@ h1, h2, h3 {
     width: 100%;
     min-width: 0;
     border-radius: 0;
-    border-left: 1px solid color-mix(in srgb, var(--color-base-300) 40%, transparent);
+    border-left: 1px solid
+      color-mix(in srgb, var(--color-base-300) 40%, transparent);
     border-top: 0;
     border-right: 0;
     border-bottom: 0;
@@ -1327,19 +1400,55 @@ h1, h2, h3 {
 /* ── Dark Mode Component Overrides ── */
 
 @media (prefers-color-scheme: dark) {
-  :root:not(.light) .ui-badge--success { color: #30d158; }
-  :root:not(.light) .ui-badge--warning { color: #ffd60a; }
-  :root:not(.light) .ui-badge--error { color: #ff453a; }
-  :root:not(.light) .ui-modal-backdrop { background: rgba(0, 0, 0, 0.7); }
-  :root:not(.light) .ui-modal-panel { background: var(--color-base-100); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8); border: 1px solid var(--color-base-300); }
-  :root:not(.light) .toast { background: var(--color-base-100); border: 1px solid var(--color-base-300); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
-  :root:not(.light) .status-dot.status-pending { background: #48484a; }
+  :root:not(.light) .ui-badge--success {
+    color: #30d158;
+  }
+  :root:not(.light) .ui-badge--warning {
+    color: #ffd60a;
+  }
+  :root:not(.light) .ui-badge--error {
+    color: #ff453a;
+  }
+  :root:not(.light) .ui-modal-backdrop {
+    background: rgba(0, 0, 0, 0.7);
+  }
+  :root:not(.light) .ui-modal-panel {
+    background: var(--color-base-100);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8);
+    border: 1px solid var(--color-base-300);
+  }
+  :root:not(.light) .toast {
+    background: var(--color-base-100);
+    border: 1px solid var(--color-base-300);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+  :root:not(.light) .status-dot.status-pending {
+    background: #48484a;
+  }
 }
 
-:root.dark .ui-badge--success { color: #30d158; }
-:root.dark .ui-badge--warning { color: #ffd60a; }
-:root.dark .ui-badge--error { color: #ff453a; }
-:root.dark .ui-modal-backdrop { background: rgba(0, 0, 0, 0.7); }
-:root.dark .ui-modal-panel { background: var(--color-base-100); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8); border: 1px solid var(--color-base-300); }
-:root.dark .toast { background: var(--color-base-100); border: 1px solid var(--color-base-300); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
-:root.dark .status-dot.status-pending { background: #48484a; }
+:root.dark .ui-badge--success {
+  color: #30d158;
+}
+:root.dark .ui-badge--warning {
+  color: #ffd60a;
+}
+:root.dark .ui-badge--error {
+  color: #ff453a;
+}
+:root.dark .ui-modal-backdrop {
+  background: rgba(0, 0, 0, 0.7);
+}
+:root.dark .ui-modal-panel {
+  background: var(--color-base-100);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8);
+  border: 1px solid var(--color-base-300);
+}
+:root.dark .toast {
+  background: var(--color-base-100);
+  border: 1px solid var(--color-base-300);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+:root.dark .status-dot.status-pending {
+  background: #48484a;
+}

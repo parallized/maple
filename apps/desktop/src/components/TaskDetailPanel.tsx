@@ -1,8 +1,9 @@
 import { Icon } from "@iconify/react";
 import type { Task, TaskReport } from "../domain";
-import { relativeTimeZh } from "../lib/utils";
+import { relativeTimeZh, getTimeLevel } from "../lib/utils";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { InlineTaskInput } from "./InlineTaskInput";
+import { TaskDetailsEditor } from "./TaskDetailsEditor";
 import { WorkerLogo } from "./WorkerLogo";
 
 type TaskDetailPanelProps = {
@@ -324,7 +325,7 @@ function renderAuthorIcon(author: string, size = 14) {
   return <Icon icon="mingcute:paper-line" className="opacity-60" style={{ fontSize: size }} />;
 }
 
-export function TaskDetailPanel({ task, onUpdateTitle, onClose }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose }: TaskDetailPanelProps) {
   const completedReports = useMemo(
     () => task.reports.filter(isCompletedReport),
     [task.reports]
@@ -346,14 +347,6 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose }: TaskDetailPane
   return (
     <section className="task-detail-panel flex flex-col pb-10">
       <header className="mb-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute -right-2 top-0 p-2 text-muted hover:text-secondary transition-colors"
-          aria-label="关闭"
-        >
-          <Icon icon="mingcute:close-line" className="text-xl" />
-        </button>
-
         <div className="flex items-start gap-4 pr-10">
           <div className="flex-1 min-w-0">
             <InlineTaskInput
@@ -402,9 +395,12 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose }: TaskDetailPane
               <Icon icon="mingcute:time-line" className="text-[15px] opacity-60" />
               创建
             </span>
-            <div className="flex items-center text-[13px] text-secondary/80" title={formatAbsoluteTime(task.createdAt)}>
-              {formatRelativeTime(task.createdAt)}
-            </div>
+            <div className={`flex items-center text-[13px] ${(() => {
+            const level = getTimeLevel(task.createdAt);
+            return `time-level-${level}`;
+          })()}`} title={formatAbsoluteTime(task.createdAt)}>
+            {formatRelativeTime(task.createdAt)}
+          </div>
           </div>
 
           <div className="flex items-center gap-4 h-9">
@@ -412,9 +408,12 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose }: TaskDetailPane
               <Icon icon="mingcute:history-line" className="text-[15px] opacity-60" />
               更新
             </span>
-            <div className="flex items-center text-[13px] text-secondary/80" title={formatAbsoluteTime(task.updatedAt)}>
-              {formatRelativeTime(task.updatedAt)}
-            </div>
+            <div className={`flex items-center text-[13px] ${(() => {
+            const level = getTimeLevel(task.updatedAt);
+            return `time-level-${level}`;
+          })()}`} title={formatAbsoluteTime(task.updatedAt)}>
+            {formatRelativeTime(task.updatedAt)}
+          </div>
           </div>
         </div>
 
@@ -431,6 +430,26 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose }: TaskDetailPane
               </span>
             ))}
           </div>
+        </div>
+
+        <div className="flex flex-col mt-1">
+          <header className="flex items-center gap-2 h-9">
+            <h3 className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] m-0">
+              <Icon icon="mingcute:file-text-line" className="text-[15px] opacity-60" />
+              详情
+            </h3>
+          </header>
+          {onUpdateDetails ? (
+            <TaskDetailsEditor value={task.details ?? ""} onCommit={onUpdateDetails} />
+          ) : (
+            <div className="task-details-surface">
+              {task.details?.trim() ? (
+                <div className="task-details-text">{task.details}</div>
+              ) : (
+                <span className="task-details-placeholder">暂无详情</span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col">
@@ -456,7 +475,10 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose }: TaskDetailPane
                         <span className={`transition-opacity flex items-center ${active ? 'opacity-100' : 'opacity-40 group-hover:opacity-70'}`}>
                           {renderAuthorIcon(report.author, 13)}
                         </span>
-                        <span className="flex items-center">{formatRelativeTime(report.createdAt)}</span>
+                        <span className={`flex items-center ${(() => {
+                        const level = getTimeLevel(report.createdAt);
+                        return `time-level-${level}`;
+                      })()}`}>{formatRelativeTime(report.createdAt)}</span>
                         {active && (
                           <div className="absolute -bottom-px left-0 right-0 h-[2px] bg-primary rounded-full animate-in fade-in duration-200" />
                         )}
