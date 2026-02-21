@@ -320,4 +320,9 @@ export function TaskDetailPanel({ task, onUpdateTitle, onClose, onDelete }: Task
                 );
               })}
             </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
 }
