@@ -8,6 +8,7 @@ import { WorkerLogo } from "./WorkerLogo";
 type TaskDetailPanelProps = {
   task: Task;
   onUpdateTitle?: (title: string) => void;
+  onUpdateDetails?: (details: string) => void;
   onClose?: () => void;
   onDelete?: () => void;
 };

@@ -335,6 +335,11 @@ function TaskTable({
               )}
             </td>
             <td className="col-lastMention text-muted">{relativeTimeZh(getLastMentionTime(task))}</td>
+            <td className="col-status">
+              <span className={`ui-badge ${task.status === "已完成" ? "ui-badge--success" : task.status === "已阻塞" ? "ui-badge--error" : task.status === "进行中" ? "ui-badge--solid" : task.status === "需要更多信息" ? "ui-badge--warning" : ""}`}>
+                {task.status}
+              </span>
+            </td>
             <td className="col-tags">
               <div className="tags-inline">
                 {task.tags.length === 0 ? <span className="text-xs text-muted">—</span> : null}

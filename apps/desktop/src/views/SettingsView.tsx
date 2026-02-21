@@ -117,6 +117,7 @@ export function SettingsView({
             <span className="text-sm">{t("AI 语言", "AI language")}</span>
             <div className="flex gap-1">
               {([
+                { value: "follow_ui" as AiLanguage, label: t("跟随界面语言", "Follow UI") },
                 { value: "zh" as AiLanguage, label: t("中文", "Chinese") },
                 { value: "en" as AiLanguage, label: "English" },
               ] as const).map((opt) => (

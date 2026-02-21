@@ -437,8 +437,9 @@ export function App() {
   function buildWorkerRunPayload(workerId: string, config: WorkerConfig): { args: string[]; prompt: string } {
     const kind = parseWorkerId(workerId).kind;
     const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
+    const effectiveLanguage = aiLanguage === "follow_ui" ? uiLanguage : aiLanguage;
     const prompt =
-      aiLanguage === "en"
+      effectiveLanguage === "en"
         ? "Please write your conclusion and tags in English."
         : "请用中文输出结论与标签。";
     return { args, prompt };
@@ -506,8 +507,9 @@ export function App() {
     return `${plain.slice(0, maxLength - 1)}…`;
   }
 
-  function localizeDecisionTags(tags: string[], language: AiLanguage): string[] {
-    if (language === "en") {
+  function localizeDecisionTags(tags: string[]): string[] {
+    const effectiveLanguage = aiLanguage === "follow_ui" ? uiLanguage : aiLanguage;
+    if (effectiveLanguage === "en") {
       return tags.map((tag) => {
         if (tag === "架构") return "Architecture";
         if (tag === "配置") return "Config";
@@ -802,7 +804,7 @@ export function App() {
           updateTask(project.id, task.id, (c) => ({
             ...c,
             status: decision.status,
-            tags: localizeDecisionTags(decision.tags, aiLanguage),
+            tags: localizeDecisionTags(decision.tags),
             version: decision.status === "已完成" ? nextVersion : c.version,
             reports: [...c.reports, report]
           }));
