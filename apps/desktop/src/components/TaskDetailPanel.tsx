@@ -1,7 +1,8 @@
 import { Icon } from "@iconify/react";
-import type { Task } from "../domain";
+import type { Task, WorkerKind } from "../domain";
 import { relativeTimeZh } from "../lib/utils";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
+import { WorkerLogo } from "./WorkerLogo";
 
 type TaskDetailPanelProps = {
   task: Task;
@@ -130,7 +131,20 @@ function renderReportDescription(description: string): ReactNode {
   );
 }
 
+function renderAuthorIcon(author: string, size = 14) {
+  const normalized = author.toLowerCase();
+  if (normalized === "claude") return <WorkerLogo kind="claude" size={size} />;
+  if (normalized === "codex") return <WorkerLogo kind="codex" size={size} />;
+  if (normalized === "iflow") return <WorkerLogo kind="iflow" size={size} />;
+  if (normalized === "mcp") return <Icon icon="mingcute:server-line" className="opacity-80" style={{ fontSize: size }} />;
+  return <Icon icon="mingcute:paper-line" className="opacity-60" style={{ fontSize: size }} />;
+}
+
 export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProps) {
+  const [activeReportId, setActiveReportId] = useState<string | null>(
+    task.reports.length > 0 ? task.reports[task.reports.length - 1]!.id : null
+  );
+
   return (
     <section className="task-detail-panel flex flex-col pb-10">
       <header className="mb-6 relative">
@@ -154,6 +168,7 @@ export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProp
       </header>
 
       <div className="task-properties flex flex-col gap-y-3 mb-8">
+        {/* ... (properties grid remains same) */}
         <div className="grid grid-cols-2 gap-x-8">
           <div className="flex items-center gap-4">
             <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
@@ -219,59 +234,73 @@ export function TaskDetailPanel({ task, onClose, onDelete }: TaskDetailPanelProp
 
       <div className="h-px bg-(--color-base-300) mb-4" />
 
-      <div className="pt-2">
-        <h3 className="text-[13px] font-semibold mb-4 flex items-center gap-2 text-primary/80 tracking-wide uppercase">
-          <Icon icon="mingcute:comment-line" className="text-[16px] opacity-60" />
-          执行报告
-          <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-(--color-base-300) rounded text-[10px] font-bold ml-1 text-secondary">{task.reports.length}</span>
-        </h3>
+      <div className="pt-2 flex flex-col flex-1 min-h-0">
+        <header className="flex items-center gap-6 border-b border-(--color-base-300)/30 mb-6 px-1">
+          <h3 className="text-[13px] font-semibold flex items-center gap-2 text-primary/80 tracking-wide uppercase m-0 pb-3">
+            <Icon icon="mingcute:comment-line" className="text-[16px] opacity-60" />
+            执行报告
+          </h3>
+          
+          {task.reports.length > 0 && (
+            <nav className="flex items-center gap-6 flex-1 overflow-x-auto scrollbar-none">
+              {task.reports.map((report) => {
+                const active = activeReportId === report.id;
+                return (
+                  <button
+                    key={report.id}
+                    onClick={() => setActiveReportId(report.id)}
+                    className={`relative flex items-center gap-2 pb-3 transition-all text-[12px] font-medium group select-none whitespace-nowrap ${
+                      active ? "text-primary" : "text-muted hover:text-secondary"
+                    }`}
+                  >
+                    <span className={`transition-opacity ${active ? 'opacity-100' : 'opacity-40 group-hover:opacity-70'}`}>
+                      {renderAuthorIcon(report.author, 14)}
+                    </span>
+                    <span>{formatRelativeTime(report.createdAt)}</span>
+                    {active && (
+                      <div className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary rounded-full animate-in fade-in zoom-in-95 duration-300" />
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          )}
+        </header>
         
         {task.reports.length === 0 ? (
           <div className="py-10 text-center border border-dashed border-(--color-base-300) rounded-2xl bg-(--color-base-200)/30">
             <Icon icon="mingcute:empty-line" className="text-2xl text-muted/30 mb-2 mx-auto" />
             <p className="text-muted/60 text-[13px] m-0">暂无执行报告</p>
           </div>
-        ) : null}
-
-        <div className="flex flex-col gap-10">
-          {task.reports.map((report) => {
-            const parsed = parseTaskReport(report.content);
-            return (
-              <article key={report.id} className="flex flex-col gap-4 relative">
-                <div className="flex items-center gap-2.5 text-[13px]">
-                  <div className="w-7 h-7 rounded-full bg-primary/5 border border-primary/10 flex items-center justify-center text-[11px] font-bold text-primary">
-                    {report.author.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    <strong className="font-semibold text-primary">{report.author}</strong>
-                    <span
-                      className="text-muted text-[11px] opacity-60"
-                      title={formatAbsoluteTime(report.createdAt)}
-                    >
-                      {formatRelativeTime(report.createdAt)}
-                    </span>
-                  </div>
-                </div>
-                <div className="pl-0">
-                  <div className="bg-(--color-base-200)/40 border border-(--color-base-300)/50 rounded-2xl p-5 shadow-sm">
-                    {parsed ? (
-                      <div className="flex flex-col gap-4">
-                        <div className="flex items-center gap-2">
-                          <span className={`ui-badge ui-badge--sm ${reportBadgeClass(parsed.status)} font-medium`}>{parsed.status}</span>
-                        </div>
-                        <div className="text-[14px] leading-[1.6] text-primary/90">
-                          {renderReportDescription(parsed.description)}
-                        </div>
+        ) : (
+          <div className="flex flex-col flex-1 min-h-0 px-1">
+            {task.reports.map((report) => {
+              if (report.id !== activeReportId) return null;
+              const parsed = parseTaskReport(report.content);
+              return (
+                <article key={report.id} className="flex flex-col animate-in fade-in slide-in-from-bottom-1 duration-300">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full bg-primary/5 border border-primary/10 flex items-center justify-center">
+                        {renderAuthorIcon(report.author, 12)}
                       </div>
-                    ) : (
-                      <div className="text-[14px] leading-[1.6] text-primary/90 whitespace-pre-wrap">{report.content}</div>
+                      <span className="text-[11px] font-semibold text-secondary/70 tracking-tight">{report.author}</span>
+                    </div>
+                    {parsed && (
+                      <span className={`ui-badge ui-badge--sm ${reportBadgeClass(parsed.status)} font-medium opacity-90`}>
+                        {parsed.status}
+                      </span>
                     )}
                   </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
+
+                  <div className="report-content text-[13.5px] leading-[1.7] text-secondary/90 whitespace-pre-wrap">
+                    {parsed ? renderReportDescription(parsed.description) : report.content}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );
