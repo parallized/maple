@@ -216,7 +216,7 @@ export function BoardView({
             <motion.button 
               whileTap={{ scale: 0.98 }} 
               type="button" 
-              className="sidebar-card-btn" 
+              className="sidebar-card-btn sidebar-card-btn--primary" 
               onClick={() => onCompletePending(boardProject.id)}
             >
               <div className="sidebar-card-btn-icon">
@@ -228,20 +228,17 @@ export function BoardView({
               </div>
             </motion.button>
 
-            <motion.button 
-              whileTap={{ scale: 0.98 }} 
-              type="button" 
-              className="sidebar-card-btn" 
-              onClick={onOpenConsole}
-            >
-              <div className="sidebar-card-btn-icon">
-                <Icon icon="mingcute:terminal-box-line" />
-              </div>
-              <div className="sidebar-card-btn-content">
-                <span className="sidebar-card-btn-title">控制台</span>
-                <span className="sidebar-card-btn-desc">查看系统日志与输出</span>
-              </div>
-            </motion.button>
+            <div className="mt-4 pt-4 border-t border-(--color-base-300)/20">
+              <motion.button 
+                whileTap={{ scale: 0.96 }} 
+                type="button" 
+                className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3" 
+                onClick={onOpenConsole}
+              >
+                <Icon icon="mingcute:terminal-box-line" className="text-base opacity-70" />
+                控制台
+              </motion.button>
+            </div>
           </motion.div>
         </motion.aside>
         </AnimatePresence>
