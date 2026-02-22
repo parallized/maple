@@ -58,25 +58,24 @@ export function TopNav({
           className={`topnav-tab ${view === "overview" ? "active" : ""}`}
           onClick={() => onViewChange("overview")}
         >
-          <motion.div layoutId="nav-icon-overview" className="flex items-center justify-center">
+          <div className="flex items-center justify-center">
             <Icon icon="mingcute:home-4-line" className="text-base opacity-70" />
-          </motion.div>
-          <motion.span layout="position">{t("概览", "Overview")}</motion.span>
+          </div>
+          <span>{t("概览", "Overview")}</span>
         </button>
 
         <div className="w-px h-4 bg-(--color-base-300) mx-1" />
 
         <div className="topnav-scroll">
           <AnimatePresence mode="popLayout">
-            {projects.map((project) => {
+            {projects.map((project, index) => {
               const active = view === "board" && boardProjectId === project.id;
               const pending = project.tasks.filter((t) => t.status !== "已完成").length;
               return (
                 <motion.button
-                  layout
                   initial={{ opacity: 0, scale: 0.9, x: -10 }}
-                  animate={{ opacity: 1, scale: 1, x: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, width: 0, padding: 0, margin: 0 }}
+                  animate={{ opacity: 1, scale: 1, x: 0, transition: { delay: index * 0.05 } }}
+                  exit={{ opacity: 0, scale: 0.9, width: 0, padding: 0, margin: 0, transition: { duration: 0.15 } }}
                   transition={{ type: "spring", stiffness: 400, damping: 30 }}
                   key={project.id}
                   type="button"
@@ -84,15 +83,15 @@ export function TopNav({
                   onClick={() => onProjectSelect(project.id)}
                   title={project.directory}
                 >
-                  <motion.div layout="position" className="flex items-center justify-center">
+                  <div className="flex items-center justify-center">
                     {project.workerKind ? (
                       <WorkerLogo kind={project.workerKind} size={15} className="opacity-80" />
                     ) : (
                       <Icon icon="mingcute:folder-open-line" className="text-[15px] opacity-70" />
                     )}
-                  </motion.div>
-                  <motion.span layout="position" className="truncate max-w-[120px]">{project.name}</motion.span>
-                  {pending > 0 ? <motion.span layout="position" className="topnav-queue-count">{pending}</motion.span> : null}
+                  </div>
+                  <span className="truncate max-w-[120px]">{project.name}</span>
+                  {pending > 0 ? <span className="topnav-queue-count">{pending}</span> : null}
                 </motion.button>
               );
             })}

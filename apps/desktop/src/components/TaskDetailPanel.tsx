@@ -376,7 +376,7 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
         animate="visible"
         variants={{
           hidden: { opacity: 0 },
-          visible: { opacity: 1, transition: { staggerChildren: 0.06, delayChildren: 0.1 } }
+          visible: { opacity: 1, transition: { staggerChildren: 0.04, delayChildren: 0.05 } }
         }}
         className="task-properties flex flex-col gap-y-0.5"
       >
@@ -492,10 +492,12 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
             <div className="flex-1 min-h-0 self-stretch flex items-end">
               {completedReports.length > 0 ? (
                 <nav className="flex items-center gap-5 overflow-x-auto scrollbar-none w-full">
-                  {completedReports.slice(-3).map((report) => {
+                  {completedReports.slice(-3).map((report, index) => {
                     const active = activeReportId === report.id;
                     return (
-                      <button
+                      <motion.button
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0, transition: { delay: index * 0.05 } }}
                         key={report.id}
                         onClick={() => setActiveReportId(report.id)}
                         className={`relative flex items-center gap-1.5 pb-2.5 transition-all text-[12px] font-medium group select-none whitespace-nowrap leading-none ${
@@ -510,9 +512,12 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
                         return `time-level-${level}`;
                       })()}`}>{formatRelativeTime(report.createdAt)}</span>
                         {active && (
-                          <div className="absolute -bottom-px left-0 right-0 h-[2px] bg-primary rounded-full animate-in fade-in duration-200" />
+                          <motion.div
+                            layoutId="activeTab"
+                            className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-t-full"
+                          />
                         )}
-                      </button>
+                      </motion.button>
                     );
                   })}
                 </nav>
@@ -525,16 +530,21 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
           </header>
 
           {completedReports.length > 0 && (
-            <div className="flex flex-col flex-1 min-h-0 pt-2 px-1">
-              {completedReports.map((report) => {
-                if (report.id !== activeReportId) return null;
+            <div className="relative mt-2">
+              {completedReports.filter(r => r.id === activeReportId).map((report, index) => {
                 const parsed = parseTaskReport(report.content);
                 return (
-                  <article key={report.id} className="flex flex-col animate-in fade-in slide-in-from-bottom-1 duration-300">
+                  <motion.article 
+                    initial={{ opacity: 0, y: 15, filter: "blur(4px)" }}
+                    animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { delay: index * 0.05 } }}
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                    key={report.id} 
+                    className="flex flex-col duration-300"
+                  >
                     <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90 whitespace-pre-wrap">
                       {parsed ? renderMarkdownText(parsed.description) : renderMarkdownText(report.content)}
                     </div>
-                  </article>
+                  </motion.article>
                 );
               })}
             </div>

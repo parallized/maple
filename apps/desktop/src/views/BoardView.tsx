@@ -340,13 +340,12 @@ function TaskTable({
         }}
       >
         <AnimatePresence initial={false}>
-          {tasks.map((task) => (
+          {tasks.map((task, index) => (
             <motion.tr
               key={task.id}
-              layout="position"
               initial={{ opacity: 0, y: 15, filter: "blur(4px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={{ opacity: 0, scale: 0.96, filter: "blur(4px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { delay: index * 0.03 } }}
+              exit={{ opacity: 0, scale: 0.96, filter: "blur(4px)", transition: { duration: 0.15 } }}
               transition={{ type: "spring", stiffness: 400, damping: 30 }}
               className={[
                 "task-row",
