@@ -1,4 +1,9 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { indentWithTab } from "@codemirror/commands";
+import { insertNewlineContinueMarkup, markdown } from "@codemirror/lang-markdown";
+import { EditorSelection, Prec, type Extension } from "@codemirror/state";
+import { type Command, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
+import CodeMirror from "@uiw/react-codemirror";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type TaskDetailsEditorProps = {
   value: string;
@@ -10,49 +15,93 @@ function normalizeLineEndings(text: string): string {
   return text.replace(/\r\n/g, "\n");
 }
 
+function createWrapSelectionCommand(prefix: string, suffix: string, placeholder: string): Command {
+  return (view) => {
+    const update = view.state.changeByRange((range) => {
+      const selectedText = view.state.doc.sliceString(range.from, range.to) || placeholder;
+      const insert = `${prefix}${selectedText}${suffix}`;
+      const anchor = range.from + prefix.length;
+      const head = anchor + selectedText.length;
+      return {
+        changes: { from: range.from, to: range.to, insert },
+        range: EditorSelection.range(anchor, head)
+      };
+    });
+    view.dispatch(view.state.update(update, { scrollIntoView: true, userEvent: "input" }));
+    return true;
+  };
+}
+
+const boldCommand = createWrapSelectionCommand("**", "**", "文本");
+const italicCommand = createWrapSelectionCommand("*", "*", "文本");
+const linkCommand = createWrapSelectionCommand("[", "](https://)", "链接文本");
+
 export function TaskDetailsEditor({ value, onCommit, renderPreview }: TaskDetailsEditorProps) {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const skipBlurCommitRef = useRef(false);
+  const currentValueRef = useRef(value);
+  const draftRef = useRef(value);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
 
   useEffect(() => {
+    currentValueRef.current = value;
     setDraft(value);
     setEditing(false);
   }, [value]);
 
   useEffect(() => {
-    if (!editing) return;
-    queueMicrotask(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.selectionStart = el.selectionEnd = el.value.length;
-    });
-  }, [editing]);
+    draftRef.current = draft;
+  }, [draft]);
 
-  function resize() {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }
-
-  useEffect(() => {
-    if (!editing) return;
-    resize();
-  }, [draft, editing]);
-
-  function commit(nextValue: string) {
+  const commitValue = useCallback((nextValue: string) => {
     const normalizedNext = normalizeLineEndings(nextValue);
-    const normalizedCurrent = normalizeLineEndings(value);
+    const normalizedCurrent = normalizeLineEndings(currentValueRef.current);
     if (normalizedNext === normalizedCurrent) return;
     onCommit(normalizedNext);
-  }
+  }, [onCommit]);
 
-  function openEditing(nextTarget?: EventTarget | null) {
-    if (nextTarget instanceof Element && nextTarget.closest("a")) return;
-    setEditing(true);
-  }
+  const closeWithoutCommit = useCallback(() => {
+    skipBlurCommitRef.current = true;
+    setDraft(currentValueRef.current);
+    setEditing(false);
+  }, []);
+
+  const closeWithCommit = useCallback((nextValue: string) => {
+    skipBlurCommitRef.current = true;
+    setEditing(false);
+    commitValue(nextValue);
+  }, [commitValue]);
+
+  const extensions = useMemo<Extension[]>(
+    () => [
+      markdown(),
+      cmPlaceholder("支持 Markdown 快捷输入：#、-、- [ ]、1.、>、![alt](url)"),
+      Prec.high(
+        keymap.of([
+          { key: "Enter", run: insertNewlineContinueMarkup },
+          { key: "Mod-b", run: boldCommand },
+          { key: "Mod-i", run: italicCommand },
+          { key: "Mod-k", run: linkCommand },
+          {
+            key: "Mod-Enter",
+            run: (view) => {
+              closeWithCommit(view.state.doc.toString());
+              return true;
+            }
+          },
+          {
+            key: "Escape",
+            run: () => {
+              closeWithoutCommit();
+              return true;
+            }
+          },
+          indentWithTab
+        ])
+      )
+    ],
+    [closeWithCommit, closeWithoutCommit]
+  );
 
   if (!editing) {
     const hasContent = value.trim().length > 0;
@@ -61,11 +110,14 @@ export function TaskDetailsEditor({ value, onCommit, renderPreview }: TaskDetail
         role="button"
         tabIndex={0}
         className="task-details-surface"
-        onClick={(event) => openEditing(event.target)}
+        onClick={(event) => {
+          if (event.target instanceof Element && event.target.closest("a")) return;
+          setEditing(true);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            openEditing();
+            setEditing(true);
           }
         }}
         aria-label="编辑详情"
@@ -83,29 +135,35 @@ export function TaskDetailsEditor({ value, onCommit, renderPreview }: TaskDetail
 
   return (
     <div className="task-details-surface task-details-surface--editing">
-      <textarea
-        ref={textareaRef}
-        className="task-details-textarea"
+      <CodeMirror
+        className="task-details-cm"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        placeholder="添加详情…"
-        aria-label="编辑详情"
-        rows={1}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            setDraft(value);
-            setEditing(false);
+        basicSetup={{
+          lineNumbers: false,
+          foldGutter: false,
+          highlightActiveLineGutter: false,
+          searchKeymap: false
+        }}
+        extensions={extensions}
+        onCreateEditor={(editor) => {
+          queueMicrotask(() => {
+            const end = editor.state.doc.length;
+            editor.dispatch({ selection: EditorSelection.cursor(end) });
+            editor.focus();
+          });
+        }}
+        onBlur={(event) => {
+          if (skipBlurCommitRef.current) {
+            skipBlurCommitRef.current = false;
             return;
           }
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-            e.preventDefault();
-            textareaRef.current?.blur();
-          }
-        }}
-        onBlur={() => {
+          const nextTarget = event.relatedTarget;
+          if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
           setEditing(false);
-          commit(draft);
+          commitValue(draftRef.current);
+        }}
+        onChange={(nextValue) => {
+          setDraft(nextValue);
         }}
       />
     </div>
