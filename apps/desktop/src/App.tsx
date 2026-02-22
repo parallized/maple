@@ -40,6 +40,7 @@ import {
 } from "./lib/utils";
 import { collectTokenUsage } from "./lib/token-usage";
 import { generatePrStyleTags } from "./lib/pr-tags";
+import { buildVersionTag, mergeTaskTags } from "./lib/task-tags";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
 import { loadAiLanguage, loadProjects, loadMcpServerConfig, loadTheme, loadUiLanguage } from "./lib/storage";
 import { buildTrayTaskSnapshot } from "./lib/task-tray";
@@ -655,7 +656,12 @@ export function App() {
           updateTask(project.id, task.id, (c) => ({
             ...c,
             status: decision.status,
-            tags: generatedTags,
+            tags: mergeTaskTags({
+              existing: c.tags,
+              generated: generatedTags,
+              versionTag: decision.status === "已完成" ? buildVersionTag(nextVersion) : null,
+              max: 6
+            }),
             version: decision.status === "已完成" ? nextVersion : c.version,
             reports: [...c.reports, report]
           }));
@@ -688,7 +694,8 @@ export function App() {
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
     const nextVersion = bumpPatch(project.version);
-    const candidateTasks = project.tasks.filter((t) => t.tags.includes(`v${nextVersion}`));
+    const versionTag = buildVersionTag(nextVersion);
+    const candidateTasks = project.tasks.filter((t) => t.tags.includes(versionTag) || (t.status === "已完成" && t.version === nextVersion));
     const lines = [
       `# ${project.name} v${nextVersion}`, "",
       `- Worker: ${WORKER_KINDS.find((w) => w.kind === project.workerKind)?.label ?? "未分配"}`,

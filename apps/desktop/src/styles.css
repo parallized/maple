@@ -614,12 +614,13 @@ h3 {
   }
 }
 
-.task-row {
+.task-row > td > * {
   animation: task-row-enter 0.22s ease-out both;
+  animation-delay: var(--row-enter-delay, 0ms);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .task-row {
+  .task-row > td > * {
     animation: none;
   }
 }
@@ -1136,25 +1137,6 @@ h3 {
   font-size: 13px;
 }
 
-.task-details-cm .bn-editor .bn-block-content[data-content-type="paragraph"]:first-child .bn-inline-content:has(>.ProseMirror-trailingBreak):before {
-  content: "输入任务详情..." !important;
-  font-size: 13px !important;
-  color: color-mix(in srgb, var(--color-secondary) 40%, transparent) !important;
-  font-style: normal !important;
-  pointer-events: none;
-}
-
-.task-details-cm .bn-editor .bn-block-content[data-content-type="paragraph"]:not(:first-child) .bn-inline-content:has(>.ProseMirror-trailingBreak):before {
-  content: "" !important;
-  display: none !important;
-}
-
-/* 兼容 BlockNote 可能的层级结构 */
-.task-details-cm .bn-editor [data-content-type="paragraph"] ~ [data-content-type="paragraph"] .bn-inline-content:before {
-  content: "" !important;
-  display: none !important;
-}
-
 .task-details-cm .bn-editor [data-content-type="codeBlock"] {
   background-color: color-mix(in srgb, var(--color-base-200) 75%, transparent);
   color: var(--color-base-content);
@@ -1237,6 +1219,18 @@ h3 {
   padding: 0 0.75rem;
   color: var(--color-secondary);
   font-weight: 500;
+}
+
+.board-sidebar-nav-row {
+  display: flex;
+  gap: 6px;
+}
+
+.board-sidebar-nav-row .ui-btn {
+  width: auto;
+  flex: 1;
+  justify-content: center;
+  padding: 0 0.6rem;
 }
 
 .board-sidebar-nav .ui-btn .iconify {

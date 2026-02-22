@@ -6,7 +6,7 @@ import { PopoverMenu, type PopoverMenuItem } from "../components/PopoverMenu";
 import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WorkerLogo } from "../components/WorkerLogo";
 import { WORKER_KINDS } from "../lib/constants";
-import { resolveTagIcon, resolveTaskIcon } from "../lib/task-icons";
+import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
 import { relativeTimeZh, getLastMentionTime, getTimeLevel } from "../lib/utils";
 import type { DetailMode, Project, Task, WorkerKind } from "../domain";
 import React, { useRef, useState } from "react";
@@ -202,14 +202,16 @@ export function BoardView({
               <Icon icon="mingcute:add-line" className="text-base" />
               新建任务
             </motion.button>
-            <motion.button whileTap={{ scale: 0.96 }} type="button" className="ui-btn ui-btn--sm gap-2" onClick={() => onCompletePending(boardProject.id)}>
-              <Icon icon="mingcute:check-circle-line" className="text-base" />
-              执行待办
-            </motion.button>
-            <motion.button whileTap={{ scale: 0.96 }} type="button" className="ui-btn ui-btn--sm gap-2" onClick={onOpenConsole}>
-              <Icon icon="mingcute:terminal-box-line" className="text-base" />
-              控制台
-            </motion.button>
+            <div className="board-sidebar-nav-row">
+              <motion.button whileTap={{ scale: 0.96 }} type="button" className="ui-btn ui-btn--sm gap-2" onClick={() => onCompletePending(boardProject.id)}>
+                <Icon icon="mingcute:check-circle-line" className="text-base" />
+                执行待办
+              </motion.button>
+              <motion.button whileTap={{ scale: 0.96 }} type="button" className="ui-btn ui-btn--sm gap-2" onClick={onOpenConsole}>
+                <Icon icon="mingcute:terminal-box-line" className="text-base" />
+                控制台
+              </motion.button>
+            </div>
           </motion.div>
         </motion.aside>
         </AnimatePresence>
@@ -321,7 +323,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       initial="hidden"
       animate="visible"
       exit="exit"
-      style={{ animationDelay: `${index * 30}ms` }}
+      style={{ "--row-enter-delay": `${index * 30}ms` } as React.CSSProperties}
       className={[
         "task-row",
         task.id === selectedTaskId ? "selected" : "",
@@ -399,7 +401,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           {task.status}
         </span>
       </td>
-      <td className="col-lastMention text-[12px]">
+      <td className="col-lastMention text-[11px]">
         {(() => {
           const timeStr = getLastMentionTime(task);
           const level = getTimeLevel(timeStr);
@@ -409,12 +411,15 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       <td className="col-tags">
         <div className="tags-inline">
           {task.tags.length === 0 ? <span className="text-xs text-muted">—</span> : null}
-          {task.tags.map((tag, index) => (
-            <span key={`${tag}-${index}`} className="ui-badge">
-              <Icon icon={resolveTagIcon(tag)} className="text-[11px] opacity-70 shrink-0" />
-              <span className="flex-1 min-w-0">{tag}</span>
-            </span>
-          ))}
+          {task.tags.map((tag, index) => {
+            const { icon, isDefault } = resolveTagIconMeta(tag);
+            return (
+              <span key={`${tag}-${index}`} className="ui-badge">
+                {isDefault ? null : <Icon icon={icon} className="text-[11px] opacity-70 shrink-0" />}
+                <span className="flex-1 min-w-0">{tag}</span>
+              </span>
+            );
+          })}
         </div>
       </td>
       <td className="col-actions">

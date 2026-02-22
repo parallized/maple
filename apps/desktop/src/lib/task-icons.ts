@@ -60,6 +60,11 @@ export function resolveTagIcon(tag: string): string {
   return DEFAULT_TAG_ICON;
 }
 
+export function resolveTagIconMeta(tag: string): { icon: string; isDefault: boolean } {
+  const icon = resolveTagIcon(tag);
+  return { icon, isDefault: icon === DEFAULT_TAG_ICON };
+}
+
 export function resolveTaskIcon(task: Task): {
   icon: string;
   isDefault: boolean;
@@ -70,7 +75,11 @@ export function resolveTaskIcon(task: Task): {
     return { icon, isDefault: icon === DEFAULT_TASK_ICON };
   }
   if (task.tags.length > 0) {
-    return { icon: resolveTagIcon(task.tags[0]), isDefault: false };
+    const icon = resolveTagIcon(task.tags[0]);
+    if (icon === DEFAULT_TAG_ICON) {
+      return { icon: DEFAULT_TASK_ICON, isDefault: true };
+    }
+    return { icon, isDefault: false };
   }
   return { icon: DEFAULT_TASK_ICON, isDefault: true };
 }

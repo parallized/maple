@@ -1,12 +1,11 @@
 import type { PartialBlock } from "@blocknote/core";
 import { BlockNoteViewRaw, useCreateBlockNote } from "@blocknote/react";
 import "@blocknote/react/style.css";
-import { type FocusEvent, type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type FocusEvent, type KeyboardEvent, useCallback, useEffect, useRef } from "react";
 
 type TaskDetailsEditorProps = {
   value: string;
   onCommit: (nextValue: string) => void;
-  renderPreview?: (value: string) => ReactNode;
 };
 
 const EMPTY_BLOCK: PartialBlock = {
@@ -31,22 +30,21 @@ async function uploadFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-export function TaskDetailsEditor({ value, onCommit, renderPreview }: TaskDetailsEditorProps) {
+export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
   const currentValueRef = useRef(value);
   const ignoreNextBlurRef = useRef(false);
-  const [editing, setEditing] = useState(false);
+  const lastSyncedValueRef = useRef<string>("");
 
   const editor = useCreateBlockNote(
     {
+      placeholders: {
+        emptyDocument: "输入任务详情…",
+        default: "输入任务详情…"
+      },
       uploadFile: async (file) => uploadFileAsDataUrl(file)
     },
     []
   );
-
-  useEffect(() => {
-    currentValueRef.current = value;
-    setEditing(false);
-  }, [value]);
 
   const commitEditorMarkdown = useCallback(() => {
     let nextValue = currentValueRef.current;
@@ -57,6 +55,8 @@ export function TaskDetailsEditor({ value, onCommit, renderPreview }: TaskDetail
     }
     if (normalizeForCompare(nextValue) === normalizeForCompare(currentValueRef.current)) return;
     onCommit(nextValue);
+    currentValueRef.current = nextValue;
+    lastSyncedValueRef.current = normalizeForCompare(nextValue);
   }, [editor, onCommit]);
 
   const syncEditorFromMarkdown = useCallback(
@@ -78,52 +78,17 @@ export function TaskDetailsEditor({ value, onCommit, renderPreview }: TaskDetail
   );
 
   useEffect(() => {
-    if (!editing) return;
+    currentValueRef.current = value;
+    const normalizedIncoming = normalizeForCompare(value);
+    if (normalizedIncoming === lastSyncedValueRef.current) return;
 
     try {
-      syncEditorFromMarkdown(currentValueRef.current);
+      syncEditorFromMarkdown(value);
+      lastSyncedValueRef.current = normalizedIncoming;
     } catch {
       // Keep editor interactive even if parsing a malformed markdown chunk fails.
     }
-
-    queueMicrotask(() => {
-      const lastBlock = editor.document.at(-1);
-      if (lastBlock) {
-        editor.setTextCursorPosition(lastBlock.id, "end");
-      }
-      editor.focus();
-    });
-  }, [editing, editor, syncEditorFromMarkdown]);
-
-  if (!editing) {
-    const hasContent = value.trim().length > 0;
-    return (
-      <div
-        role="button"
-        tabIndex={0}
-        className="task-details-surface"
-        onClick={(event) => {
-          if (event.target instanceof Element && event.target.closest("a")) return;
-          setEditing(true);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            setEditing(true);
-          }
-        }}
-        aria-label="编辑详情"
-      >
-        {hasContent ? (
-          <div className="task-details-text">
-            {renderPreview ? renderPreview(value) : value}
-          </div>
-        ) : (
-          <span className="task-details-placeholder">添加详情…</span>
-        )}
-      </div>
-    );
-  }
+  }, [value, syncEditorFromMarkdown]);
 
   return (
     <div className="task-details-surface task-details-surface--editing">
@@ -142,14 +107,14 @@ export function TaskDetailsEditor({ value, onCommit, renderPreview }: TaskDetail
           if (event.key === "Escape") {
             event.preventDefault();
             ignoreNextBlurRef.current = true;
-            setEditing(false);
+            editor.blur();
             return;
           }
           if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
             event.preventDefault();
             ignoreNextBlurRef.current = true;
-            setEditing(false);
             commitEditorMarkdown();
+            editor.blur();
           }
         }}
         onBlur={(event: FocusEvent<HTMLDivElement>) => {
@@ -159,7 +124,6 @@ export function TaskDetailsEditor({ value, onCommit, renderPreview }: TaskDetail
           }
           const nextTarget = event.relatedTarget;
           if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-          setEditing(false);
           commitEditorMarkdown();
         }}
       />

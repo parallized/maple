@@ -309,7 +309,7 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
           className="flex flex-col mt-4 pt-4 border-t border-(--color-base-300)/30"
         >
           {onUpdateDetails ? (
-            <TaskDetailsEditor value={task.details ?? ""} onCommit={onUpdateDetails} renderPreview={(value) => renderTaskMarkdown(value, "添加详情…")} />
+            <TaskDetailsEditor value={task.details ?? ""} onCommit={onUpdateDetails} />
           ) : (
             <div className="task-details-surface">
               {task.details?.trim() ? (
