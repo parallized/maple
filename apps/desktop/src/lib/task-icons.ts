@@ -36,21 +36,27 @@ export function resolveTagIcon(tag: string): string {
   }
   if (normalizedTag.includes("架构")) return "mingcute:layout-grid-line";
   if (normalizedTag.includes("配置")) return "mingcute:settings-3-line";
-  if (normalizedTag.includes("ui") || normalizedTag.includes("ux")) return "mingcute:palette-line";
+  if (normalizedTag.includes("ui") || normalizedTag.includes("ux"))
+    return "mingcute:palette-line";
   if (normalizedTag.includes("新功能")) return "mingcute:add-line";
   if (normalizedTag.includes("工具链")) return "mingcute:plug-2-line";
   if (normalizedTag.includes("重构")) return "mingcute:refresh-2-line";
-  if (normalizedTag.includes("bug") || normalizedTag.includes("修复")) return "mingcute:shield-line";
+  if (normalizedTag.includes("bug") || normalizedTag.includes("修复"))
+    return "mingcute:shield-line";
   return DEFAULT_TAG_ICON;
 }
 
-export function resolveTaskIcon(task: Task): string {
+export function resolveTaskIcon(task: Task): {
+  icon: string;
+  isDefault: boolean;
+} {
   const explicit = (task as TaskWithIcon).icon;
   if (explicit) {
-    return normalizeIconName(explicit, DEFAULT_TASK_ICON);
+    const icon = normalizeIconName(explicit, DEFAULT_TASK_ICON);
+    return { icon, isDefault: icon === DEFAULT_TASK_ICON };
   }
   if (task.tags.length > 0) {
-    return resolveTagIcon(task.tags[0]);
+    return { icon: resolveTagIcon(task.tags[0]), isDefault: false };
   }
-  return DEFAULT_TASK_ICON;
+  return { icon: DEFAULT_TASK_ICON, isDefault: true };
 }

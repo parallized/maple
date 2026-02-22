@@ -298,9 +298,17 @@ function TaskTable({
             }}
           >
             <td className="col-taskIcon text-center">
-              <span className="task-icon-pill" title={task.title || "(无标题)"}>
-                <Icon icon={resolveTaskIcon(task)} className="text-base" />
-              </span>
+              {(() => {
+                const { icon, isDefault } = resolveTaskIcon(task);
+                return (
+                  <span 
+                    className={`task-icon-pill ${isDefault ? 'opacity-70' : 'opacity-100'}`} 
+                    title={task.title || "(无标题)"}
+                  >
+                    <Icon icon={icon} className="text-base" />
+                  </span>
+                );
+              })()}
             </td>
             <td className="col-task">
               {editingTaskId === task.id ? (
