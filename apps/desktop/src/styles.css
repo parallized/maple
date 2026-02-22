@@ -4,6 +4,7 @@
 
 /* ── Theme tokens ── */
 :root {
+  --font-serif: "Georgia", "Cambria", "Times New Roman", "Times", "Noto Serif SC", "Songti SC", serif;
   --font-sans:
     "Maple Mono", "Smiley Sans", "得意黑", "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
@@ -621,7 +622,6 @@ h3 {
     color-mix(in srgb, var(--color-base-300) 25%, transparent);
   padding: 0 0.5rem 0 0;
   font-size: 0.875rem;
-  transition: background 0.1s;
   height: 36px;
   vertical-align: middle;
 }
@@ -656,19 +656,12 @@ h3 {
 }
 
 .task-row .task-open-btn {
-  opacity: 0;
-  transform: translateX(8px) scale(0.96);
-  pointer-events: none;
-  transition:
-    opacity 0.12s ease,
-    transform 0.16s ease;
+  display: none;
 }
 
 .task-row:hover .task-open-btn,
 .task-row.selected .task-open-btn {
-  opacity: 1;
-  transform: translateX(0) scale(1);
-  pointer-events: auto;
+  display: inline-flex;
 }
 
 /* ── Column Resize Handle ── */
@@ -833,13 +826,12 @@ h3 {
   background: color-mix(in srgb, var(--color-base-200) 40%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-base-300) 30%, transparent);
   color: var(--color-secondary);
-  transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .task-row:hover .task-icon-pill {
   background: color-mix(in srgb, var(--color-base-200) 80%, transparent);
   border-color: color-mix(in srgb, var(--color-base-300) 60%, transparent);
-  transform: scale(1.05);
 }
 
 /* ── Popover ── */
@@ -954,107 +946,191 @@ h3 {
   appearance: none;
   border: 1px solid transparent;
   background: transparent;
-  border-radius: 14px;
-  padding: 0.55rem 0.6rem;
+  border-radius: 8px;
+  padding: 0;
   cursor: text;
   outline: none;
-  transition:
-    background 0.12s,
-    border-color 0.12s;
-}
-
-.task-details-surface:hover {
-  background: color-mix(in srgb, var(--color-base-200) 55%, transparent);
-  border-color: color-mix(in srgb, var(--color-base-300) 55%, transparent);
-}
-
-.task-details-surface:focus-visible {
-  box-shadow: 0 0 0 3px var(--ring-primary);
 }
 
 .task-details-surface--editing {
-  padding: 0.4rem 0.45rem;
-  background: color-mix(in srgb, var(--color-base-200) 45%, transparent);
-  border-color: color-mix(in srgb, var(--color-base-300) 70%, transparent);
-  cursor: text;
+  background: transparent;
+  border-color: transparent;
+  padding: 0;
 }
 
 .task-details-text {
-  line-height: 1.7;
-  font-size: 0.9rem;
-  color: color-mix(in srgb, var(--color-base-content) 78%, transparent);
+  line-height: 1.6;
+  font-size: 13px;
+  color: var(--color-base-content);
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.5rem;
+  font-family: var(--font-sans);
 }
 
-.task-details-text img,
-.report-content img {
-  width: 100%;
-  max-height: 320px;
-  object-fit: contain;
+.report-content {
+  font-family: var(--font-sans);
+  font-size: 13px;
 }
+
+.task-details-text p,
+.report-content p {
+  margin: 0;
+}
+
+.task-details-text h1,
+.task-details-text h2,
+.task-details-text h3,
+.report-content h1,
+.report-content h2,
+.report-content h3 {
+  font-family: var(--font-sans);
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: var(--color-base-content);
+}
+
+.task-details-text h1, .report-content h1 { font-size: 1.4em; }
+.task-details-text h2, .report-content h2 { font-size: 1.2em; }
+.task-details-text h3, .report-content h3 { font-size: 1.1em; }
 
 .task-details-text ul,
 .task-details-text ol,
 .report-content ul,
 .report-content ol {
   margin: 0;
+  padding-left: 1.25rem;
+}
+
+.task-details-text li,
+.report-content li {
+  margin-bottom: 0.15rem;
+}
+
+.report-content p {
+  margin-bottom: 0.25rem;
+}
+
+.task-details-text code,
+.report-content code {
+  font-family: var(--font-mono);
+  background: color-mix(in srgb, var(--color-base-200) 80%, transparent);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.task-details-text pre,
+.report-content pre {
+  background: color-mix(in srgb, var(--color-base-200) 50%, transparent);
+  padding: 0.75rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+  border: 1px solid color-mix(in srgb, var(--color-base-300) 50%, transparent);
+}
+
+.task-details-text blockquote,
+.report-content blockquote {
+  margin: 0.5rem 0;
+  padding-left: 1rem;
+  border-left: 3px solid var(--color-base-300);
+  color: var(--color-secondary);
+  font-style: italic;
+}
+
+.task-details-text hr,
+.report-content hr {
+  margin: 1.5rem 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-base-300) 50%, transparent);
 }
 
 .task-details-placeholder {
-  font-size: 0.9rem;
-  color: color-mix(in srgb, var(--color-secondary) 70%, transparent);
+  font-size: 14px;
+  color: color-mix(in srgb, var(--color-secondary) 50%, transparent);
 }
 
 .task-details-cm {
-  border-radius: 10px;
+  border-radius: 0;
+  position: relative;
 }
 
-.task-details-cm .cm-editor {
-  border: none;
-  outline: none;
+.task-details-cm .bn-container {
+  --bn-font-family: var(--font-sans);
+  --bn-border-radius: 6px;
+  --bn-colors-editor-text: var(--color-base-content);
+  --bn-colors-editor-background: transparent;
+  --bn-colors-menu-text: var(--color-base-content);
+  --bn-colors-menu-background: var(--color-base-100);
+  --bn-colors-tooltip-text: var(--color-base-content);
+  --bn-colors-tooltip-background: var(--color-base-100);
+  --bn-colors-hovered-text: var(--color-base-content);
+  --bn-colors-hovered-background: var(--btn-hover);
+  --bn-colors-selected-text: var(--color-base-content);
+  --bn-colors-selected-background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  --bn-colors-disabled-text: color-mix(in srgb, var(--color-secondary) 60%, transparent);
+  --bn-colors-disabled-background: transparent;
+  --bn-colors-shadow: rgba(0, 0, 0, 0.1);
+  --bn-colors-border: var(--color-base-300);
+  --bn-colors-side-menu: var(--color-secondary);
+}
+
+:root:not(.dark) .task-details-cm .bn-container,
+:root.light .task-details-cm .bn-container {
+  --bn-colors-editor-text: #1d1d1f;
+  --bn-colors-shadow: rgba(0, 0, 0, 0.05);
+}
+
+.task-details-cm .bn-editor {
   background: transparent;
+  border-radius: 0;
+  padding-inline: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 100px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.task-details-cm .bn-default-styles {
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.task-details-cm .bn-editor .bn-block-content[data-content-type="paragraph"]:first-child .bn-inline-content:has(>.ProseMirror-trailingBreak):before {
+  content: "输入任务详情..." !important;
+  font-size: 13px !important;
+  color: color-mix(in srgb, var(--color-secondary) 40%, transparent) !important;
+  font-style: normal !important;
+  pointer-events: none;
+}
+
+.task-details-cm .bn-editor .bn-block-content[data-content-type="paragraph"]:not(:first-child) .bn-inline-content:has(>.ProseMirror-trailingBreak):before {
+  content: "" !important;
+  display: none !important;
+}
+
+/* 兼容 BlockNote 可能的层级结构 */
+.task-details-cm .bn-editor [data-content-type="paragraph"] ~ [data-content-type="paragraph"] .bn-inline-content:before {
+  content: "" !important;
+  display: none !important;
+}
+
+.task-details-cm .bn-editor [data-content-type="codeBlock"] {
+  background-color: color-mix(in srgb, var(--color-base-200) 75%, transparent);
   color: var(--color-base-content);
-  font-family: var(--font-sans);
-  font-size: 0.9rem;
-  line-height: 1.7;
+  border: 1px solid color-mix(in srgb, var(--color-base-300) 65%, transparent);
 }
 
-.task-details-cm .cm-editor.cm-focused {
-  outline: none;
+:root:not(.dark) .task-details-cm .bn-editor [data-content-type="codeBlock"],
+:root.light .task-details-cm .bn-editor [data-content-type="codeBlock"] {
+  background-color: color-mix(in srgb, var(--color-base-200) 40%, transparent);
 }
 
-.task-details-cm .cm-scroller {
-  min-height: 120px;
-  max-height: 360px;
-  overflow: auto;
-  font-family: var(--font-sans);
-}
-
-.task-details-cm .cm-content {
-  padding: 0.05rem 0;
-}
-
-.task-details-cm .cm-line {
-  padding: 0;
-}
-
-.task-details-cm .cm-placeholder {
-  color: color-mix(in srgb, var(--color-secondary) 72%, transparent);
-}
-
-.task-details-cm .cm-cursor {
-  border-left-color: var(--color-primary);
-}
-
-.task-details-cm .cm-selectionBackground,
-.task-details-cm .cm-content ::selection {
-  background: color-mix(in srgb, var(--color-primary) 22%, transparent) !important;
-}
-
-.task-details-cm .cm-gutters {
-  display: none;
+.task-details-cm .bn-editor [data-content-type="codeBlock"] > pre {
+  font-family: var(--font-mono);
 }
 
 .task-detail-section-title {

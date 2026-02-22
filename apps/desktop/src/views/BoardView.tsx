@@ -289,8 +289,7 @@ const trVariants = {
     filter: "blur(0px)",
     transition: { delay: index * 0.03, type: "spring" as const, stiffness: 400, damping: 30 }
   }),
-  exit: { opacity: 0, y: -10, filter: "blur(4px)", transition: { duration: 0.15 } },
-  rowHover: {}
+  exit: { opacity: 0, y: -10, filter: "blur(4px)", transition: { duration: 0.15 } }
 };
 
 type TaskRowProps = {
@@ -324,7 +323,6 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       initial="hidden"
       animate="visible"
       exit="exit"
-      whileHover="rowHover"
       className={[
         "task-row",
         task.id === selectedTaskId ? "selected" : "",

@@ -272,45 +272,41 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
                   })}
                 </nav>
               ) : (
-                <div className="flex items-center text-[13px] text-muted opacity-40 pb-2.5">
+                <div className="flex items-center text-[13px] text-muted opacity-40 pb-2">
                   暂无执行报告
                 </div>
               )}
             </div>
           </header>
 
-          {completedReports.length > 0 && (
-            <div className="relative mt-2">
-              {completedReports.filter(r => r.id === activeReportId).map((report, index) => {
-                const parsed = parseTaskReport(report.content);
-                return (
-                  <motion.article 
-                    initial={{ opacity: 0, y: 15, filter: "blur(4px)" }}
-                    animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { delay: index * 0.05 } }}
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                    key={report.id} 
-                    className="flex flex-col duration-300"
-                  >
-                    <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90">
-                      {parsed ? renderTaskMarkdown(parsed.description) : renderTaskMarkdown(report.content)}
-                    </div>
-                  </motion.article>
-                );
-              })}
-            </div>
-          )}
+          <div className="pl-[22px] mt-1">
+            {completedReports.length > 0 && (
+              <div className="relative">
+                {completedReports.filter(r => r.id === activeReportId).map((report, index) => {
+                  const parsed = parseTaskReport(report.content);
+                  return (
+                    <motion.article 
+                      initial={{ opacity: 0, y: 15, filter: "blur(4px)" }}
+                      animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { delay: index * 0.05 } }}
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      key={report.id} 
+                      className="flex flex-col duration-300"
+                    >
+                      <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90">
+                        {parsed ? renderTaskMarkdown(parsed.description) : renderTaskMarkdown(report.content)}
+                      </div>
+                    </motion.article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </motion.div>
 
         <motion.div 
           variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
-          className="flex flex-col mt-2"
+          className="flex flex-col mt-4 pt-4 border-t border-(--color-base-300)/30"
         >
-          <header className="flex items-center gap-2 h-9">
-            <h3 className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] m-0">
-              <Icon icon="mingcute:file-text-line" className="text-[15px] opacity-60" />
-              详情
-            </h3>
-          </header>
           {onUpdateDetails ? (
             <TaskDetailsEditor value={task.details ?? ""} onCommit={onUpdateDetails} renderPreview={(value) => renderTaskMarkdown(value, "添加详情…")} />
           ) : (
