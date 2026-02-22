@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Icon } from "@iconify/react";
 import type { Task, TaskReport } from "../domain";
 import { relativeTimeZh, getTimeLevel } from "../lib/utils";
@@ -283,22 +283,25 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
           <div className="pl-[22px] mt-1">
             {completedReports.length > 0 && (
               <div className="relative">
-                {completedReports.filter(r => r.id === activeReportId).map((report, index) => {
-                  const parsed = parseTaskReport(report.content);
-                  return (
-                    <motion.article 
-                      initial={{ opacity: 0, y: 15, filter: "blur(4px)" }}
-                      animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { delay: index * 0.05 } }}
-                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                      key={report.id} 
-                      className="flex flex-col duration-300"
-                    >
-                      <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90">
-                        {parsed ? renderTaskMarkdown(parsed.description) : renderTaskMarkdown(report.content)}
-                      </div>
-                    </motion.article>
-                  );
-                })}
+                <AnimatePresence mode="wait">
+                  {completedReports.filter(r => r.id === activeReportId).map((report) => {
+                    const parsed = parseTaskReport(report.content);
+                    return (
+                      <motion.article 
+                        key={report.id}
+                        initial={{ opacity: 0, y: 10, filter: "blur(4px)" }}
+                        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                        exit={{ opacity: 0, y: -10, filter: "blur(4px)" }}
+                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                        className="flex flex-col"
+                      >
+                        <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90">
+                          {parsed ? renderTaskMarkdown(parsed.description) : renderTaskMarkdown(report.content)}
+                        </div>
+                      </motion.article>
+                    );
+                  })}
+                </AnimatePresence>
               </div>
             )}
           </div>

@@ -381,15 +381,16 @@ h3 {
   padding: 16px;
 }
 
-.ui-table {
+.task-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
 }
 
 .ui-table th,
 .ui-table td {
   padding: 0.5rem 0.4rem;
-  border-bottom: 1px solid var(--color-base-300);
   text-align: left;
   vertical-align: top;
 }
@@ -628,16 +629,37 @@ h3 {
 .task-table th {
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 30;
   background: var(--color-base-100);
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--color-base-300) 25%, transparent);
   text-align: left;
   padding: 0.6rem 0.5rem 0.6rem 0;
+  margin: 0;
   font-weight: 500;
   font-size: 0.8125rem;
-  color: color-mix(in srgb, var(--color-secondary) 50%, transparent);
+  color: var(--color-secondary);
   white-space: nowrap;
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-base-300) 40%, transparent);
+}
+
+.task-table th.col-taskIcon {
+  padding-right: 0.2rem;
+}
+
+.task-table thead tr {
+  margin: 0;
+  padding: 0;
+}
+
+.task-table thead::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 4px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.03), transparent);
+  pointer-events: none;
+  z-index: 29;
 }
 
 .task-table th.col-tags,
@@ -658,6 +680,10 @@ h3 {
   font-size: 0.875rem;
   height: 36px;
   vertical-align: middle;
+}
+
+.task-row td.col-taskIcon {
+  padding-right: 0.2rem;
 }
 
 .task-row td.col-task,

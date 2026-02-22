@@ -465,11 +465,7 @@ function TaskTable({
         <col style={{ width: colWidths.actions }} />
       </colgroup>
       <thead>
-        <motion.tr
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
-        >
+        <tr>
           {[
             { key: "taskIcon", label: "", icon: "mingcute:ai-line" },
             { key: "task", label: "任务", icon: "mingcute:task-line" },
@@ -492,7 +488,7 @@ function TaskTable({
             </th>
           ))}
           <th className="col-actions"></th>
-        </motion.tr>
+        </tr>
       </thead>
       <motion.tbody
         initial="hidden"
