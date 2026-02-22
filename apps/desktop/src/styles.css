@@ -16,6 +16,8 @@
   --color-base-300: #e5e5e7;
   --color-base-content: #1d1d1f;
   --color-secondary: #6b7280;
+  --color-success: #4da872;
+  --color-warning: #e3b341;
   --color-error: #d47049;
   --color-primary: #f2723c; /* Maple orange */
   --ring-primary: rgba(242, 114, 60, 0.2);
@@ -34,6 +36,8 @@
     --color-base-300: #2c2c2e;
     --color-base-content: #f5f5f7;
     --color-secondary: #9ca3af;
+    --color-success: #4df07c;
+    --color-warning: #ffd60a;
     --color-error: #ff7b72;
     --color-primary: #f2723c; /* Maple orange */
     --ring-primary: rgba(242, 114, 60, 0.25);
@@ -52,6 +56,8 @@
   --color-base-300: #2c2c2e;
   --color-base-content: #f5f5f7;
   --color-secondary: #9ca3af;
+  --color-success: #4df07c;
+  --color-warning: #ffd60a;
   --color-error: #ff7b72;
   --color-primary: #f2723c;
   --ring-primary: rgba(242, 114, 60, 0.25);
@@ -166,25 +172,33 @@ h3 {
 }
 
 .ui-badge.ui-badge--solid {
-  background: var(--color-primary);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  color: var(--color-primary);
+  font-weight: 500;
 }
 
 .ui-badge.ui-badge--success {
-  background: color-mix(in srgb, var(--color-success) 20%, transparent);
-  color: color-mix(in srgb, var(--color-success) 90%, #fff);
-  text-shadow: 0 0 12px color-mix(in srgb, var(--color-success) 40%, transparent);
+  background: color-mix(in srgb, var(--color-success) 18%, transparent);
+  color: var(--color-success);
   font-weight: 500;
 }
 
 .ui-badge.ui-badge--warning {
-  background: #e3b341;
-  color: #ffffff;
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+  font-weight: 500;
 }
 
 .ui-badge.ui-badge--error {
-  background: #d47049;
-  color: #ffffff;
+  background: color-mix(in srgb, var(--color-error) 18%, transparent);
+  color: var(--color-error);
+  font-weight: 500;
+}
+
+.ui-badge.ui-badge--neutral {
+  background: color-mix(in srgb, var(--color-secondary) 18%, transparent);
+  color: var(--color-secondary);
+  font-weight: 500;
 }
 
 /* ── Status Dots ── */
@@ -591,6 +605,25 @@ h3 {
   table-layout: fixed;
 }
 
+@keyframes task-row-enter {
+  from {
+    transform: translateY(8px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.task-row {
+  animation: task-row-enter 0.22s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-row {
+    animation: none;
+  }
+}
+
 .task-table th {
   position: sticky;
   top: 0;
@@ -656,12 +689,15 @@ h3 {
 }
 
 .task-row .task-open-btn {
-  display: none;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
 }
 
 .task-row:hover .task-open-btn,
 .task-row.selected .task-open-btn {
-  display: inline-flex;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* ── Column Resize Handle ── */
@@ -773,6 +809,7 @@ h3 {
 .task-title-cell {
   position: relative;
   width: 100%;
+  padding-right: 58px;
 }
 
 .task-open-btn {
@@ -1559,15 +1596,6 @@ h3 {
 /* ── Dark Mode Component Overrides ── */
 
 @media (prefers-color-scheme: dark) {
-  :root:not(.light) .ui-badge--success {
-    color: #4df07c;
-  }
-  :root:not(.light) .ui-badge--warning {
-    color: #ffd60a;
-  }
-  :root:not(.light) .ui-badge--error {
-    color: #ff453a;
-  }
   :root:not(.light) .ui-modal-backdrop {
     background: rgba(0, 0, 0, 0.7);
   }
@@ -1586,15 +1614,6 @@ h3 {
   }
 }
 
-:root.dark .ui-badge--success {
-  color: #4df07c;
-}
-:root.dark .ui-badge--warning {
-  color: #ffd60a;
-}
-:root.dark .ui-badge--error {
-  color: #ff453a;
-}
 :root.dark .ui-modal-backdrop {
   background: rgba(0, 0, 0, 0.7);
 }

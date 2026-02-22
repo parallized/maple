@@ -282,14 +282,12 @@ type TaskTableProps = {
 };
 
 const trVariants = {
-  hidden: { opacity: 0, y: 15, filter: "blur(4px)" },
+  hidden: { opacity: 0 },
   visible: (index: number) => ({
     opacity: 1,
-    y: 0,
-    filter: "blur(0px)",
-    transition: { delay: index * 0.03, type: "spring" as const, stiffness: 400, damping: 30 }
+    transition: { delay: index * 0.03, duration: 0.18, ease: "easeOut" as const }
   }),
-  exit: { opacity: 0, y: -10, filter: "blur(4px)", transition: { duration: 0.15 } }
+  exit: { opacity: 0, transition: { duration: 0.12 } }
 };
 
 type TaskRowProps = {
@@ -312,8 +310,8 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   projectId,
   onSelectTask,
   onEditTask,
-  onCommitTaskTitle,
-  onDeleteTask
+	onCommitTaskTitle,
+	onDeleteTask
 }, ref) => {
   return (
     <motion.tr
@@ -323,6 +321,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       initial="hidden"
       animate="visible"
       exit="exit"
+      style={{ animationDelay: `${index * 30}ms` }}
       className={[
         "task-row",
         task.id === selectedTaskId ? "selected" : "",
@@ -383,7 +382,19 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       </td>
       <td className="col-status">
         <span
-          className={`ui-badge ${task.status === "已完成" ? "ui-badge--success" : task.status === "已阻塞" ? "ui-badge--error" : task.status === "进行中" ? "ui-badge--solid" : task.status === "需要更多信息" ? "ui-badge--warning" : ""}`}
+          className={`ui-badge ${
+            task.status === "已完成"
+              ? "ui-badge--success"
+              : task.status === "已阻塞"
+                ? "ui-badge--error"
+                : task.status === "进行中"
+                  ? "ui-badge--solid"
+                  : task.status === "需要更多信息"
+                    ? "ui-badge--warning"
+                    : task.status === "队列中" || task.status === "待办"
+                      ? "ui-badge--neutral"
+                      : ""
+          }`}
         >
           {task.status}
         </span>

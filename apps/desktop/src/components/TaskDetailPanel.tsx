@@ -79,6 +79,7 @@ function reportBadgeClass(status: string): string {
   if (status.includes("已阻塞")) return "ui-badge--error";
   if (status.includes("进行中")) return "ui-badge--solid";
   if (status.includes("需要更多信息")) return "ui-badge--warning";
+  if (status.includes("队列中") || status.includes("待办")) return "ui-badge--neutral";
   return "";
 }
 
