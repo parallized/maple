@@ -67,15 +67,15 @@ export function TopNav({
         <div className="w-px h-4 bg-(--color-base-300) mx-1" />
 
         <div className="topnav-scroll">
-          <AnimatePresence mode="popLayout">
+          <AnimatePresence>
             {projects.map((project, index) => {
               const active = view === "board" && boardProjectId === project.id;
               const pending = project.tasks.filter((t) => t.status !== "已完成").length;
               return (
                 <motion.button
-                  initial={{ opacity: 0, scale: 0.9, x: -10 }}
-                  animate={{ opacity: 1, scale: 1, x: 0, transition: { delay: index * 0.05 } }}
-                  exit={{ opacity: 0, scale: 0.9, width: 0, padding: 0, margin: 0, transition: { duration: 0.15 } }}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0, transition: { delay: index * 0.05 } }}
+                  exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
                   transition={{ type: "spring", stiffness: 400, damping: 30 }}
                   key={project.id}
                   type="button"

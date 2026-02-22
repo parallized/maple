@@ -170,8 +170,10 @@ h3 {
 }
 
 .ui-badge.ui-badge--success {
-  background: #23835c;
-  color: #ffffff;
+  background: color-mix(in srgb, var(--color-success) 20%, transparent);
+  color: color-mix(in srgb, var(--color-success) 90%, #fff);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--color-success) 40%, transparent);
+  font-weight: 500;
 }
 
 .ui-badge.ui-badge--warning {

@@ -113,6 +113,7 @@ export function BoardView({
     <section className="h-full max-w-full flex flex-col">
       <div className="board-layout">
         <motion.aside 
+          key={`sidebar-${boardProject.id}`}
           initial="hidden"
           animate="visible"
           variants={{
@@ -212,6 +213,7 @@ export function BoardView({
         </motion.aside>
 
         <motion.div 
+          key={`main-${boardProject.id}`}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
@@ -345,7 +347,7 @@ function TaskTable({
               key={task.id}
               initial={{ opacity: 0, y: 15, filter: "blur(4px)" }}
               animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { delay: index * 0.03 } }}
-              exit={{ opacity: 0, scale: 0.96, filter: "blur(4px)", transition: { duration: 0.15 } }}
+              exit={{ opacity: 0, y: -10, filter: "blur(4px)", transition: { duration: 0.15 } }}
               transition={{ type: "spring", stiffness: 400, damping: 30 }}
               className={[
                 "task-row",
