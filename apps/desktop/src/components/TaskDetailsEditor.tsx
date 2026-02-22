@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 type TaskDetailsEditorProps = {
   value: string;
   onCommit: (nextValue: string) => void;
+  renderPreview?: (value: string) => ReactNode;
 };
 
 function normalizeLineEndings(text: string): string {
   return text.replace(/\r\n/g, "\n");
 }
 
-export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
+export function TaskDetailsEditor({ value, onCommit, renderPreview }: TaskDetailsEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -48,21 +49,35 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
     onCommit(normalizedNext);
   }
 
+  function openEditing(nextTarget?: EventTarget | null) {
+    if (nextTarget instanceof Element && nextTarget.closest("a")) return;
+    setEditing(true);
+  }
+
   if (!editing) {
     const hasContent = value.trim().length > 0;
     return (
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className="task-details-surface"
-        onClick={() => setEditing(true)}
+        onClick={(event) => openEditing(event.target)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openEditing();
+          }
+        }}
         aria-label="编辑详情"
       >
         {hasContent ? (
-          <div className="task-details-text">{value}</div>
+          <div className="task-details-text">
+            {renderPreview ? renderPreview(value) : value}
+          </div>
         ) : (
           <span className="task-details-placeholder">添加详情…</span>
         )}
-      </button>
+      </div>
     );
   }
 
@@ -96,4 +111,3 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
     </div>
   );
 }
-

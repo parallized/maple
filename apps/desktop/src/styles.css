@@ -657,11 +657,18 @@ h3 {
 
 .task-row .task-open-btn {
   opacity: 0;
-  transition: opacity 0.1s;
+  transform: translateX(8px) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    transform 0.16s ease;
 }
 
-.task-row:hover .task-open-btn {
+.task-row:hover .task-open-btn,
+.task-row.selected .task-open-btn {
   opacity: 1;
+  transform: translateX(0) scale(1);
+  pointer-events: auto;
 }
 
 /* ── Column Resize Handle ── */
@@ -782,16 +789,8 @@ h3 {
   bottom: 0;
   margin-block: auto;
   display: inline-flex;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
   z-index: 10;
   background: var(--color-base-100) !important;
-}
-
-.task-row:hover .task-open-btn {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .tags-inline {
@@ -979,10 +978,26 @@ h3 {
 }
 
 .task-details-text {
-  white-space: pre-wrap;
   line-height: 1.7;
   font-size: 0.9rem;
   color: color-mix(in srgb, var(--color-base-content) 78%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.task-details-text img,
+.report-content img {
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+}
+
+.task-details-text ul,
+.task-details-text ol,
+.report-content ul,
+.report-content ol {
+  margin: 0;
 }
 
 .task-details-placeholder {

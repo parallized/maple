@@ -9,8 +9,7 @@ import { WORKER_KINDS } from "../lib/constants";
 import { resolveTagIcon, resolveTaskIcon } from "../lib/task-icons";
 import { relativeTimeZh, getLastMentionTime, getTimeLevel } from "../lib/utils";
 import type { DetailMode, Project, Task, WorkerKind } from "../domain";
-import type React from "react";
-import { useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 
 type BoardViewProps = {
   boardProject: Project | null;
@@ -282,6 +281,151 @@ type TaskTableProps = {
   onResizeDblClick: (col: string) => void;
 };
 
+const trVariants = {
+  hidden: { opacity: 0, y: 15, filter: "blur(4px)" },
+  visible: (index: number) => ({
+    opacity: 1,
+    y: 0,
+    filter: "blur(0px)",
+    transition: { delay: index * 0.03, type: "spring" as const, stiffness: 400, damping: 30 }
+  }),
+  exit: { opacity: 0, y: -10, filter: "blur(4px)", transition: { duration: 0.15 } },
+  rowHover: {}
+};
+
+type TaskRowProps = {
+  task: Task;
+  index: number;
+  selectedTaskId: string | null;
+  editingTaskId: string | null;
+  projectId: string;
+  onSelectTask: (taskId: string) => void;
+  onEditTask: (taskId: string) => void;
+  onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
+  onDeleteTask: (projectId: string, taskId: string) => void;
+};
+
+const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
+  task,
+  index,
+  selectedTaskId,
+  editingTaskId,
+  projectId,
+  onSelectTask,
+  onEditTask,
+  onCommitTaskTitle,
+  onDeleteTask
+}, ref) => {
+  return (
+    <motion.tr
+      ref={ref}
+      custom={index}
+      variants={trVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+      whileHover="rowHover"
+      className={[
+        "task-row",
+        task.id === selectedTaskId ? "selected" : "",
+        editingTaskId === task.id ? "editing" : ""
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onClick={() => {
+        if (editingTaskId !== task.id) {
+          onSelectTask(task.id);
+        }
+      }}
+    >
+      <td className="col-taskIcon text-center">
+        {(() => {
+          const { icon, isDefault } = resolveTaskIcon(task);
+          return (
+            <span
+              className={`task-icon-pill ${isDefault ? "opacity-70" : "opacity-100"}`}
+              title={task.title || "(无标题)"}
+            >
+              <Icon icon={icon} className="text-base" />
+            </span>
+          );
+        })()}
+      </td>
+      <td className="col-task">
+        {editingTaskId === task.id ? (
+          <InlineTaskInput
+            initialValue={task.title}
+            onCommit={(title) => onCommitTaskTitle(projectId, task.id, title)}
+          />
+        ) : (
+          <div className="task-title-cell flex items-center gap-1 min-w-0">
+            <span
+              className="task-title-text flex-1 cursor-text px-0.5 overflow-hidden text-ellipsis whitespace-nowrap"
+              style={{ maxWidth: `${TASK_TITLE_MAX_WIDTH}px` }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditTask(task.id);
+              }}
+            >
+              {task.title || "(无标题)"}
+            </span>
+            <button
+              type="button"
+              className="task-open-btn ui-btn ui-btn--xs ui-btn--outline shrink-0 gap-1 text-(--color-primary)"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectTask(task.id);
+              }}
+            >
+              <Icon icon="mingcute:external-link-line" className="text-xs" />
+              打开
+            </button>
+          </div>
+        )}
+      </td>
+      <td className="col-status">
+        <span
+          className={`ui-badge ${task.status === "已完成" ? "ui-badge--success" : task.status === "已阻塞" ? "ui-badge--error" : task.status === "进行中" ? "ui-badge--solid" : task.status === "需要更多信息" ? "ui-badge--warning" : ""}`}
+        >
+          {task.status}
+        </span>
+      </td>
+      <td className="col-lastMention text-[12px]">
+        {(() => {
+          const timeStr = getLastMentionTime(task);
+          const level = getTimeLevel(timeStr);
+          return <span className={`time-level-${level}`}>{relativeTimeZh(timeStr)}</span>;
+        })()}
+      </td>
+      <td className="col-tags">
+        <div className="tags-inline">
+          {task.tags.length === 0 ? <span className="text-xs text-muted">—</span> : null}
+          {task.tags.map((tag, index) => (
+            <span key={`${tag}-${index}`} className="ui-badge">
+              <Icon icon={resolveTagIcon(tag)} className="text-[11px] opacity-70 shrink-0" />
+              <span className="flex-1 min-w-0">{tag}</span>
+            </span>
+          ))}
+        </div>
+      </td>
+      <td className="col-actions">
+        <motion.button
+          whileTap={{ scale: 0.85 }}
+          type="button"
+          className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn row-delete-btn opacity-0 transition-opacity"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeleteTask(projectId, task.id);
+          }}
+          aria-label="删除任务"
+        >
+          <Icon icon="mingcute:delete-2-line" />
+        </motion.button>
+      </td>
+    </motion.tr>
+  );
+});
+
 function TaskTable({
   tasks,
   projectId,
@@ -348,115 +492,20 @@ function TaskTable({
       >
         <AnimatePresence>
           {tasks.map((task, index) => (
-            <motion.tr
+            <TaskRow
               key={task.id}
-              initial={{ opacity: 0, y: 15, filter: "blur(4px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)", transition: { delay: index * 0.03 } }}
-              exit={{ opacity: 0, y: -10, filter: "blur(4px)", transition: { duration: 0.15 } }}
-              transition={{ type: "spring", stiffness: 400, damping: 30 }}
-              className={[
-                "task-row",
-                task.id === selectedTaskId ? "selected" : "",
-                editingTaskId === task.id ? "editing" : ""
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onClick={() => {
-                if (editingTaskId !== task.id) {
-                  onSelectTask(task.id);
-                }
-              }}
-            >
-              <td className="col-taskIcon text-center">
-              {(() => {
-                const { icon, isDefault } = resolveTaskIcon(task);
-                return (
-                  <span 
-                    className={`task-icon-pill ${isDefault ? 'opacity-70' : 'opacity-100'}`} 
-                    title={task.title || "(无标题)"}
-                  >
-                    <Icon icon={icon} className="text-base" />
-                  </span>
-                );
-              })()}
-            </td>
-            <td className="col-task">
-              {editingTaskId === task.id ? (
-                <InlineTaskInput
-                  initialValue={task.title}
-                  onCommit={(title) => onCommitTaskTitle(projectId, task.id, title)}
-                />
-              ) : (
-                <div className="task-title-cell flex items-center gap-1 min-w-0">
-                  <span
-                    className="task-title-text flex-1 cursor-text px-0.5 overflow-hidden text-ellipsis whitespace-nowrap"
-                    style={{ maxWidth: `${TASK_TITLE_MAX_WIDTH}px` }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEditTask(task.id);
-                    }}
-                  >
-                    {task.title || "(无标题)"}
-                  </span>
-                  <motion.button
-                    whileTap={{ scale: 0.92 }}
-                    type="button"
-                    className="task-open-btn ui-btn ui-btn--xs ui-btn--outline shrink-0 gap-1 text-(--color-primary)"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectTask(task.id);
-                    }}
-                  >
-                    <Icon icon="mingcute:external-link-line" className="text-xs" />
-                    打开
-                  </motion.button>
-                </div>
-              )}
-            </td>
-            <td className="col-status">
-              <span className={`ui-badge ${task.status === "已完成" ? "ui-badge--success" : task.status === "已阻塞" ? "ui-badge--error" : task.status === "进行中" ? "ui-badge--solid" : task.status === "需要更多信息" ? "ui-badge--warning" : ""}`}>
-                {task.status}
-              </span>
-            </td>
-            <td className="col-lastMention text-[12px]">
-              {(() => {
-                const timeStr = getLastMentionTime(task);
-                const level = getTimeLevel(timeStr);
-                return (
-                  <span className={`time-level-${level}`}>
-                    {relativeTimeZh(timeStr)}
-                  </span>
-                );
-              })()}
-            </td>
-            <td className="col-tags">
-              <div className="tags-inline">
-                {task.tags.length === 0 ? <span className="text-xs text-muted">—</span> : null}
-                {task.tags.map((tag, index) => (
-                  <span key={`${tag}-${index}`} className="ui-badge">
-                    <Icon icon={resolveTagIcon(tag)} className="text-[11px] opacity-70 shrink-0" />
-                    <span className="flex-1 min-w-0">{tag}</span>
-                  </span>
-                ))}
-              </div>
-            </td>
-            <td className="col-actions">
-                <motion.button
-                  whileTap={{ scale: 0.85 }}
-                  type="button"
-                  className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn row-delete-btn opacity-0 transition-opacity"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteTask(projectId, task.id);
-                  }}
-                  aria-label="删除任务"
-                >
-                  <Icon icon="mingcute:delete-2-line" />
-                </motion.button>
-              </td>
-          </motion.tr>
-        ))}
-      </AnimatePresence>
+              task={task}
+              index={index}
+              selectedTaskId={selectedTaskId}
+              editingTaskId={editingTaskId}
+              projectId={projectId}
+              onSelectTask={onSelectTask}
+              onEditTask={onEditTask}
+              onCommitTaskTitle={onCommitTaskTitle}
+              onDeleteTask={onDeleteTask}
+            />
+          ))}
+        </AnimatePresence>
       </motion.tbody>
     </table>
   );

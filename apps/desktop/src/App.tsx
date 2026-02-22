@@ -38,6 +38,8 @@ import {
   createTask,
   createTaskReport
 } from "./lib/utils";
+import { collectTokenUsage } from "./lib/token-usage";
+import { generatePrStyleTags } from "./lib/pr-tags";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
 import { loadAiLanguage, loadProjects, loadMcpServerConfig, loadTheme, loadUiLanguage } from "./lib/storage";
 import { buildTrayTaskSnapshot } from "./lib/task-tray";
@@ -70,9 +72,6 @@ export function App() {
   const [mcpConfig, setMcpConfig] = useState<McpServerConfig>(() => loadMcpServerConfig());
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
   const [mcpStartupError, setMcpStartupError] = useState("");
-  const [mcpProjectQuery, setMcpProjectQuery] = useState("");
-  const [mcpKeywordQuery, setMcpKeywordQuery] = useState("");
-  const [mcpQueryResult, setMcpQueryResult] = useState("");
   const [boardProjectId, setBoardProjectId] = useState<string | null>(null);
   const [pickerForProject, setPickerForProject] = useState<string | null>(null);
   const [releaseReport, setReleaseReport] = useState<string>("");
@@ -396,45 +395,6 @@ export function App() {
     return parts.map(quoteShellArg).join(" ");
   }
 
-  function normalizeTokenNumber(raw: string, unitRaw: string | undefined): number {
-    const base = Number(raw.replace(/,/g, ""));
-    if (!Number.isFinite(base)) return 0;
-    const unit = (unitRaw ?? "").trim().toLowerCase();
-    if (unit === "k") return base * 1_000;
-    if (unit === "m") return base * 1_000_000;
-    if (unit === "b") return base * 1_000_000_000;
-    return base;
-  }
-
-  function extractTokenUsageFromText(text: string): number {
-    if (!text) return 0;
-    let total = 0;
-    const tokenAfterNumber = /(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\s*(?:tokens?|token)\b/gi;
-    for (const match of text.matchAll(tokenAfterNumber)) {
-      total += normalizeTokenNumber(match[1] ?? "", match[2]);
-    }
-    const tokenAfterLabel = /(?:tokens?|token)\s*[:=]\s*(\d[\d,]*(?:\.\d+)?)(?:\s*([kmb]))?/gi;
-    for (const match of text.matchAll(tokenAfterLabel)) {
-      total += normalizeTokenNumber(match[1] ?? "", match[2]);
-    }
-    return Math.round(total);
-  }
-
-  function collectTokenUsage(projectList: Project[], logs: Record<string, string>): number {
-    let total = 0;
-    for (const project of projectList) {
-      for (const task of project.tasks) {
-        for (const report of task.reports) {
-          total += extractTokenUsageFromText(report.content);
-        }
-      }
-    }
-    for (const log of Object.values(logs)) {
-      total += extractTokenUsageFromText(log);
-    }
-    return total;
-  }
-
   function buildWorkerRunPayload(workerId: string, config: WorkerConfig): { args: string[]; prompt: string } {
     const kind = parseWorkerId(workerId).kind;
     const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
@@ -494,122 +454,6 @@ export function App() {
       acc[item.kind] = { ...DEFAULT_WORKER_CONFIGS[item.kind] };
       return acc;
     }, {} as Record<WorkerKind, WorkerConfig>);
-  }
-
-  function formatTime(isoTime: string): string {
-    const parsed = new Date(isoTime);
-    if (Number.isNaN(parsed.getTime())) return isoTime;
-    return parsed.toLocaleString("zh-CN", { hour12: false });
-  }
-
-  function compactText(input: string, maxLength = 160): string {
-    const plain = input.replace(/\s+/g, " ").trim();
-    if (plain.length <= maxLength) return plain;
-    return `${plain.slice(0, maxLength - 1)}…`;
-  }
-
-  function localizeDecisionTags(tags: string[]): string[] {
-    const effectiveLanguage = aiLanguage === "follow_ui" ? uiLanguage : aiLanguage;
-    if (effectiveLanguage === "en") {
-      return tags.map((tag) => {
-        if (tag === "架构") return "Architecture";
-        if (tag === "配置") return "Config";
-        if (tag === "修复") return "Fix";
-        return tag;
-      });
-    }
-    return tags.map((tag) => {
-      const normalized = tag.trim().toLowerCase();
-      if (!normalized) return tag;
-      if (normalized === "architecture" || normalized.includes("arch")) return "架构";
-      if (normalized === "config" || normalized.includes("config") || normalized.includes("env")) return "配置";
-      if (normalized === "fix" || normalized.includes("fix") || normalized.includes("bug")) return "修复";
-      return tag;
-    });
-  }
-
-  function runMcpTodoQuery() {
-    const projectName = mcpProjectQuery.trim() || (boardProject?.name ?? "");
-    if (!projectName) {
-      setNotice("请先输入项目名。");
-      return;
-    }
-    const keyword = projectName.toLowerCase();
-    const target = projects.find((p) => p.name.toLowerCase() === keyword)
-      ?? projects.find((p) => p.name.toLowerCase().includes(keyword));
-    if (!target) {
-      setMcpQueryResult([
-        `query_project_todos(project="${projectName}")`,
-        "",
-        "未找到匹配项目，或该项目暂无未完成任务。"
-      ].join("\n"));
-      setMcpProjectQuery(projectName);
-      return;
-    }
-    const todos = target.tasks
-      .filter((t) => t.status !== "已完成")
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    if (todos.length === 0) {
-      setMcpQueryResult([
-        `query_project_todos(project="${projectName}")`,
-        "",
-        "未找到匹配项目，或该项目暂无未完成任务。"
-      ].join("\n"));
-      setMcpProjectQuery(projectName);
-      return;
-    }
-    const lines: string[] = [`query_project_todos(project="${projectName}")`, ""];
-    for (const [index, todo] of todos.entries()) {
-      const tagText = todo.tags.length ? ` | 标签：${todo.tags.join("、")}` : "";
-      lines.push(`${index + 1}. [${todo.status}] ${todo.title}`);
-      lines.push(`   更新时间：${formatTime(todo.updatedAt)}${tagText}`);
-    }
-    setMcpProjectQuery(projectName);
-    setMcpQueryResult(lines.join("\n"));
-  }
-
-  function runMcpRecentQuery() {
-    const keyword = mcpKeywordQuery.trim();
-    const needle = keyword.toLowerCase();
-    const header = keyword
-      ? `query_recent_context(limit=10, keyword="${keyword}")`
-      : "query_recent_context(limit=10)";
-
-    type ContextItem = { project: string; source: string; taskTitle: string; createdAt: string; text: string };
-    const items: ContextItem[] = [];
-    for (const project of projects) {
-      for (const task of project.tasks) {
-        for (const report of task.reports) {
-          const content = report.content.trim();
-          if (!content) continue;
-          if (needle && !content.toLowerCase().includes(needle)) continue;
-          items.push({ project: project.name, source: "report", taskTitle: task.title || "(无标题)", createdAt: report.createdAt, text: content });
-        }
-      }
-    }
-    const now = new Date().toISOString();
-    for (const [workerId, log] of Object.entries(workerLogs)) {
-      const recent = log.split("\n").map((l) => l.trim()).filter(Boolean).slice(-60);
-      for (const line of recent) {
-        if (needle && !line.toLowerCase().includes(needle)) continue;
-        items.push({ project: "console", source: "worker_log", taskTitle: workerId, createdAt: now, text: line });
-      }
-    }
-    const result = items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10);
-
-    if (result.length === 0) {
-      setMcpQueryResult([header, "", keyword ? "没有匹配该关键词的上下文。" : "暂无上下文记录。"].join("\n"));
-      return;
-    }
-    const lines: string[] = [header, ""];
-    for (const [index, item] of result.entries()) {
-      const sourceLabel = item.source === "report" ? "任务报告" : "Worker 日志";
-      lines.push(`${index + 1}. [${sourceLabel}] ${item.project} / ${item.taskTitle}`);
-      lines.push(`   时间：${formatTime(item.createdAt)}`);
-      lines.push(`   内容：${compactText(item.text)}`);
-      lines.push("");
-    }
-    setMcpQueryResult(lines.join("\n").trim());
   }
 
   function applyRecommendedSetup() {
@@ -801,11 +645,17 @@ export function App() {
             updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, report] }));
             continue;
           }
+          const generatedTags = generatePrStyleTags({
+            title: task.title,
+            status: decision.status,
+            decisionTags: decision.tags,
+            reportContent: report.content
+          });
 
           updateTask(project.id, task.id, (c) => ({
             ...c,
             status: decision.status,
-            tags: localizeDecisionTags(decision.tags),
+            tags: generatedTags,
             version: decision.status === "已完成" ? nextVersion : c.version,
             reports: [...c.reports, report]
           }));
