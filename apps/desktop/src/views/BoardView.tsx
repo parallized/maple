@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Icon } from "@iconify/react";
-import { FadeContent } from "../components/ReactBits";
+import { FadeContent, TiltedCard } from "../components/ReactBits";
 import { InlineTaskInput } from "../components/InlineTaskInput";
 import { PopoverMenu, type PopoverMenuItem } from "../components/PopoverMenu";
 import { TaskDetailPanel } from "../components/TaskDetailPanel";
@@ -198,9 +198,7 @@ export function BoardView({
             }}
             className="board-sidebar-nav"
           >
-            <motion.button 
-              whileTap={{ scale: 0.98 }} 
-              type="button" 
+            <TiltedCard 
               className="sidebar-card-btn sidebar-card-btn--primary" 
               onClick={() => onAddTask(boardProject.id)}
             >
@@ -211,11 +209,9 @@ export function BoardView({
                 <span className="sidebar-card-btn-title">新建任务</span>
                 <span className="sidebar-card-btn-desc">创建一个新的任务条目</span>
               </div>
-            </motion.button>
+            </TiltedCard>
 
-            <motion.button 
-              whileTap={{ scale: 0.98 }} 
-              type="button" 
+            <TiltedCard 
               className="sidebar-card-btn sidebar-card-btn--primary" 
               onClick={() => onCompletePending(boardProject.id)}
             >
@@ -226,7 +222,7 @@ export function BoardView({
                 <span className="sidebar-card-btn-title">执行待办</span>
                 <span className="sidebar-card-btn-desc">运行当前项目的所有待办</span>
               </div>
-            </motion.button>
+            </TiltedCard>
 
             <div className="mt-4 pt-4 border-t border-(--color-base-300)/20">
               <motion.button 

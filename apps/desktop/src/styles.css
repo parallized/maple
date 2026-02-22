@@ -1252,69 +1252,77 @@ h3 {
   align-items: flex-start;
   gap: 12px;
   width: 100%;
-  padding: 12px;
+  padding: 14px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--color-base-200) 40%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-base-300) 40%, transparent);
+  background: linear-gradient(145deg, #1a1a1a, #0d0d0d);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   text-align: left;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  perspective: 1000px;
+  box-shadow: 
+    0 4px 15px rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  overflow: hidden;
 }
 
 .sidebar-card-btn:hover {
-  background: color-mix(in srgb, var(--color-base-200) 80%, transparent);
-  border-color: color-mix(in srgb, var(--color-base-300) 80%, transparent);
+  background: linear-gradient(145deg, #222, #111);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 
+    0 8px 25px rgba(0, 0, 0, 0.5),
+    inset 0 1px 1px rgba(255, 255, 255, 0.1);
 }
 
 .sidebar-card-btn--primary {
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, rgba(255, 255, 255, 0.1));
 }
 
 .sidebar-card-btn--primary .sidebar-card-btn-icon {
-  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-  color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 0 15px color-mix(in srgb, var(--color-primary) 40%, transparent);
 }
 
 .sidebar-card-btn--primary:hover {
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary) 50%, rgba(255, 255, 255, 0.2));
 }
 
 .sidebar-card-btn-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--color-base-300) 40%, transparent);
-  color: var(--color-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e0e0e0;
   font-size: 1.25rem;
   flex-shrink: 0;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
 }
 
-.sidebar-card-btn-content {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+.sidebar-card-btn:hover .sidebar-card-btn-icon {
+  transform: translateZ(15px);
 }
 
 .sidebar-card-btn-title {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--color-base-content);
+  color: #f5f5f7;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .sidebar-card-btn-desc {
   font-size: 11px;
-  color: var(--color-secondary);
-  opacity: 0.7;
+  color: #a1a1a6;
+  opacity: 0.8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 
 .board-sidebar-nav {
   display: flex;

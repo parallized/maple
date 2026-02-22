@@ -115,3 +115,93 @@ export function SpotlightCard({
     </motion.div>
   );
 }
+
+/* ── TiltedCard ── */
+
+export function TiltedCard({
+  children,
+  className,
+  rotateAmplitude = 12,
+  scaleOnHover = 1.02,
+  spotlightColor = "rgba(255, 255, 255, 0.12)",
+  onClick
+}: {
+  children: ReactNode;
+  className?: string;
+  rotateAmplitude?: number;
+  scaleOnHover?: number;
+  spotlightColor?: string;
+  onClick?: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const rotateX = useSpring(useMotionValue(0), { stiffness: 100, damping: 30 });
+  const rotateY = useSpring(useMotionValue(0), { stiffness: 100, damping: 30 });
+  const scale = useSpring(1, { stiffness: 100, damping: 30 });
+  const opacity = useMotionValue(0);
+
+  function handleMouseMove(e: MouseEvent) {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const rX = (mouseY / height - 0.5) * -rotateAmplitude;
+    const rY = (mouseX / width - 0.5) * rotateAmplitude;
+
+    rotateX.set(rX);
+    rotateY.set(rY);
+    x.set(mouseX);
+    y.set(mouseY);
+  }
+
+  function handleMouseEnter() {
+    scale.set(scaleOnHover);
+    opacity.set(1);
+  }
+
+  function handleMouseLeave() {
+    scale.set(1);
+    rotateX.set(0);
+    rotateY.set(0);
+    opacity.set(0);
+  }
+
+  return (
+    <motion.div
+      ref={ref}
+      className={className}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={onClick}
+      style={{
+        position: "relative",
+        transformStyle: "preserve-3d",
+        rotateX,
+        rotateY,
+        scale,
+        cursor: onClick ? "pointer" : "default"
+      }}
+    >
+      <motion.div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 10,
+          background: `radial-gradient(circle at ${x.get()}px ${y.get()}px, ${spotlightColor}, transparent 80%)`,
+          opacity
+        }}
+        // Re-render based on x/y
+        animate={{ x: x.get(), y: y.get() }}
+      />
+      <div style={{ transform: "translateZ(20px)", transformStyle: "preserve-3d" }}>
+        {children}
+      </div>
+    </motion.div>
+  );
+}
