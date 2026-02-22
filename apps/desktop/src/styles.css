@@ -778,8 +778,9 @@ h3 {
 .task-open-btn {
   position: absolute;
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 0;
+  bottom: 0;
+  margin-block: auto;
   display: inline-flex;
   opacity: 0;
   pointer-events: none;

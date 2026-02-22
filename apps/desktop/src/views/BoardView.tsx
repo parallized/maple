@@ -112,10 +112,12 @@ export function BoardView({
   return (
     <section className="h-full max-w-full flex flex-col">
       <div className="board-layout">
+        <AnimatePresence mode="wait">
         <motion.aside 
           key={`sidebar-${boardProject.id}`}
           initial="hidden"
           animate="visible"
+          exit={{ opacity: 0, x: -10, transition: { duration: 0.15 } }}
           variants={{
             hidden: { opacity: 0 },
             visible: {
@@ -211,11 +213,14 @@ export function BoardView({
             </motion.button>
           </motion.div>
         </motion.aside>
+        </AnimatePresence>
 
+        <AnimatePresence mode="wait">
         <motion.div 
           key={`main-${boardProject.id}`}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10, transition: { duration: 0.15 } }}
           transition={{ duration: 0.5, delay: 0.1 }}
           className="board-main"
         >
@@ -256,6 +261,7 @@ export function BoardView({
             </motion.div>
           ) : null}
         </motion.div>
+        </AnimatePresence>
       </div>
     </section>
   );
@@ -336,12 +342,11 @@ function TaskTable({
         variants={{
           hidden: { opacity: 0 },
           visible: {
-            opacity: 1,
-            transition: { staggerChildren: 0.03 }
+            opacity: 1
           }
         }}
       >
-        <AnimatePresence initial={false}>
+        <AnimatePresence>
           {tasks.map((task, index) => (
             <motion.tr
               key={task.id}
