@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { Icon } from "@iconify/react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -972,55 +973,82 @@ export function App() {
         />
 
         <div className="main-column">
-          <main className="flex-1 overflow-hidden flex flex-col">
-            {view === "overview" ? (
-              <OverviewView
-                metrics={metrics}
-                mcpStatus={mcpStatus}
-                workerAvailability={workerAvailability}
-                workerPool={workerPool}
-              />
-            ) : null}
+          <main className="flex-1 overflow-hidden flex flex-col relative bg-transparent">
+            <AnimatePresence mode="wait">
+              {view === "overview" ? (
+                <motion.div
+                  key="overview"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                  className="flex-1 overflow-hidden flex flex-col min-h-0"
+                >
+                  <OverviewView
+                    metrics={metrics}
+                    mcpStatus={mcpStatus}
+                    workerAvailability={workerAvailability}
+                    workerPool={workerPool}
+                  />
+                </motion.div>
+              ) : null}
 
-            {view === "board" ? (
-              <BoardView
-                boardProject={boardProject}
-                selectedTaskId={selectedTaskId}
-                editingTaskId={editingTaskId}
-                detailMode={detailMode}
-                releaseReport={releaseReport}
-                onAddTask={addTask}
-                onCommitTaskTitle={commitTaskTitle}
-                onDeleteTask={deleteTask}
-                onSelectTask={setSelectedTaskId}
-                onEditTask={setEditingTaskId}
-                onCompletePending={(id) => void completePending(id)}
-                onCreateReleaseDraft={createReleaseDraft}
-                onAssignWorkerKind={assignWorkerKind}
-                onSetDetailMode={setDetailMode}
-                onOpenConsole={() => openWorkerConsole(boardProject?.workerKind, { requireActive: true, projectId: boardProject?.id })}
-                onRemoveProject={removeProject}
-              />
-            ) : null}
+              {view === "board" ? (
+                <motion.div
+                  key="board"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                  className="flex-1 overflow-hidden flex flex-col min-h-0"
+                >
+                  <BoardView
+                    boardProject={boardProject}
+                    selectedTaskId={selectedTaskId}
+                    editingTaskId={editingTaskId}
+                    detailMode={detailMode}
+                    releaseReport={releaseReport}
+                    onAddTask={addTask}
+                    onCommitTaskTitle={commitTaskTitle}
+                    onDeleteTask={deleteTask}
+                    onSelectTask={setSelectedTaskId}
+                    onEditTask={setEditingTaskId}
+                    onCompletePending={(id) => void completePending(id)}
+                    onCreateReleaseDraft={createReleaseDraft}
+                    onAssignWorkerKind={assignWorkerKind}
+                    onSetDetailMode={setDetailMode}
+                    onOpenConsole={() => openWorkerConsole(boardProject?.workerKind, { requireActive: true, projectId: boardProject?.id })}
+                    onRemoveProject={removeProject}
+                  />
+                </motion.div>
+              ) : null}
 
-            {view === "progress" || view === "settings" ? (
-              <div className="flex-1 overflow-auto px-0.5">
-                <SettingsView
-                  mcpStatus={mcpStatus}
-                  mcpStartupError={mcpStartupError}
-                  detailMode={detailMode}
-                  theme={theme}
-                  uiLanguage={uiLanguage}
-                  aiLanguage={aiLanguage}
-                  onProbeWorker={(kind) => void probeWorker(kind)}
-                  onRestartMcpServer={() => void restartMcpServer()}
-                  onThemeChange={setThemeState}
-                  onUiLanguageChange={setUiLanguage}
-                  onAiLanguageChange={setAiLanguage}
-                  onDetailModeChange={setDetailMode}
-                />
-              </div>
-            ) : null}
+              {view === "progress" || view === "settings" ? (
+                <motion.div
+                  key="settings"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                  className="flex-1 overflow-auto px-0.5"
+                >
+                  <SettingsView
+                    mcpStatus={mcpStatus}
+                    mcpStartupError={mcpStartupError}
+                    detailMode={detailMode}
+                    theme={theme}
+                    uiLanguage={uiLanguage}
+                    aiLanguage={aiLanguage}
+                    onProbeWorker={(kind) => void probeWorker(kind)}
+                    onRestartMcpServer={() => void restartMcpServer()}
+                    onThemeChange={setThemeState}
+                    onUiLanguageChange={setUiLanguage}
+                    onAiLanguageChange={setAiLanguage}
+                    onDetailModeChange={setDetailMode}
+                  />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </main>
         </div>
 

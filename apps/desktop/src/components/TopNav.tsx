@@ -1,4 +1,6 @@
 import { Icon } from "@iconify/react";
+import { motion, AnimatePresence } from "framer-motion";
+import { WorkerLogo } from "./WorkerLogo";
 import { SplitText } from "./ReactBits";
 import type { ViewKey } from "../domain";
 import type { Project } from "../domain";
@@ -56,35 +58,54 @@ export function TopNav({
           className={`topnav-tab ${view === "overview" ? "active" : ""}`}
           onClick={() => onViewChange("overview")}
         >
-          <Icon icon="mingcute:home-4-line" className="text-sm" />
-          {t("概览", "Overview")}
+          <motion.div layoutId="nav-icon-overview" className="flex items-center justify-center">
+            <Icon icon="mingcute:home-4-line" className="text-base opacity-70" />
+          </motion.div>
+          <motion.span layout="position">{t("概览", "Overview")}</motion.span>
         </button>
 
         <div className="w-px h-4 bg-(--color-base-300) mx-1" />
 
-        <div className="flex items-center gap-2">
-          {projects.map((project) => {
-            const inProgress = project.tasks.filter((task) => task.status === "进行中" || task.status === "队列中").length;
-            return (
-              <button
-                key={project.id}
-                type="button"
-                className={`topnav-tab ${boardProjectId === project.id && view === "board" ? "active" : ""}`}
-                onClick={() => onProjectSelect(project.id)}
-              >
-                {project.name}
-                {inProgress > 0 ? <span className="topnav-queue-count">{inProgress}</span> : null}
-              </button>
-            );
-          })}
-          <button
+        <div className="topnav-scroll">
+          <AnimatePresence mode="popLayout">
+            {projects.map((project) => {
+              const active = view === "board" && boardProjectId === project.id;
+              const pending = project.tasks.filter((t) => t.status !== "已完成").length;
+              return (
+                <motion.button
+                  layout
+                  initial={{ opacity: 0, scale: 0.9, x: -10 }}
+                  animate={{ opacity: 1, scale: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, width: 0, padding: 0, margin: 0 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                  key={project.id}
+                  type="button"
+                  className={`topnav-tab ${active ? "active" : ""}`}
+                  onClick={() => onProjectSelect(project.id)}
+                  title={project.directory}
+                >
+                  <motion.div layout="position" className="flex items-center justify-center">
+                    {project.workerKind ? (
+                      <WorkerLogo kind={project.workerKind} size={15} className="opacity-80" />
+                    ) : (
+                      <Icon icon="mingcute:folder-open-line" className="text-[15px] opacity-70" />
+                    )}
+                  </motion.div>
+                  <motion.span layout="position" className="truncate max-w-[120px]">{project.name}</motion.span>
+                  {pending > 0 ? <motion.span layout="position" className="topnav-queue-count">{pending}</motion.span> : null}
+                </motion.button>
+              );
+            })}
+          </AnimatePresence>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             type="button"
             className="topnav-tab px-2"
             onClick={onCreateProject}
-            aria-label={t("新建项目", "New project")}
           >
-            <Icon icon="mingcute:add-line" className="text-sm" />
-          </button>
+            <Icon icon="mingcute:add-line" className="text-base opacity-70" />
+          </motion.button>
         </div>
       </div>
 

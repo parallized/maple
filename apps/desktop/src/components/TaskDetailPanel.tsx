@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { Icon } from "@iconify/react";
 import type { Task, TaskReport } from "../domain";
 import { relativeTimeZh, getTimeLevel } from "../lib/utils";
@@ -345,7 +346,13 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
   }, [activeReportId, completedReports]);
 
   return (
-    <section className="task-detail-panel flex flex-col pb-10">
+    <motion.section 
+      initial={{ x: 300, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 300, opacity: 0 }}
+      transition={{ type: "spring", damping: 25, stiffness: 200 }}
+      className="task-detail-panel flex flex-col pb-10"
+    >
       <header className="mb-6 relative">
         <div className="flex items-start gap-4 pr-10">
           <div className="flex-1 min-w-0">
@@ -364,8 +371,19 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
         </div>
       </header>
 
-      <div className="task-properties flex flex-col gap-y-0.5">
-        <div className="grid grid-cols-2 gap-x-8">
+      <motion.div 
+        initial="hidden"
+        animate="visible"
+        variants={{
+          hidden: { opacity: 0 },
+          visible: { opacity: 1, transition: { staggerChildren: 0.06, delayChildren: 0.1 } }
+        }}
+        className="task-properties flex flex-col gap-y-0.5"
+      >
+        <motion.div 
+          variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
+          className="grid grid-cols-2 gap-x-8"
+        >
           <div className="flex items-center gap-4 h-9">
             <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
               <Icon icon="mingcute:signal-line" className="text-[15px] opacity-60" />
@@ -387,9 +405,12 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
               {task.version ? <span className="ui-badge ui-badge--sm">{task.version}</span> : <span className="text-muted opacity-40">未指定</span>}
             </div>
           </div>
-        </div>
+        </motion.div>
 
-        <div className="grid grid-cols-2 gap-x-8">
+        <motion.div 
+          variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
+          className="grid grid-cols-2 gap-x-8"
+        >
           <div className="flex items-center gap-4 h-9">
             <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
               <Icon icon="mingcute:time-line" className="text-[15px] opacity-60" />
@@ -415,9 +436,12 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
             {formatRelativeTime(task.updatedAt)}
           </div>
           </div>
-        </div>
+        </motion.div>
 
-        <div className="flex items-center gap-4 h-9">
+        <motion.div 
+          variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
+          className="flex items-center gap-4 h-9"
+        >
           <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
             <Icon icon="mingcute:tag-line" className="text-[15px] opacity-60" />
             标签
@@ -430,9 +454,12 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
               </span>
             ))}
           </div>
-        </div>
+        </motion.div>
 
-        <div className="flex flex-col mt-1">
+        <motion.div 
+          variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
+          className="flex flex-col mt-1"
+        >
           <header className="flex items-center gap-2 h-9">
             <h3 className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] m-0">
               <Icon icon="mingcute:file-text-line" className="text-[15px] opacity-60" />
@@ -450,9 +477,12 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
               )}
             </div>
           )}
-        </div>
+        </motion.div>
 
-        <div className="flex flex-col">
+        <motion.div 
+          variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
+          className="flex flex-col"
+        >
           <header className={`flex items-center gap-4 h-9 ${completedReports.length > 0 ? 'border-b border-(--color-base-300)/30 mb-4' : ''}`}>
             <h3 className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] m-0">
               <Icon icon="mingcute:comment-line" className="text-[15px] opacity-60" />
@@ -509,8 +539,8 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
               })}
             </div>
           )}
-        </div>
-      </div>
-    </section>
+        </motion.div>
+      </motion.div>
+    </motion.section>
   );
 }

@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { Icon } from "@iconify/react";
 import { FadeContent } from "../components/ReactBits";
 import { InlineTaskInput } from "../components/InlineTaskInput";
@@ -111,8 +112,25 @@ export function BoardView({
   return (
     <section className="h-full max-w-full flex flex-col">
       <div className="board-layout">
-        <aside className="board-sidebar">
-          <div className="flex items-center justify-between gap-1 mb-2">
+        <motion.aside 
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: 0.05, delayChildren: 0.05 }
+            }
+          }}
+          className="board-sidebar"
+        >
+          <motion.div 
+            variants={{
+              hidden: { opacity: 0, x: -10 },
+              visible: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 25 } }
+            }}
+            className="flex items-center justify-between gap-1 mb-2"
+          >
             <div className="flex items-center gap-2 min-w-0 px-1">
               <span className="text-[1.35rem] font-medium truncate tracking-tight text-primary">{boardProject.name}</span>
             </div>
@@ -140,9 +158,15 @@ export function BoardView({
                 ] satisfies PopoverMenuItem[]
               }
             />
-          </div>
+          </motion.div>
 
-          <div className="flex flex-col gap-2.5 mt-2 px-1 mb-8">
+          <motion.div 
+            variants={{
+              hidden: { opacity: 0, x: -10 },
+              visible: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 25 } }
+            }}
+            className="flex flex-col gap-2.5 mt-2 px-1 mb-8"
+          >
             <div className="flex items-center gap-2 text-[13px] text-muted font-medium">
               <span className="w-2 h-2 rounded-full bg-(--color-primary) opacity-40" />
               <span>Version {boardProject.version}</span>
@@ -163,25 +187,36 @@ export function BoardView({
                 {boardProject.directory}
               </span>
             </div>
-          </div>
+          </motion.div>
 
-          <div className="board-sidebar-nav">
-            <button type="button" className="ui-btn ui-btn--sm ui-btn--accent gap-2" onClick={() => onAddTask(boardProject.id)}>
+          <motion.div 
+            variants={{
+              hidden: { opacity: 0, x: -10 },
+              visible: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 25 } }
+            }}
+            className="board-sidebar-nav"
+          >
+            <motion.button whileTap={{ scale: 0.96 }} type="button" className="ui-btn ui-btn--sm ui-btn--accent gap-2" onClick={() => onAddTask(boardProject.id)}>
               <Icon icon="mingcute:add-line" className="text-base" />
               新建任务
-            </button>
-            <button type="button" className="ui-btn ui-btn--sm gap-2" onClick={() => onCompletePending(boardProject.id)}>
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.96 }} type="button" className="ui-btn ui-btn--sm gap-2" onClick={() => onCompletePending(boardProject.id)}>
               <Icon icon="mingcute:check-circle-line" className="text-base" />
               执行待办
-            </button>
-            <button type="button" className="ui-btn ui-btn--sm gap-2" onClick={onOpenConsole}>
+            </motion.button>
+            <motion.button whileTap={{ scale: 0.96 }} type="button" className="ui-btn ui-btn--sm gap-2" onClick={onOpenConsole}>
               <Icon icon="mingcute:terminal-box-line" className="text-base" />
               控制台
-            </button>
-          </div>
-        </aside>
+            </motion.button>
+          </motion.div>
+        </motion.aside>
 
-        <div className="board-main">
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="board-main"
+        >
           <TaskTable
             tasks={boardProject.tasks}
             projectId={boardProject.id}
@@ -198,18 +233,27 @@ export function BoardView({
           />
 
           {boardProject.tasks.length === 0 ? (
-            <div className="py-8 text-center">
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              transition={{ delay: 0.2 }}
+              className="py-8 text-center"
+            >
               <p className="text-muted text-sm">还没有任务，点击左侧「新建」添加。</p>
-            </div>
+            </motion.div>
           ) : null}
 
           {releaseReport ? (
-            <div className="ui-card p-4 mt-3">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.98 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              className="ui-card p-4 mt-3"
+            >
               <h3 className="font-semibold m-0">版本草稿</h3>
               <textarea className="ui-textarea w-full mt-2" value={releaseReport} readOnly rows={14} />
-            </div>
+            </motion.div>
           ) : null}
-        </div>
+        </motion.div>
       </div>
     </section>
   );
@@ -255,7 +299,11 @@ function TaskTable({
         <col style={{ width: colWidths.actions }} />
       </colgroup>
       <thead>
-        <tr>
+        <motion.tr
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+        >
           {[
             { key: "taskIcon", label: "", icon: "mingcute:ai-line" },
             { key: "task", label: "任务", icon: "mingcute:task-line" },
@@ -278,26 +326,42 @@ function TaskTable({
             </th>
           ))}
           <th className="col-actions"></th>
-        </tr>
+        </motion.tr>
       </thead>
-      <tbody>
-        {tasks.map((task) => (
-          <tr
-            key={task.id}
-            className={[
-              "task-row",
-              task.id === selectedTaskId ? "selected" : "",
-              editingTaskId === task.id ? "editing" : ""
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            onClick={() => {
-              if (editingTaskId !== task.id) {
-                onSelectTask(task.id);
-              }
-            }}
-          >
-            <td className="col-taskIcon text-center">
+      <motion.tbody
+        initial="hidden"
+        animate="visible"
+        variants={{
+          hidden: { opacity: 0 },
+          visible: {
+            opacity: 1,
+            transition: { staggerChildren: 0.03 }
+          }
+        }}
+      >
+        <AnimatePresence initial={false}>
+          {tasks.map((task) => (
+            <motion.tr
+              key={task.id}
+              layout="position"
+              initial={{ opacity: 0, y: 15, filter: "blur(4px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              exit={{ opacity: 0, scale: 0.96, filter: "blur(4px)" }}
+              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              className={[
+                "task-row",
+                task.id === selectedTaskId ? "selected" : "",
+                editingTaskId === task.id ? "editing" : ""
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() => {
+                if (editingTaskId !== task.id) {
+                  onSelectTask(task.id);
+                }
+              }}
+            >
+              <td className="col-taskIcon text-center">
               {(() => {
                 const { icon, isDefault } = resolveTaskIcon(task);
                 return (
@@ -328,7 +392,8 @@ function TaskTable({
                   >
                     {task.title || "(无标题)"}
                   </span>
-                  <button
+                  <motion.button
+                    whileTap={{ scale: 0.92 }}
                     type="button"
                     className="task-open-btn ui-btn ui-btn--xs ui-btn--outline shrink-0 gap-1 text-(--color-primary)"
                     onClick={(e) => {
@@ -338,7 +403,7 @@ function TaskTable({
                   >
                     <Icon icon="mingcute:external-link-line" className="text-xs" />
                     打开
-                  </button>
+                  </motion.button>
                 </div>
               )}
             </td>
@@ -370,21 +435,23 @@ function TaskTable({
               </div>
             </td>
             <td className="col-actions">
-              <button
-                type="button"
-                className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn row-delete-btn opacity-0 transition-opacity"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteTask(projectId, task.id);
-                }}
-                aria-label="删除任务"
-              >
-                <Icon icon="mingcute:delete-2-line" />
-              </button>
-            </td>
-          </tr>
+                <motion.button
+                  whileTap={{ scale: 0.85 }}
+                  type="button"
+                  className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn row-delete-btn opacity-0 transition-opacity"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteTask(projectId, task.id);
+                  }}
+                  aria-label="删除任务"
+                >
+                  <Icon icon="mingcute:delete-2-line" />
+                </motion.button>
+              </td>
+          </motion.tr>
         ))}
-      </tbody>
+      </AnimatePresence>
+      </motion.tbody>
     </table>
   );
 }
