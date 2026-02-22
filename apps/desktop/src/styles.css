@@ -492,14 +492,14 @@ h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.1rem;
-  height: 1.1rem;
-  padding: 0 0.28rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  color: var(--color-primary);
-  font-size: 0.68rem;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--worker-color, var(--color-primary));
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -1272,20 +1272,18 @@ h3 {
 }
 
 .sidebar-card-btn--primary .sidebar-card-btn-icon {
-  color: var(--color-primary);
+  background: linear-gradient(145deg, #3a3a3a, #1a1a1a);
+  color: var(--worker-color, var(--color-primary));
+  border-color: rgba(255, 255, 255, 0.08);
   box-shadow: 
     0 2px 8px rgba(0, 0, 0, 0.3),
-    inset 0 1px 1px rgba(255, 255, 255, 0.1);
-}
-
-.sidebar-card-btn:hover .sidebar-card-btn-icon {
-  transform: translateZ(20px);
-  background: linear-gradient(145deg, #333, #1a1a1a);
-  color: #fff;
+    inset 0 1px 1px rgba(255, 255, 255, 0.12),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.4);
 }
 
 .sidebar-card-btn--primary:hover .sidebar-card-btn-icon {
-  color: var(--color-primary);
+  color: var(--worker-color, var(--color-primary));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--worker-color, var(--color-primary)) 30%, transparent));
   filter: drop-shadow(0 0 5px color-mix(in srgb, var(--color-primary) 30%, transparent));
 }
 

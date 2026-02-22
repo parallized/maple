@@ -50,6 +50,8 @@ struct TaskReport {
 struct Task {
     id: String,
     title: String,
+    #[serde(default)]
+    details: String,
     status: String,
     tags: Vec<String>,
     version: String,
@@ -223,6 +225,54 @@ fn tool_query_recent_context(args: &Value) -> Value {
         .collect();
 
     json!({ "content": [{ "type": "text", "text": lines.join("\n\n") }]})
+}
+
+fn tool_query_task_details(args: &Value) -> Value {
+    let project_name = args
+        .get("project")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let task_id = args
+        .get("task_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let projects = read_state();
+    let Some(idx) = find_project_index(&projects, project_name) else {
+        return json!({
+            "content": [{ "type": "text", "text": format!("未找到匹配项目「{project_name}」。") }],
+            "isError": true
+        });
+    };
+
+    let target = &projects[idx];
+    let Some(task) = target.tasks.iter().find(|t| t.id == task_id) else {
+        return json!({
+            "content": [{ "type": "text", "text": format!("项目「{}」中未找到任务 ID「{task_id}」。", target.name) }],
+            "isError": true
+        });
+    };
+
+    let tags = if task.tags.is_empty() {
+        "（无）".to_string()
+    } else {
+        task.tags.join("、")
+    };
+    let details = task.details.trim();
+    let details_text = if details.is_empty() { "（空）" } else { details };
+
+    let lines: Vec<String> = vec![
+        format!("任务：{}  (id: {})", task.title, task.id),
+        format!("状态：{}", task.status),
+        format!("标签：{}", tags),
+        format!("版本：{}", task.version),
+        format!("更新时间：{}", task.updated_at),
+        String::new(),
+        "详情：".to_string(),
+        details_text.to_string(),
+    ];
+
+    json!({ "content": [{ "type": "text", "text": lines.join("\n") }]})
 }
 
 fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
@@ -424,6 +474,7 @@ async fn handle_mcp_post(
             match tool_name {
                 "query_project_todos" => tool_query_project_todos(&arguments),
                 "query_recent_context" => tool_query_recent_context(&arguments),
+                "query_task_details" => tool_query_task_details(&arguments),
                 "submit_task_report" => tool_submit_task_report(&arguments, state.as_ref()),
                 "finish_worker" => tool_finish_worker(&arguments, state.as_ref()),
                 _ => json!({
@@ -462,6 +513,18 @@ fn tool_definitions() -> Vec<Value> {
                     "project": { "type": "string", "description": "项目名称（模糊匹配）" }
                 },
                 "required": ["project"]
+            }
+        }),
+        json!({
+            "name": "query_task_details",
+            "description": "查询指定任务的详情内容（包含 markdown、图片、文件引用等）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": { "type": "string", "description": "项目名称（模糊匹配）" },
+                    "task_id": { "type": "string", "description": "任务 ID" }
+                },
+                "required": ["project", "task_id"]
             }
         }),
         json!({

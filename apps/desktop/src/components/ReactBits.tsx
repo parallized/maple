@@ -124,7 +124,8 @@ export function TiltedCard({
   rotateAmplitude = 12,
   scaleOnHover = 1.02,
   spotlightColor = "rgba(255, 255, 255, 0.12)",
-  onClick
+  onClick,
+  style
 }: {
   children: ReactNode;
   className?: string;
@@ -132,6 +133,7 @@ export function TiltedCard({
   scaleOnHover?: number;
   spotlightColor?: string;
   onClick?: () => void;
+  style?: React.CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
@@ -184,7 +186,8 @@ export function TiltedCard({
         rotateX,
         rotateY,
         scale,
-        cursor: onClick ? "pointer" : "default"
+        cursor: onClick ? "pointer" : "default",
+        ...style
       }}
     >
       <motion.div

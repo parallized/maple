@@ -167,25 +167,28 @@ export function BoardView({
               hidden: { opacity: 0, x: -10 },
               visible: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 25 } }
             }}
-            className="flex flex-col gap-2.5 mt-2 px-1 mb-8"
+            className="flex flex-col gap-2 mt-2 px-1 mb-8"
           >
-            <div className="flex items-center gap-2 text-[13px] text-muted font-medium">
-              <span className="w-2 h-2 rounded-full bg-(--color-primary) opacity-40" />
-              <span>Version {boardProject.version}</span>
-            </div>
-            <div className="flex items-center gap-2 text-[13px] text-muted">
+            <div className="flex items-center gap-2 text-[12.5px] text-primary/90 font-medium">
               {boardProject.workerKind ? (
-                <WorkerLogo kind={boardProject.workerKind} size={14} className="opacity-80" />
+                <WorkerLogo kind={boardProject.workerKind} size={14} />
               ) : (
                 <Icon icon="mingcute:ai-line" className="opacity-60" />
               )}
-              <span className="truncate opacity-80">
+              <span className="truncate">
                 Worker {WORKER_KINDS.find((w) => w.kind === boardProject.workerKind)?.label ?? "未分配"}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-[13px] text-muted">
-              <span className="w-2 h-2 rounded-full bg-(--color-base-content) opacity-20" />
-              <span className="truncate opacity-80" title={boardProject.directory}>
+            <div 
+              className="flex items-center gap-2 text-[11.5px] text-muted"
+              style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-(--worker-color) opacity-40" />
+              <span className="opacity-80">Version {boardProject.version}</span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-muted">
+              <span className="w-1.5 h-1.5 rounded-full bg-(--color-base-content) opacity-20" />
+              <span className="truncate opacity-60" title={boardProject.directory}>
                 {boardProject.directory}
               </span>
             </div>
@@ -201,6 +204,7 @@ export function BoardView({
             <TiltedCard 
               className="sidebar-card-btn sidebar-card-btn--primary" 
               onClick={() => onAddTask(boardProject.id)}
+              style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
             >
               <div className="sidebar-card-btn-icon">
                 <Icon icon="mingcute:add-line" />
@@ -214,6 +218,7 @@ export function BoardView({
             <TiltedCard 
               className="sidebar-card-btn sidebar-card-btn--primary" 
               onClick={() => onCompletePending(boardProject.id)}
+              style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
             >
               <div className="sidebar-card-btn-icon">
                 <Icon icon="mingcute:check-circle-line" />

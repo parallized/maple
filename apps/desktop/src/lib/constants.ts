@@ -10,10 +10,14 @@ export type ThemeMode = "system" | "light" | "dark";
 export type UiLanguage = "zh" | "en";
 export type AiLanguage = "follow_ui" | UiLanguage;
 
-export const WORKER_KINDS: { kind: WorkerKind; label: string }[] = [
-  { kind: "claude", label: "Claude" },
-  { kind: "codex", label: "Codex" },
-  { kind: "iflow", label: "iFlow" },
+export const WORKER_KINDS: {
+  kind: WorkerKind;
+  label: string;
+  color: string;
+}[] = [
+  { kind: "claude", label: "Claude", color: "#d97757" },
+  { kind: "codex", label: "Codex", color: "#ffffff" },
+  { kind: "iflow", label: "iFlow", color: "#a855f7" },
 ];
 
 export const DEFAULT_WORKER_CONFIGS: Record<WorkerKind, WorkerConfig> = {
