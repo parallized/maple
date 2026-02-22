@@ -206,12 +206,15 @@ export function BoardView({
               onClick={() => onAddTask(boardProject.id)}
               style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
             >
-              <div className="sidebar-card-btn-icon">
-                <Icon icon="mingcute:add-line" />
-              </div>
               <div className="sidebar-card-btn-content">
-                <span className="sidebar-card-btn-title">新建任务</span>
+                <span className="sidebar-card-btn-title">
+                  <Icon icon="mingcute:plus-fill" className="mr-1.5 text-base inline-block -translate-y-px" />
+                  新建任务
+                </span>
                 <span className="sidebar-card-btn-desc">创建一个新的任务条目</span>
+              </div>
+              <div className="sidebar-card-watermark">
+                <Icon icon="mingcute:quill-pen-ai-fill" />
               </div>
             </TiltedCard>
 
@@ -220,12 +223,15 @@ export function BoardView({
               onClick={() => onCompletePending(boardProject.id)}
               style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
             >
-              <div className="sidebar-card-btn-icon">
-                <Icon icon="mingcute:check-circle-line" />
-              </div>
               <div className="sidebar-card-btn-content">
-                <span className="sidebar-card-btn-title">执行待办</span>
+                <span className="sidebar-card-btn-title">
+                  <Icon icon="mingcute:play-fill" className="mr-1.5 text-base inline-block -translate-y-px" />
+                  执行待办
+                </span>
                 <span className="sidebar-card-btn-desc">运行当前项目的所有待办</span>
+              </div>
+              <div className="sidebar-card-watermark">
+                <Icon icon="mingcute:cursor-3-fill" />
               </div>
             </TiltedCard>
 

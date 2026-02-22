@@ -190,21 +190,7 @@ export function TiltedCard({
         ...style
       }}
     >
-      <motion.div
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          zIndex: 10,
-          background: `radial-gradient(circle at ${x.get()}px ${y.get()}px, ${spotlightColor}, transparent 80%)`,
-          opacity
-        }}
-        // Re-render based on x/y
-        animate={{ x: x.get(), y: y.get() }}
-      />
-      <div style={{ transform: "translateZ(20px)", transformStyle: "preserve-3d" }}>
-        {children}
-      </div>
+      {children}
     </motion.div>
   );
 }
