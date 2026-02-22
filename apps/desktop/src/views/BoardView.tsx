@@ -198,20 +198,50 @@ export function BoardView({
             }}
             className="board-sidebar-nav"
           >
-            <motion.button whileTap={{ scale: 0.96 }} type="button" className="ui-btn ui-btn--sm ui-btn--accent gap-2" onClick={() => onAddTask(boardProject.id)}>
-              <Icon icon="mingcute:add-line" className="text-base" />
-              新建任务
+            <motion.button 
+              whileTap={{ scale: 0.98 }} 
+              type="button" 
+              className="sidebar-card-btn sidebar-card-btn--primary" 
+              onClick={() => onAddTask(boardProject.id)}
+            >
+              <div className="sidebar-card-btn-icon">
+                <Icon icon="mingcute:add-line" />
+              </div>
+              <div className="sidebar-card-btn-content">
+                <span className="sidebar-card-btn-title">新建任务</span>
+                <span className="sidebar-card-btn-desc">创建一个新的任务条目</span>
+              </div>
             </motion.button>
-            <div className="board-sidebar-nav-row">
-              <motion.button whileTap={{ scale: 0.96 }} type="button" className="ui-btn ui-btn--sm gap-2" onClick={() => onCompletePending(boardProject.id)}>
-                <Icon icon="mingcute:check-circle-line" className="text-base" />
-                执行待办
-              </motion.button>
-              <motion.button whileTap={{ scale: 0.96 }} type="button" className="ui-btn ui-btn--sm gap-2" onClick={onOpenConsole}>
-                <Icon icon="mingcute:terminal-box-line" className="text-base" />
-                控制台
-              </motion.button>
-            </div>
+
+            <motion.button 
+              whileTap={{ scale: 0.98 }} 
+              type="button" 
+              className="sidebar-card-btn" 
+              onClick={() => onCompletePending(boardProject.id)}
+            >
+              <div className="sidebar-card-btn-icon">
+                <Icon icon="mingcute:check-circle-line" />
+              </div>
+              <div className="sidebar-card-btn-content">
+                <span className="sidebar-card-btn-title">执行待办</span>
+                <span className="sidebar-card-btn-desc">运行当前项目的所有待办</span>
+              </div>
+            </motion.button>
+
+            <motion.button 
+              whileTap={{ scale: 0.98 }} 
+              type="button" 
+              className="sidebar-card-btn" 
+              onClick={onOpenConsole}
+            >
+              <div className="sidebar-card-btn-icon">
+                <Icon icon="mingcute:terminal-box-line" />
+              </div>
+              <div className="sidebar-card-btn-content">
+                <span className="sidebar-card-btn-title">控制台</span>
+                <span className="sidebar-card-btn-desc">查看系统日志与输出</span>
+              </div>
+            </motion.button>
           </motion.div>
         </motion.aside>
         </AnimatePresence>
