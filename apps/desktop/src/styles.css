@@ -1608,19 +1608,7 @@ h3 {
 }
 
 .sidebar-card-watermark--metallic::before {
-  content: "";
-  position: absolute;
-  inset: -10%;
-  background: linear-gradient(
-    115deg,
-    transparent 20%,
-    color-mix(in srgb, white 85%, var(--worker-color, var(--color-primary)) 15%)
-      45%,
-    transparent 70%
-  );
-  opacity: 0.35;
-  transform: translateX(-120%) rotate(-12deg);
-  animation: metallic-sweep 3.4s ease-in-out infinite;
+  content: none;
 }
 
 .sidebar-card-watermark--metallic svg,

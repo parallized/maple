@@ -707,6 +707,22 @@ export function App() {
     setSelectedTaskId(null);
   }
 
+  function reorderProjects(sourceProjectId: string, targetProjectId: string) {
+    if (sourceProjectId === targetProjectId) return;
+    setProjects((prev) => {
+      const sourceIndex = prev.findIndex((project) => project.id === sourceProjectId);
+      const targetIndex = prev.findIndex((project) => project.id === targetProjectId);
+      if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      if (!moved) return prev;
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+  }
+
   // ── MCP Guard ──
   async function ensureMcpRunning(): Promise<boolean> {
     if (!isTauri) return true;
@@ -949,6 +965,7 @@ export function App() {
           uiLanguage={uiLanguage}
           onViewChange={setView}
           onProjectSelect={(id) => { setBoardProjectId(id); setView("board"); setSelectedTaskId(null); }}
+          onReorderProjects={reorderProjects}
           onCreateProject={() => void createProject()}
           onToggleConsole={() => {
             if (workerConsoleOpen) setWorkerConsoleOpen(false);

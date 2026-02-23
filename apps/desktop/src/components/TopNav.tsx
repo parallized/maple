@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useState } from "react";
 import { WorkerLogo } from "./WorkerLogo";
 import { SplitText } from "./ReactBits";
 import type { ViewKey } from "../domain";
@@ -20,6 +21,7 @@ type TopNavProps = {
   uiLanguage: UiLanguage;
   onViewChange: (view: ViewKey) => void;
   onProjectSelect: (projectId: string) => void;
+  onReorderProjects: (sourceProjectId: string, targetProjectId: string) => void;
   onCreateProject: () => void;
   onToggleConsole: () => void;
   onMinimize: () => void;
@@ -39,6 +41,7 @@ export function TopNav({
   uiLanguage,
   onViewChange,
   onProjectSelect,
+  onReorderProjects,
   onCreateProject,
   onToggleConsole,
   onMinimize,
@@ -46,6 +49,7 @@ export function TopNav({
   onClose
 }: TopNavProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
+  const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
 
   return (
     <nav className="topnav">
@@ -99,6 +103,22 @@ export function TopNav({
                   className={`topnav-tab ${active ? "active" : ""}`}
                   style={{ "--worker-color": workerColor } as React.CSSProperties}
                   onClick={() => onProjectSelect(project.id)}
+                  draggable
+                  onDragStartCapture={(event) => {
+                    setDraggingProjectId(project.id);
+                  }}
+                  onDragOverCapture={(event) => {
+                    if (!draggingProjectId || draggingProjectId === project.id) return;
+                    event.preventDefault();
+                  }}
+                  onDropCapture={(event) => {
+                    event.preventDefault();
+                    const sourceId = draggingProjectId;
+                    if (!sourceId || sourceId === project.id) return;
+                    onReorderProjects(sourceId, project.id);
+                    setDraggingProjectId(null);
+                  }}
+                  onDragEndCapture={() => setDraggingProjectId(null)}
                   title={project.directory}
                 >
                   <div className="flex items-center justify-center">
