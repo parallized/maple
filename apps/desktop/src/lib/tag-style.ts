@@ -6,6 +6,15 @@ type TagColorRule = {
 };
 
 const TAG_COLOR_RULES: TagColorRule[] = [
+  { test: (tag) => tag === "desktop" || tag === "tauri", color: "#0ea5e9" },
+  { test: (tag) => tag === "mcp", color: "#22c55e" },
+  { test: (tag) => tag === "ui" || tag === "ux", color: "#ec4899" },
+  { test: (tag) => tag === "配置" || tag === "config", color: "#f59e0b" },
+  { test: (tag) => tag === "架构" || tag === "arch", color: "#6366f1" },
+  { test: (tag) => tag === "修复" || tag === "bug" || tag === "fix", color: "var(--color-error)" },
+  { test: (tag) => tag === "新功能" || tag === "feat" || tag === "feature", color: "var(--color-success)" },
+  { test: (tag) => tag === "重构" || tag === "refactor", color: "#a855f7" },
+
   { test: (tag) => tag === "type:fix", color: "var(--color-error)" },
   { test: (tag) => tag === "type:feat", color: "var(--color-success)" },
   { test: (tag) => tag === "type:refactor", color: "#a855f7" },
@@ -39,4 +48,3 @@ export function buildTagBadgeStyle(tag: string): Record<string, string> {
   if (!color) return {};
   return { "--tag-color": color };
 }
-

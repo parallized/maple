@@ -1,5 +1,5 @@
 [package]
-name = "maple_desktop"
+name = "Maple"
 version = "0.1.0"
 description = "Maple desktop client"
 authors = ["Maple"]

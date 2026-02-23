@@ -175,17 +175,18 @@ export function buildWorkerArchiveReport(result: WorkerExecutionResultLike, task
   const structured = parseWorkerExecutionResult(result);
   const decision = structured?.decision ?? null;
 
-  if (!structured || !decision) {
-    const raw = (result.stdout.trim() || result.stderr.trim()).slice(0, 200);
+  const rawExcerpt = stripAnsi((result.stdout.trim() || result.stderr.trim())).slice(0, 200).trim();
+
+  if (!structured) {
     return [
       "状态：已阻塞（缺少 MCP 决策输出）",
       "描述：",
-      `Worker 未返回可解析的 mcp_decision。${raw ? `\n\n输出摘录：\n${raw}` : ""}`.trim()
+      `Worker 未返回可解析的 mcp_decision。${rawExcerpt ? `\n\n输出摘录：\n${rawExcerpt}` : ""}`.trim(),
     ].join("\n");
   }
 
-  const statusDetail =
-    decision.status === "已完成"
+  const statusDetail = decision
+    ? decision.status === "已完成"
       ? "已完成（执行成功）"
       : decision.status === "进行中"
         ? "进行中（等待继续处理）"
@@ -195,13 +196,42 @@ export function buildWorkerArchiveReport(result: WorkerExecutionResultLike, task
             ? "待返工（需要继续处理）"
             : decision.status === "需要更多信息"
               ? "需要更多信息（请补充后继续）"
-              : "已阻塞（执行受阻）";
+              : "已阻塞（执行受阻）"
+    : null;
 
-  const description = decision.comment.trim() || taskTitle;
+  const reportLines: string[] = [];
+  const description =
+    structured.conclusion.trim()
+    || decision?.comment.trim()
+    || taskTitle;
 
-  return [
-    "状态：" + statusDetail,
-    "描述：",
-    description
-  ].join("\n");
+  if (!decision) {
+    reportLines.push("状态：已阻塞（缺少 MCP 决策输出）");
+    reportLines.push("描述：");
+    reportLines.push(
+      [
+        "Worker 未返回可解析的 mcp_decision。",
+        description ? `\n\n结论：\n${description}` : "",
+        rawExcerpt ? `\n\n输出摘录：\n${rawExcerpt}` : "",
+      ].join("").trim()
+    );
+  } else {
+    reportLines.push("状态：" + (statusDetail ?? "已阻塞（执行受阻）"));
+    reportLines.push("描述：");
+    reportLines.push(description);
+  }
+
+  if (structured.changes.length > 0) {
+    reportLines.push("");
+    reportLines.push("变更：");
+    reportLines.push(...structured.changes.map((item) => `- ${item}`));
+  }
+
+  if (structured.verification.length > 0) {
+    reportLines.push("");
+    reportLines.push("验证：");
+    reportLines.push(...structured.verification.map((item) => `- ${item}`));
+  }
+
+  return reportLines.join("\n");
 }

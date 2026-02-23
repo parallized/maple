@@ -596,7 +596,9 @@ h3 {
   flex: 1;
   min-width: 0;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
+  padding: 8px 0;
+  margin: -8px 0;
   scrollbar-width: none;
 }
 

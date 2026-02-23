@@ -3,6 +3,21 @@
 version = 4
 
 [[package]]
+name = "Maple"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tokio",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1975,21 +1990,6 @@ dependencies = [
  "objc2",
  "objc2-foundation",
  "time",
-]
-
-[[package]]
-name = "maple_desktop"
-version = "0.1.0"
-dependencies = [
- "axum",
- "chrono",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
- "tokio",
 ]
 
 [[package]]
