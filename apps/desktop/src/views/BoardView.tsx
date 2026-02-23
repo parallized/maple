@@ -594,7 +594,7 @@ function TaskTable({
             { key: "tags", label: "标签", icon: "mingcute:tag-line" },
           ].map((col) => (
             <th key={col.key} className={`col-${col.key}`}>
-              <span className={`flex items-center ${col.label ? "justify-start translate-y-px" : "justify-center"} gap-1.5 w-full`}>
+              <span className={`flex items-center ${col.label ? "justify-start translate-y-[-2.5px]" : "justify-center"} gap-1.5 w-full`}>
                 {col.icon ? <Icon icon={col.icon} className="text-[14px] opacity-70" /> : null}
                 {col.label ? col.label : null}
               </span>
