@@ -31,6 +31,7 @@ type OverviewViewProps = {
     mode: "task";
     kind: WorkerKind | null;
   }>;
+  onRefreshMcp?: () => void;
 };
 
 function formatMode(mode: "task"): string {
@@ -43,7 +44,7 @@ interface StatusData {
   color: string;
 }
 
-export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPool }: OverviewViewProps) {
+export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPool, onRefreshMcp }: OverviewViewProps) {
   const pieData: StatusData[] = [
     { label: "已完成", value: metrics.statusDistribution["已完成"] || 0, color: "var(--color-success)" },
     { label: "进行中", value: metrics.statusDistribution["进行中"] || 0, color: "var(--color-primary)" },
@@ -171,11 +172,22 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
 
           <FadeContent delay={300} className="flex min-h-0">
             <div className="w-full rounded-[16px] bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] p-4 lg:p-5 flex flex-col relative transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] hover:border-[color-mix(in_srgb,var(--color-base-content)_12%,transparent)] group">
-              <div className="flex items-center gap-2 text-[12px] lg:text-[13px] font-medium text-muted font-sans">
-                <Icon icon="mingcute:server-line" className="text-[16px] lg:text-lg opacity-60 group-hover:opacity-100 transition-opacity" />
-                <span>MCP 状态</span>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2 text-[12px] lg:text-[13px] font-medium text-muted font-sans">
+                  <Icon icon="mingcute:server-line" className="text-[16px] lg:text-lg opacity-60 group-hover:opacity-100 transition-opacity" />
+                  <span>MCP 状态</span>
+                </div>
+                {onRefreshMcp && (
+                  <button 
+                    onClick={onRefreshMcp}
+                    className="p-1.5 rounded-lg hover:bg-[color-mix(in_srgb,var(--color-base-content)_5%,transparent)] text-muted hover:text-(--color-base-content) transition-all active:scale-95 group/refresh"
+                    title="重新同步"
+                  >
+                    <Icon icon="mingcute:refresh-3-line" className="text-[16px] lg:text-[18px] group-active/refresh:rotate-180 transition-transform duration-500" />
+                  </button>
+                )}
               </div>
-              <div className="mt-3 mb-4 flex items-center gap-2.5 flex-1">
+              <div className="mt-1 mb-4 flex items-center gap-2.5 flex-1">
                 <span className="relative flex h-2.5 w-2.5 flex-none">
                   <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-30 ${mcpStatus.running ? 'bg-green-500' : 'bg-red-500'}`}></span>
                   <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${mcpStatus.running ? 'bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.5)]'}`}></span>
@@ -184,8 +196,12 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                   {mcpStatus.running ? "Active" : "Offline"}
                 </span>
               </div>
-              <div className="mt-auto flex-none">
-                <span className="text-[11px] lg:text-[12px] text-muted opacity-70 font-mono tracking-wide">PID: {mcpStatus.pid ?? "—"} • {mcpStatus.command || "Built-in"}</span>
+              <div className="mt-auto flex-none flex flex-col gap-1">
+                <div className="flex items-center gap-2 text-[11px] lg:text-[12px] text-muted opacity-70 font-mono tracking-wide">
+                  <span className="px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-base-content)_5%,transparent)]">PID: {mcpStatus.pid ?? "—"}</span>
+                  <span className="w-1 h-1 rounded-full bg-current opacity-30" />
+                  <span className="truncate">{mcpStatus.command || "Maple MCP (内置)"}</span>
+                </div>
               </div>
             </div>
           </FadeContent>

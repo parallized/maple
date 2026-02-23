@@ -986,6 +986,7 @@ export function App() {
                     mcpStatus={mcpStatus}
                     workerAvailability={workerAvailability}
                     workerPool={workerPool}
+                    onRefreshMcp={() => void refreshMcpStatus()}
                   />
                 </motion.div>
               ) : null}

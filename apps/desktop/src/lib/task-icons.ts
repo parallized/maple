@@ -40,31 +40,6 @@ export function resolveTagIcon(tag: string, tagCatalog?: TagCatalog | null): str
   if (definedIcon && definedIcon.toLowerCase().startsWith("mingcute:")) {
     return definedIcon.toLowerCase();
   }
-  if (normalizedTag === "mcp") return "mingcute:server-line";
-  if (normalizedTag === "verify" || normalizedTag === "verified") return "mingcute:check-circle-line";
-  if (normalizedTag.startsWith("type:fix")) return "mingcute:shield-line";
-  if (normalizedTag.startsWith("type:feat")) return "mingcute:add-line";
-  if (normalizedTag.startsWith("type:refactor")) return "mingcute:refresh-2-line";
-  if (normalizedTag.startsWith("type:docs")) return "mingcute:information-line";
-  if (normalizedTag.startsWith("type:chore")) return "mingcute:settings-3-line";
-  if (normalizedTag.startsWith("area:ui")) return "mingcute:palette-line";
-  if (normalizedTag.startsWith("area:worker")) return "mingcute:ai-line";
-  if (normalizedTag.startsWith("area:mcp")) return "mingcute:server-line";
-  if (normalizedTag.startsWith("area:xterm")) return "mingcute:terminal-box-line";
-  if (normalizedTag.startsWith("area:i18n")) return "mingcute:translate-line";
-  if (normalizedTag.startsWith("area:task-detail")) return "mingcute:layout-right-line";
-  if (normalizedTag.startsWith("area:markdown")) return "mingcute:file-text-line";
-  if (normalizedTag.startsWith("state:blocked")) return "mingcute:shield-line";
-  if (normalizedTag.startsWith("state:needs-info")) return "mingcute:information-line";
-  if (normalizedTag.includes("架构")) return "mingcute:layout-grid-line";
-  if (normalizedTag.includes("配置")) return "mingcute:settings-3-line";
-  if (normalizedTag.includes("ui") || normalizedTag.includes("ux"))
-    return "mingcute:palette-line";
-  if (normalizedTag.includes("新功能")) return "mingcute:add-line";
-  if (normalizedTag.includes("工具链")) return "mingcute:plug-2-line";
-  if (normalizedTag.includes("重构")) return "mingcute:refresh-2-line";
-  if (normalizedTag.includes("bug") || normalizedTag.includes("修复"))
-    return "mingcute:shield-line";
   return DEFAULT_TAG_ICON;
 }
 

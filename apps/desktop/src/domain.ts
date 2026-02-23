@@ -1,6 +1,7 @@
 export type ViewKey = "overview" | "board" | "progress" | "settings";
 export type WorkerKind = "claude" | "codex" | "iflow";
 export type TaskStatus =
+  | "草稿"
   | "待办"
   | "待返工"
   | "队列中"
