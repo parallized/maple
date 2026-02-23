@@ -80,7 +80,6 @@ export function App() {
   const [mcpStartupError, setMcpStartupError] = useState("");
   const [boardProjectId, setBoardProjectId] = useState<string | null>(null);
   const [pickerForProject, setPickerForProject] = useState<string | null>(null);
-  const [releaseReport, setReleaseReport] = useState<string>("");
   const [workerLogs, setWorkerLogs] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string>("");
   const [detailMode, setDetailMode] = useState<DetailMode>("sidebar");
@@ -829,26 +828,6 @@ export function App() {
     catch (error) { appendWorkerLog(workerId, `\n${String(error)}\n`); }
   }
 
-  // ── Release ──
-  function createReleaseDraft(projectId: string) {
-    const project = projects.find((p) => p.id === projectId);
-    if (!project) return;
-    const nextVersion = bumpPatch(project.version);
-    const versionTag = buildVersionTag(nextVersion);
-    const candidateTasks = project.tasks.filter((t) => t.tags.includes(versionTag) || (t.status === "已完成" && t.version === nextVersion));
-    const lines = [
-      `# ${project.name} v${nextVersion}`, "",
-      `- Worker: ${WORKER_KINDS.find((w) => w.kind === project.workerKind)?.label ?? "未分配"}`,
-      `- 目录: ${project.directory}`, `- 包含任务: ${candidateTasks.length}`, "",
-      "## 建议检查", "逐条确认下列任务对应的交互与结果是否符合预期：", "", "## 任务"
-    ];
-    for (const t of candidateTasks) lines.push(`- [ ] ${t.title}`);
-    if (candidateTasks.length === 0) lines.push("- [ ] 当前无候选任务。");
-    lines.push("", "## 变更列表");
-    for (const t of candidateTasks) lines.push(`- ${t.title} (${t.status})`);
-    setReleaseReport(lines.join("\n"));
-  }
-
   // ── MCP Server ──
   async function refreshMcpStatus() {
     if (!mcpConfig.executable.trim()) {
@@ -1005,7 +984,6 @@ export function App() {
                     selectedTaskId={selectedTaskId}
                     editingTaskId={editingTaskId}
                     detailMode={detailMode}
-                    releaseReport={releaseReport}
                     externalEditorApp={externalEditorApp}
                     uiLanguage={uiLanguage}
                     tagLanguage={effectiveAiLanguage}
@@ -1015,7 +993,6 @@ export function App() {
                     onSelectTask={selectTask}
                     onEditTask={setEditingTaskId}
                     onCompletePending={(id) => void completePending(id)}
-                    onCreateReleaseDraft={createReleaseDraft}
                     onAssignWorkerKind={assignWorkerKind}
                     onSetDetailMode={setDetailMode}
                     onOpenConsole={() => openWorkerConsole(boardProject?.workerKind, { requireActive: true, projectId: boardProject?.id })}
@@ -1105,17 +1082,23 @@ export function App() {
 	              onClose={() => setSelectedTaskId(null)}
 	              onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
 	              onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
-	              onRework={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	              onMarkAsDone={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                ...t,
-	                status: "待返工",
+	                status: "已完成",
 	                needsConfirmation: false,
-	                reports: [...t.reports, createTaskReport("user", ["状态：待返工", "描述：", "已标记为返工，请重新执行并修正结果。"].join("\n"))]
+	                reports: [...t.reports, createTaskReport("user", ["状态：已完成", "描述：", "手动标记为已完成。"].join("\n"))]
 	              }))}
-	              onMarkAsTodo={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	              onReworkToDraft={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                ...t,
+	                status: "草稿",
+	                needsConfirmation: false,
+	                reports: [...t.reports, createTaskReport("user", ["状态：草稿", "描述：", "已返工，任务已回到草稿状态。"].join("\n"))]
+	              }))}
+	              onSetAsTodo={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                ...t,
 	                status: "待办",
 	                needsConfirmation: false,
-	                reports: [...t.reports, createTaskReport("user", ["状态：待办", "描述：", "手动标记为待办。"].join("\n"))]
+	                reports: [...t.reports, createTaskReport("user", ["状态：待办", "描述：", "已设置为待办。"].join("\n"))]
 	              }))}
 	              onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
 	            />
@@ -1135,17 +1118,23 @@ export function App() {
 	                onClose={() => setSelectedTaskId(null)}
 	                onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
 	                onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
-	                onRework={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                onMarkAsDone={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                  ...t,
-	                  status: "待返工",
+	                  status: "已完成",
 	                  needsConfirmation: false,
-	                  reports: [...t.reports, createTaskReport("user", ["状态：待返工", "描述：", "已标记为返工，请重新执行并修正结果。"].join("\n"))]
+	                  reports: [...t.reports, createTaskReport("user", ["状态：已完成", "描述：", "手动标记为已完成。"].join("\n"))]
 	                }))}
-	                onMarkAsTodo={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                onReworkToDraft={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                  ...t,
+	                  status: "草稿",
+	                  needsConfirmation: false,
+	                  reports: [...t.reports, createTaskReport("user", ["状态：草稿", "描述：", "已返工，任务已回到草稿状态。"].join("\n"))]
+	                }))}
+	                onSetAsTodo={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                  ...t,
 	                  status: "待办",
 	                  needsConfirmation: false,
-	                  reports: [...t.reports, createTaskReport("user", ["状态：待办", "描述：", "手动标记为待办。"].join("\n"))]
+	                  reports: [...t.reports, createTaskReport("user", ["状态：待办", "描述：", "已设置为待办。"].join("\n"))]
 	                }))}
 	                onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
 	              />

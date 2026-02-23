@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 // ── Types ──
 
-type TaskStatus = "待办" | "待返工" | "队列中" | "进行中" | "需要更多信息" | "已完成" | "已阻塞";
+type TaskStatus = "草稿" | "待办" | "待返工" | "队列中" | "进行中" | "需要更多信息" | "已完成" | "已阻塞";
 
 type TaskReport = {
   id: string;
@@ -245,7 +245,7 @@ server.tool(
   {
     project: z.string().describe("项目名称"),
     task_id: z.string().describe("任务 ID"),
-    status: z.enum(["待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"]).optional().describe("新状态（可选）"),
+    status: z.enum(["草稿", "待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"]).optional().describe("新状态（可选）"),
     report: z.string().describe("报告内容"),
     tags: z.array(z.string()).optional().describe("标签列表（可选，0-5 个）"),
   },
@@ -394,7 +394,7 @@ const SIGNAL_FILE = join(STATE_DIR, "worker-signal.json");
 
 server.tool(
   "finish_worker",
-  "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无待办/待返工/队列中/进行中任务。",
+  "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无草稿/待办/待返工/队列中/进行中任务。",
   {
     project: z.string().describe("项目名称"),
     summary: z.string().optional().describe("执行总结（可选）"),

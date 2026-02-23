@@ -723,7 +723,7 @@ fn tool_definitions() -> Vec<Value> {
                     "task_id": { "type": "string", "description": "任务 ID" },
                     "status": {
                         "type": "string",
-                        "enum": ["待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"],
+                        "enum": ["草稿", "待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"],
                         "description": "新状态（可选）"
                     },
                     "report": { "type": "string", "description": "报告内容" },
@@ -765,7 +765,7 @@ fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "finish_worker",
-            "description": "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无待办/待返工/队列中/进行中任务。",
+            "description": "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无草稿/待办/待返工/队列中/进行中任务。",
             "inputSchema": {
                 "type": "object",
                 "properties": {

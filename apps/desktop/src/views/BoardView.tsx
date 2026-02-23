@@ -18,7 +18,6 @@ type BoardViewProps = {
   selectedTaskId: string | null;
   editingTaskId: string | null;
   detailMode: DetailMode;
-  releaseReport: string;
   externalEditorApp: ExternalEditorApp;
   uiLanguage: UiLanguage;
   tagLanguage: UiLanguage;
@@ -28,7 +27,6 @@ type BoardViewProps = {
   onSelectTask: (taskId: string | null) => void;
   onEditTask: (taskId: string | null) => void;
   onCompletePending: (projectId: string) => void;
-  onCreateReleaseDraft: (projectId: string) => void;
   onAssignWorkerKind: (projectId: string, kind: WorkerKind) => void;
   onSetDetailMode: (mode: DetailMode) => void;
   onOpenConsole: () => void;
@@ -51,7 +49,6 @@ export function BoardView({
   selectedTaskId,
   editingTaskId,
   detailMode,
-  releaseReport,
   externalEditorApp,
   uiLanguage,
   tagLanguage,
@@ -61,7 +58,6 @@ export function BoardView({
   onSelectTask,
   onEditTask,
   onCompletePending,
-  onCreateReleaseDraft,
   onAssignWorkerKind,
   onSetDetailMode,
   onOpenConsole,
@@ -173,7 +169,6 @@ export function BoardView({
               align="right"
               style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
               items={[
-                { kind: "item", key: "release-draft", label: "版本草稿", icon: "mingcute:send-plane-line", onSelect: () => onCreateReleaseDraft(boardProject.id) },
                 { kind: "heading", label: "Worker" },
                 ...WORKER_KINDS.map(({ kind, label }) => ({
                   kind: "item" as const,
@@ -273,15 +268,6 @@ export function BoardView({
             </TiltedCard>
 
             <div className="mt-4 pt-4 border-t border-(--color-base-300)/20 flex flex-col gap-2">
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                type="button"
-                className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3"
-                onClick={() => onCreateReleaseDraft(boardProject.id)}
-              >
-                <Icon icon="mingcute:send-plane-line" className="text-base opacity-70" />
-                生成版本草稿
-              </motion.button>
               <motion.button 
                 whileTap={{ scale: 0.96 }} 
                 type="button" 
@@ -352,16 +338,6 @@ export function BoardView({
             </motion.div>
           ) : null}
 
-          {releaseReport ? (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.98 }} 
-              animate={{ opacity: 1, scale: 1 }} 
-              className="ui-card p-4 mt-3"
-            >
-              <h3 className="font-semibold m-0">版本草稿</h3>
-              <textarea className="ui-textarea w-full mt-2" value={releaseReport} readOnly rows={14} />
-            </motion.div>
-          ) : null}
         </motion.div>
         </AnimatePresence>
       </div>
@@ -511,7 +487,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
                   ? "ui-badge--solid"
                     : task.status === "需要更多信息"
                       ? "ui-badge--warning"
-                    : task.status === "队列中" || task.status === "待办" || task.status === "待返工"
+                    : task.status === "草稿" || task.status === "队列中" || task.status === "待办" || task.status === "待返工"
                       ? "ui-badge--neutral"
                       : ""
           }`}

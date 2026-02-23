@@ -17,8 +17,9 @@ type TaskDetailPanelProps = {
   tagCatalog?: TagCatalog | null;
   onUpdateTitle?: (title: string) => void;
   onUpdateDetails?: (details: string) => void;
-  onRework?: () => void;
-  onMarkAsTodo?: () => void;
+  onMarkAsDone?: () => void;
+  onReworkToDraft?: () => void;
+  onSetAsTodo?: () => void;
   onClose?: () => void;
   onDelete?: () => void;
 };
@@ -48,7 +49,7 @@ function parseTaskReport(content: string): ParsedTaskReport | null {
     const firstNonEmptyIndex = lines.findIndex((line) => line.trim().length > 0);
     if (firstNonEmptyIndex < 0) return null;
     const firstLine = lines[firstNonEmptyIndex] ?? "";
-    const statusPrefix = firstLine.match(/^\s*(待办|待返工|队列中|进行中|需要更多信息|已完成|已阻塞)\s*[:：]\s*(.*)$/);
+    const statusPrefix = firstLine.match(/^\s*(草稿|待办|待返工|队列中|进行中|需要更多信息|已完成|已阻塞)\s*[:：]\s*(.*)$/);
     if (!statusPrefix) return null;
     const status = statusPrefix[1]?.trim() ?? "";
     const firstDetail = statusPrefix[2]?.trim() ?? "";
@@ -86,7 +87,7 @@ function reportBadgeClass(status: string): string {
   if (status.includes("已阻塞")) return "ui-badge--error";
   if (status.includes("进行中")) return "ui-badge--solid";
   if (status.includes("需要更多信息")) return "ui-badge--warning";
-  if (status.includes("队列中") || status.includes("待办") || status.includes("待返工")) return "ui-badge--neutral";
+  if (status.includes("草稿") || status.includes("队列中") || status.includes("待办") || status.includes("待返工")) return "ui-badge--neutral";
   return "";
 }
 
@@ -105,8 +106,9 @@ export function TaskDetailPanel({
   tagCatalog,
   onUpdateTitle,
   onUpdateDetails,
-  onRework,
-  onMarkAsTodo,
+  onMarkAsDone,
+  onReworkToDraft,
+  onSetAsTodo,
   onClose
 }: TaskDetailPanelProps) {
   const reports = useMemo(() => {
@@ -345,36 +347,56 @@ export function TaskDetailPanel({
         </motion.div>
       </motion.div>
 
-      {(task.status === "已完成" && typeof onRework === "function")
-        || (task.status !== "已完成" && task.status !== "待办" && typeof onMarkAsTodo === "function") ? (
-        <footer className="mt-10 pt-4 border-t border-(--color-base-300)/20 flex items-center justify-end gap-3">
-          {task.status === "已完成" && typeof onRework === "function" && (
-            <button
-              type="button"
-              className="ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-warning/5 hover:border-warning/30 hover:text-warning text-muted transition-all duration-300 gap-1.5 px-4"
-              onClick={onRework}
-              aria-label="标记为待返工"
-              title="将任务标记为待返工，重新进入待办队列"
-            >
-              <Icon icon="mingcute:refresh-3-line" className="text-[14px]" />
-              <span className="font-medium text-[12.5px]">重新执行任务</span>
-            </button>
-          )}
+      {(() => {
+        const action =
+          task.status === "待办" && typeof onMarkAsDone === "function"
+            ? {
+                label: "标记为已完成",
+                ariaLabel: "标记为已完成",
+                title: "将任务标记为已完成",
+                icon: "mingcute:check-line",
+                className:
+                  "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4",
+                onClick: onMarkAsDone,
+              }
+            : task.status === "已完成" && typeof onReworkToDraft === "function"
+              ? {
+                  label: "返工",
+                  ariaLabel: "返工并设为草稿",
+                  title: "将任务返工并设置为草稿（可继续编辑后再设置为待办）",
+                  icon: "mingcute:refresh-3-line",
+                  className:
+                    "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-warning/5 hover:border-warning/30 hover:text-warning text-muted transition-all duration-300 gap-1.5 px-4",
+                  onClick: onReworkToDraft,
+                }
+              : task.status === "草稿" && typeof onSetAsTodo === "function"
+                ? {
+                    label: "设置为待办",
+                    ariaLabel: "设置为待办",
+                    title: "将草稿任务设置为待办",
+                    icon: "mingcute:undo-line",
+                    className:
+                      "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4",
+                    onClick: onSetAsTodo,
+                  }
+                : null;
 
-          {task.status !== "已完成" && typeof onMarkAsTodo === "function" && (
+        if (!action) return null;
+        return (
+          <footer className="mt-10 pt-4 border-t border-(--color-base-300)/20 flex items-center justify-end gap-3">
             <button
               type="button"
-              className="ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4"
-              onClick={onMarkAsTodo}
-              aria-label="标记为待办"
-              title="将任务标记为待办"
+              className={action.className}
+              onClick={action.onClick}
+              aria-label={action.ariaLabel}
+              title={action.title}
             >
-              <Icon icon="mingcute:undo-line" className="text-[14px]" />
-              <span className="font-medium text-[12.5px]">标记为待办</span>
+              <Icon icon={action.icon} className="text-[14px]" />
+              <span className="font-medium text-[12.5px]">{action.label}</span>
             </button>
-          )}
-        </footer>
-      ) : null}
+          </footer>
+        );
+      })()}
     </motion.section>
   );
 }

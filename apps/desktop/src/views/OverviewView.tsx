@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react";
-import { CountUp, FadeContent, SpotlightCard, SplitText } from "../components/ReactBits";
+import { CountUp, CurvedLoop, FadeContent, SpotlightCard, SplitText } from "../components/ReactBits";
 import { WorkerLogo } from "../components/WorkerLogo";
 import AnimatedList from "../components/reactbits/AnimatedList";
 import type { McpServerStatus, WorkerKind } from "../domain";
@@ -53,7 +53,8 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
       value:
         (metrics.statusDistribution["待办"] || 0) +
         (metrics.statusDistribution["队列中"] || 0) +
-        (metrics.statusDistribution["待返工"] || 0),
+        (metrics.statusDistribution["待返工"] || 0) +
+        (metrics.statusDistribution["草稿"] || 0),
       color: "var(--color-secondary)",
     },
     { label: "需信息", value: metrics.statusDistribution["需要更多信息"] || 0, color: "var(--color-warning)" },
@@ -154,7 +155,8 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                       <span className="text-[11px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
                         {(metrics.statusDistribution["待办"] || 0) +
                           (metrics.statusDistribution["队列中"] || 0) +
-                          (metrics.statusDistribution["待返工"] || 0)}
+                          (metrics.statusDistribution["待返工"] || 0) +
+                          (metrics.statusDistribution["草稿"] || 0)}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -171,7 +173,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
           </FadeContent>
 
           <FadeContent delay={300} className="flex min-h-0">
-            <div className="w-full rounded-[16px] bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] p-4 lg:p-5 flex flex-col relative transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] hover:border-[color-mix(in_srgb,var(--color-base-content)_12%,transparent)] group">
+            <div className="w-full rounded-[16px] bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] p-4 lg:p-5 flex flex-col relative transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] hover:border-[color-mix(in_srgb,var(--color-base-content)_12%,transparent)] group overflow-hidden">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 text-[12px] lg:text-[13px] font-medium text-muted font-sans">
                   <Icon icon="mingcute:server-line" className="text-[16px] lg:text-lg opacity-60 group-hover:opacity-100 transition-opacity" />
@@ -187,7 +189,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                   </button>
                 )}
               </div>
-              <div className="mt-1 mb-4 flex items-center gap-2.5 flex-1">
+              <div className="mt-1 mb-4 flex items-center gap-2.5 flex-1 relative z-10">
                 <span className="relative flex h-2.5 w-2.5 flex-none">
                   <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-30 ${mcpStatus.running ? 'bg-green-500' : 'bg-red-500'}`}></span>
                   <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${mcpStatus.running ? 'bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.5)]'}`}></span>
@@ -196,13 +198,26 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                   {mcpStatus.running ? "Active" : "Offline"}
                 </span>
               </div>
-              <div className="mt-auto flex-none flex flex-col gap-1">
+              <div className="mt-auto flex-none flex flex-col gap-1 relative z-10">
                 <div className="flex items-center gap-2 text-[11px] lg:text-[12px] text-muted opacity-70 font-mono tracking-wide">
                   <span className="px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-base-content)_5%,transparent)]">PID: {mcpStatus.pid ?? "—"}</span>
                   <span className="w-1 h-1 rounded-full bg-current opacity-30" />
                   <span className="truncate">{mcpStatus.command || "Maple MCP (内置)"}</span>
                 </div>
               </div>
+
+              {/* Status Indicator Decoration */}
+              {mcpStatus.running && (
+                <div className="absolute -right-6 -bottom-6 opacity-[0.15] group-hover:opacity-25 transition-opacity pointer-events-none rotate-12">
+                  <CurvedLoop 
+                    text="运行中 RUNNING" 
+                    radius={60} 
+                    speed={15} 
+                    fontSize="13px" 
+                    color="var(--color-success)" 
+                  />
+                </div>
+              )}
             </div>
           </FadeContent>
         </div>
