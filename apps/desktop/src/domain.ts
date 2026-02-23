@@ -63,6 +63,7 @@ export type Task = {
   title: string;
   details: string;
   status: TaskStatus;
+  needsConfirmation?: boolean;
   tags: string[];
   version: string;
   createdAt: string;

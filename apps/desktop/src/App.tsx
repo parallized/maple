@@ -22,13 +22,14 @@ import {
   DEFAULT_MCP_CONFIG,
   DEFAULT_WORKER_CONFIGS,
   STORAGE_AI_LANGUAGE,
+  STORAGE_EDITOR_APP,
   STORAGE_MCP_CONFIG,
   STORAGE_PROJECTS,
   STORAGE_THEME,
   STORAGE_UI_LANGUAGE,
   WORKER_KINDS
 } from "./lib/constants";
-import type { AiLanguage, ThemeMode, UiLanguage } from "./lib/constants";
+import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage } from "./lib/constants";
 import {
   hasTauriRuntime,
   applyTheme,
@@ -42,7 +43,7 @@ import { collectTokenUsage } from "./lib/token-usage";
 import { generatePrStyleTags } from "./lib/pr-tags";
 import { buildVersionTag, mergeTaskTags } from "./lib/task-tags";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
-import { loadAiLanguage, loadProjects, loadMcpServerConfig, loadTheme, loadUiLanguage } from "./lib/storage";
+import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadMcpServerConfig, loadTheme, loadUiLanguage } from "./lib/storage";
 import { buildTrayTaskSnapshot } from "./lib/task-tray";
 
 import type {
@@ -69,6 +70,7 @@ export function App() {
   const [projects, setProjects] = useState<Project[]>(() => loadProjects());
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => loadUiLanguage());
   const [aiLanguage, setAiLanguage] = useState<AiLanguage>(() => loadAiLanguage());
+  const [externalEditorApp, setExternalEditorApp] = useState<ExternalEditorApp>(() => loadExternalEditorApp());
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => cloneDefaultWorkerConfigs());
   const [mcpConfig, setMcpConfig] = useState<McpServerConfig>(() => loadMcpServerConfig());
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
@@ -173,6 +175,7 @@ export function App() {
   useEffect(() => { localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(projects)); }, [projects]);
   useEffect(() => { localStorage.setItem(STORAGE_UI_LANGUAGE, uiLanguage); }, [uiLanguage]);
   useEffect(() => { localStorage.setItem(STORAGE_AI_LANGUAGE, aiLanguage); }, [aiLanguage]);
+  useEffect(() => { localStorage.setItem(STORAGE_EDITOR_APP, externalEditorApp); }, [externalEditorApp]);
   useEffect(() => {
     if (!isTauri) return;
     invoke("write_state_file", { json: JSON.stringify(projects) }).catch(() => {});
@@ -204,6 +207,17 @@ export function App() {
       setSelectedTaskId(null);
     }
   }, [boardProjectId, projects]);
+
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (event.defaultPrevented) return;
+      setSelectedTaskId(null);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedTaskId]);
 
   async function notifyProjectAllDone(projectName: string) {
     const title = `${projectName} 待办已全部完成`;
@@ -303,7 +317,16 @@ export function App() {
           const index = project.tasks.findIndex((item) => item.id === task.id);
           if (index < 0) return project;
           const tasks = [...project.tasks];
-          tasks[index] = task;
+          const existing = tasks[index];
+          const shouldMarkConfirm =
+            existing.status !== "已完成" && task.status === "已完成";
+          tasks[index] = {
+            ...existing,
+            ...task,
+            needsConfirmation: shouldMarkConfirm
+              ? true
+              : existing.needsConfirmation,
+          };
           changed = true;
           return { ...project, tasks };
         });
@@ -408,12 +431,22 @@ export function App() {
   }
 
   // ── Task CRUD ──
-  function updateTask(projectId: string, taskId: string, updater: (task: Task) => Task) {
+  function updateTask(
+    projectId: string,
+    taskId: string,
+    updater: (task: Task) => Task,
+    options?: { touchUpdatedAt?: boolean }
+  ) {
     const now = new Date().toISOString();
+    const touchUpdatedAt = options?.touchUpdatedAt ?? true;
     setProjects((prev) =>
       prev.map((p) => p.id !== projectId ? p : {
         ...p,
-        tasks: p.tasks.map((t) => t.id !== taskId ? t : { ...updater(t), updatedAt: now })
+        tasks: p.tasks.map((t) =>
+          t.id !== taskId
+            ? t
+            : { ...updater(t), updatedAt: touchUpdatedAt ? now : t.updatedAt }
+        )
       })
     );
   }
@@ -424,6 +457,15 @@ export function App() {
     const newTask = createTask("", project.version);
     setProjects((prev) => prev.map((p) => p.id !== projectId ? p : { ...p, tasks: [newTask, ...p.tasks] }));
     setEditingTaskId(newTask.id);
+  }
+
+  function selectTask(taskId: string | null) {
+    setSelectedTaskId(taskId);
+    if (!taskId || !boardProjectId) return;
+    const project = projectsRef.current.find((p) => p.id === boardProjectId);
+    const task = project?.tasks.find((t) => t.id === taskId);
+    if (!project || !task?.needsConfirmation) return;
+    updateTask(project.id, taskId, (t) => ({ ...t, needsConfirmation: false }), { touchUpdatedAt: false });
   }
 
   function commitTaskTitle(projectId: string, taskId: string, title: string) {
@@ -656,6 +698,7 @@ export function App() {
           updateTask(project.id, task.id, (c) => ({
             ...c,
             status: decision.status,
+            needsConfirmation: decision.status === "已完成" ? true : c.needsConfirmation,
             tags: mergeTaskTags({
               existing: c.tags,
               generated: generatedTags,
@@ -865,10 +908,12 @@ export function App() {
                     editingTaskId={editingTaskId}
                     detailMode={detailMode}
                     releaseReport={releaseReport}
+                    externalEditorApp={externalEditorApp}
+                    uiLanguage={uiLanguage}
                     onAddTask={addTask}
                     onCommitTaskTitle={commitTaskTitle}
                     onDeleteTask={deleteTask}
-                    onSelectTask={setSelectedTaskId}
+                    onSelectTask={selectTask}
                     onEditTask={setEditingTaskId}
                     onCompletePending={(id) => void completePending(id)}
                     onCreateReleaseDraft={createReleaseDraft}
@@ -896,11 +941,13 @@ export function App() {
                     theme={theme}
                     uiLanguage={uiLanguage}
                     aiLanguage={aiLanguage}
+                    externalEditorApp={externalEditorApp}
                     onProbeWorker={(kind) => void probeWorker(kind)}
                     onRestartMcpServer={() => void restartMcpServer()}
                     onThemeChange={setThemeState}
                     onUiLanguageChange={setUiLanguage}
                     onAiLanguageChange={setAiLanguage}
+                    onExternalEditorAppChange={setExternalEditorApp}
                     onDetailModeChange={setDetailMode}
                   />
                 </motion.div>
@@ -954,6 +1001,7 @@ export function App() {
             </button>
             <TaskDetailPanel
               task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
+              uiLanguage={uiLanguage}
               onClose={() => setSelectedTaskId(null)}
               onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
               onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
@@ -970,6 +1018,7 @@ export function App() {
             <div className="ui-modal-body">
               <TaskDetailPanel
                 task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
+                uiLanguage={uiLanguage}
                 onClose={() => setSelectedTaskId(null)}
                 onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
                 onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}

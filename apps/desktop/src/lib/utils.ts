@@ -27,6 +27,7 @@ export function createTask(taskTitle: string, projectVersion: string): Task {
     title: taskTitle,
     details: "",
     status: "待办",
+    needsConfirmation: false,
     tags: [],
     version: nextVersion,
     createdAt: now,
@@ -75,10 +76,15 @@ export function normalizeProjects(projects: Project[]): Project[] {
             typeof (task as Task).details === "string"
               ? (task as Task).details
               : "";
+          const needsConfirmation =
+            typeof (task as Task).needsConfirmation === "boolean"
+              ? Boolean((task as Task).needsConfirmation)
+              : false;
           return {
             ...task,
             status,
             details,
+            needsConfirmation,
             createdAt,
             updatedAt,
             reports: Array.isArray(task.reports) ? task.reports : [],

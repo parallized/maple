@@ -4,6 +4,8 @@ import type { Task, TaskReport } from "../domain";
 import { relativeTimeZh, getTimeLevel } from "../lib/utils";
 import { renderTaskMarkdown } from "../lib/task-markdown";
 import { buildTagBadgeStyle } from "../lib/tag-style";
+import { formatTagLabel } from "../lib/tag-label";
+import type { UiLanguage } from "../lib/constants";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { InlineTaskInput } from "./InlineTaskInput";
 import { TaskDetailsEditor } from "./TaskDetailsEditor";
@@ -11,6 +13,7 @@ import { WorkerLogo } from "./WorkerLogo";
 
 type TaskDetailPanelProps = {
   task: Task;
+  uiLanguage: UiLanguage;
   onUpdateTitle?: (title: string) => void;
   onUpdateDetails?: (details: string) => void;
   onClose?: () => void;
@@ -101,7 +104,7 @@ function renderAuthorIcon(author: string, size = 14) {
   return <Icon icon="mingcute:paper-line" className="opacity-60" style={{ fontSize: size }} />;
 }
 
-export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ task, uiLanguage, onUpdateTitle, onUpdateDetails, onClose }: TaskDetailPanelProps) {
   const completedReports = useMemo(
     () => task.reports.filter(isCompletedReport),
     [task.reports]
@@ -228,8 +231,9 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
                 key={tag}
                 className="ui-badge ui-badge--sm ui-badge--tag shrink-0"
                 style={buildTagBadgeStyle(tag) as CSSProperties}
+                title={tag}
               >
-                {tag}
+                {formatTagLabel(tag, uiLanguage)}
               </span>
             ))}
           </div>
@@ -300,9 +304,9 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
                         transition={{ type: "spring", stiffness: 400, damping: 30 }}
                         className="flex flex-col"
                       >
-                        <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90 flex gap-2.5">
-                          <div className="shrink-0 mt-[3px] -ml-[22px] opacity-40">
-                            {renderAuthorIcon(report.author, 15)}
+                        <div className="report-content text-[13px] leading-[1.55] text-secondary/85 flex gap-2.5">
+                          <div className="shrink-0 mt-[3px] -ml-[22px] opacity-40" style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }}>
+                            {renderAuthorIcon(report.author, 14)}
                           </div>
                           <div className="flex-1 min-w-0">
                             {parsed ? renderTaskMarkdown(parsed.description) : renderTaskMarkdown(report.content)}

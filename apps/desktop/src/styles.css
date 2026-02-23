@@ -691,6 +691,12 @@ h3 {
   padding-right: 0.2rem;
 }
 
+.task-table th.col-confirm,
+.task-table td.col-confirm {
+  text-align: center;
+  padding-right: 0.15rem;
+}
+
 .task-table th.col-tags,
 .task-table td.col-tags {
   min-width: 0;
@@ -713,6 +719,10 @@ h3 {
 
 .task-row td.col-taskIcon {
   padding-right: 0.2rem;
+}
+
+.task-row td.col-confirm {
+  padding-right: 0.15rem;
 }
 
 .task-row td.col-task,

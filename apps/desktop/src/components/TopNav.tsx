@@ -72,12 +72,21 @@ export function TopNav({
           <AnimatePresence>
             {projects.map((project, index) => {
               const active = view === "board" && boardProjectId === project.id;
-              const pending = project.tasks.filter((t) => t.status !== "已完成").length;
+              const confirmCount = project.tasks.filter((t) => t.status === "已完成" && t.needsConfirmation).length;
               const isExecuting = project.tasks.some((t) => t.status === "队列中" || t.status === "进行中");
-              const isAllDone = project.tasks.length > 0 && project.tasks.every((t) => t.status === "已完成");
+              const todoCount = project.tasks.filter((t) => t.status === "待办" || t.status === "待返工").length;
               const workerColor = project.workerKind 
                 ? WORKER_KINDS.find(w => w.kind === project.workerKind)?.color 
                 : "var(--color-primary)";
+
+              const badgeTitle =
+                confirmCount > 0
+                  ? t("待确认", "Needs review")
+                  : isExecuting
+                    ? t("执行中", "Running")
+                    : todoCount > 0
+                      ? t("待办", "Todo")
+                      : "";
 
               return (
                 <motion.button
@@ -100,12 +109,17 @@ export function TopNav({
                     )}
                   </div>
                   <span className="truncate max-w-[120px]">{project.name}</span>
-                  {pending > 0 || isAllDone ? (
-                    <span className={`topnav-queue-count ${isExecuting ? "topnav-queue-count--spinning" : ""}`}>
-                      {isAllDone ? (
-                        <Icon icon="mingcute:task-fill" className="text-[12px]" />
+                  {confirmCount > 0 || isExecuting || todoCount > 0 ? (
+                    <span
+                      className={`topnav-queue-count ${!confirmCount && isExecuting ? "topnav-queue-count--spinning" : ""}`}
+                      title={badgeTitle}
+                    >
+                      {confirmCount > 0 ? (
+                        <Icon icon="mingcute:warning-fill" className="text-[12px] text-(--color-warning)" />
+                      ) : isExecuting ? (
+                        <Icon icon="mingcute:loading-line" className="text-[12px]" />
                       ) : (
-                        pending
+                        todoCount
                       )}
                     </span>
                   ) : null}

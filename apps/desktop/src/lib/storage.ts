@@ -1,6 +1,15 @@
 import type { McpServerConfig, Project } from "../domain";
-import type { AiLanguage, ThemeMode, UiLanguage } from "./constants";
-import { DEFAULT_MCP_CONFIG, STORAGE_AI_LANGUAGE, STORAGE_MCP_CONFIG, STORAGE_PROJECTS, STORAGE_THEME, STORAGE_UI_LANGUAGE } from "./constants";
+import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage } from "./constants";
+import {
+  DEFAULT_EXTERNAL_EDITOR_APP,
+  DEFAULT_MCP_CONFIG,
+  STORAGE_AI_LANGUAGE,
+  STORAGE_EDITOR_APP,
+  STORAGE_MCP_CONFIG,
+  STORAGE_PROJECTS,
+  STORAGE_THEME,
+  STORAGE_UI_LANGUAGE
+} from "./constants";
 import { normalizeProjects } from "./utils";
 
 const INITIAL_PROJECTS: Project[] = [];
@@ -71,5 +80,23 @@ export function loadAiLanguage(): AiLanguage {
     return "follow_ui";
   } catch {
     return "follow_ui";
+  }
+}
+
+export function loadExternalEditorApp(): ExternalEditorApp {
+  try {
+    const raw = localStorage.getItem(STORAGE_EDITOR_APP);
+    switch (raw) {
+      case "vscode":
+      case "github_desktop":
+      case "cursor":
+      case "windsurf":
+      case "visual_studio":
+        return raw;
+      default:
+        return DEFAULT_EXTERNAL_EDITOR_APP;
+    }
+  } catch {
+    return DEFAULT_EXTERNAL_EDITOR_APP;
   }
 }

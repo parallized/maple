@@ -5,10 +5,20 @@ export const STORAGE_MCP_CONFIG = "maple.desktop.mcp-config";
 export const STORAGE_THEME = "maple.desktop.theme";
 export const STORAGE_UI_LANGUAGE = "maple.desktop.ui-language";
 export const STORAGE_AI_LANGUAGE = "maple.desktop.ai-language";
+export const STORAGE_EDITOR_APP = "maple.desktop.editor-app";
 
 export type ThemeMode = "system" | "light" | "dark";
 export type UiLanguage = "zh" | "en";
 export type AiLanguage = "follow_ui" | UiLanguage;
+
+export type ExternalEditorApp =
+  | "vscode"
+  | "github_desktop"
+  | "cursor"
+  | "windsurf"
+  | "visual_studio";
+
+export const DEFAULT_EXTERNAL_EDITOR_APP: ExternalEditorApp = "vscode";
 
 export const WORKER_KINDS: {
   kind: WorkerKind;

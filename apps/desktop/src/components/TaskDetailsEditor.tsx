@@ -34,8 +34,8 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
   const currentValueRef = useRef(value);
   const ignoreNextBlurRef = useRef(false);
   const lastSyncedValueRef = useRef<string>("");
-  const autosaveTimerRef = useRef<number | null>(null);
-  const lastAutosaveAtRef = useRef<number>(0);
+  const debounceTimerRef = useRef<number | null>(null);
+  const maxWaitTimerRef = useRef<number | null>(null);
 
   const editor = useCreateBlockNote(
     {
@@ -64,27 +64,27 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
   const scheduleAutosave = useCallback(() => {
     const maxWaitMs = 2000;
     const debounceMs = 450;
-    const now = Date.now();
-    const elapsed = now - lastAutosaveAtRef.current;
 
-    if (elapsed >= maxWaitMs) {
-      if (autosaveTimerRef.current) {
-        window.clearTimeout(autosaveTimerRef.current);
-        autosaveTimerRef.current = null;
+    const commit = () => {
+      if (debounceTimerRef.current) {
+        window.clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      if (maxWaitTimerRef.current) {
+        window.clearTimeout(maxWaitTimerRef.current);
+        maxWaitTimerRef.current = null;
       }
       commitEditorMarkdown();
-      lastAutosaveAtRef.current = Date.now();
-      return;
-    }
+    };
 
-    if (autosaveTimerRef.current) {
-      window.clearTimeout(autosaveTimerRef.current);
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
     }
-    autosaveTimerRef.current = window.setTimeout(() => {
-      autosaveTimerRef.current = null;
-      commitEditorMarkdown();
-      lastAutosaveAtRef.current = Date.now();
-    }, debounceMs);
+    debounceTimerRef.current = window.setTimeout(commit, debounceMs);
+
+    if (!maxWaitTimerRef.current) {
+      maxWaitTimerRef.current = window.setTimeout(commit, maxWaitMs);
+    }
   }, [commitEditorMarkdown]);
 
   const syncEditorFromMarkdown = useCallback(
@@ -120,12 +120,17 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
 
   useEffect(() => {
     return () => {
-      if (autosaveTimerRef.current) {
-        window.clearTimeout(autosaveTimerRef.current);
-        autosaveTimerRef.current = null;
+      if (debounceTimerRef.current) {
+        window.clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
       }
+      if (maxWaitTimerRef.current) {
+        window.clearTimeout(maxWaitTimerRef.current);
+        maxWaitTimerRef.current = null;
+      }
+      commitEditorMarkdown();
     };
-  }, []);
+  }, [commitEditorMarkdown]);
 
   return (
     <div className="task-details-surface task-details-surface--editing">

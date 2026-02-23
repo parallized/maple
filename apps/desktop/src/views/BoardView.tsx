@@ -3,13 +3,13 @@ import { Icon } from "@iconify/react";
 import { FadeContent, TiltedCard } from "../components/ReactBits";
 import { InlineTaskInput } from "../components/InlineTaskInput";
 import { PopoverMenu, type PopoverMenuItem } from "../components/PopoverMenu";
-import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WorkerLogo } from "../components/WorkerLogo";
-import { WORKER_KINDS } from "../lib/constants";
+import { WORKER_KINDS, type ExternalEditorApp, type UiLanguage } from "../lib/constants";
 import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
+import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { relativeTimeZh, getLastMentionTime, getTimeLevel } from "../lib/utils";
-import { type DetailMode, type Project, type Task, type WorkerKind, isMac } from "../domain";
+import { type DetailMode, type Project, type Task, type WorkerKind } from "../domain";
 import React, { useCallback, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -19,6 +19,8 @@ type BoardViewProps = {
   editingTaskId: string | null;
   detailMode: DetailMode;
   releaseReport: string;
+  externalEditorApp: ExternalEditorApp;
+  uiLanguage: UiLanguage;
   onAddTask: (projectId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
   onDeleteTask: (projectId: string, taskId: string) => void;
@@ -34,6 +36,7 @@ type BoardViewProps = {
 
 const TASK_TITLE_MAX_WIDTH = 340;
 const DEFAULT_COL_WIDTHS: Record<string, number> = {
+  confirm: 28,
   taskIcon: 48,
   task: TASK_TITLE_MAX_WIDTH,
   status: 100,
@@ -48,6 +51,8 @@ export function BoardView({
   editingTaskId,
   detailMode,
   releaseReport,
+  externalEditorApp,
+  uiLanguage,
   onAddTask,
   onCommitTaskTitle,
   onDeleteTask,
@@ -107,6 +112,15 @@ export function BoardView({
       console.error("Failed to open folder:", err);
     }
   }, [boardProject?.directory]);
+
+  const handleOpenInEditor = useCallback(async () => {
+    if (!boardProject?.directory) return;
+    try {
+      await invoke("open_in_editor", { path: boardProject.directory, app: externalEditorApp });
+    } catch (err) {
+      console.error("Failed to open in editor:", err);
+    }
+  }, [boardProject?.directory, externalEditorApp]);
 
   const selectedTask = boardProject && selectedTaskId ? boardProject.tasks.find((task) => task.id === selectedTaskId) ?? null : null;
 
@@ -263,6 +277,15 @@ export function BoardView({
                 <Icon icon="mingcute:folder-open-line" className="text-base opacity-70" />
                 在文件夹中打开
               </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                type="button"
+                className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3"
+                onClick={handleOpenInEditor}
+              >
+                <Icon icon="mingcute:code-line" className="text-base opacity-70" />
+                在编辑器打开
+              </motion.button>
               <motion.button 
                 whileTap={{ scale: 0.96 }} 
                 type="button" 
@@ -291,6 +314,7 @@ export function BoardView({
             projectId={boardProject.id}
             selectedTaskId={selectedTaskId}
             editingTaskId={editingTaskId}
+            uiLanguage={uiLanguage}
             colWidths={colWidths}
             tableRef={tableRef}
             onSelectTask={onSelectTask}
@@ -334,6 +358,7 @@ type TaskTableProps = {
   projectId: string;
   selectedTaskId: string | null;
   editingTaskId: string | null;
+  uiLanguage: UiLanguage;
   colWidths: Record<string, number>;
   tableRef: React.Ref<HTMLTableElement>;
   onSelectTask: (taskId: string) => void;
@@ -359,6 +384,7 @@ type TaskRowProps = {
   selectedTaskId: string | null;
   editingTaskId: string | null;
   projectId: string;
+  uiLanguage: UiLanguage;
   onSelectTask: (taskId: string) => void;
   onEditTask: (taskId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
@@ -371,6 +397,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   selectedTaskId,
   editingTaskId,
   projectId,
+  uiLanguage,
   onSelectTask,
   onEditTask,
 	onCommitTaskTitle,
@@ -398,6 +425,16 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
         }
       }}
     >
+      <td className="col-confirm text-center">
+        {task.status === "已完成" && task.needsConfirmation ? (
+          <span title="待确认">
+            <Icon
+              icon="mingcute:warning-fill"
+              className="text-[14px] text-(--color-warning)"
+            />
+          </span>
+        ) : null}
+      </td>
       <td className="col-taskIcon text-center">
         {(() => {
           const { icon, isDefault } = resolveTaskIcon(task);
@@ -474,14 +511,16 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           {task.tags.length === 0 ? <span className="text-xs text-muted">—</span> : null}
           {task.tags.map((tag, index) => {
             const { icon, isDefault } = resolveTagIconMeta(tag);
+            const label = formatTagLabel(tag, uiLanguage);
             return (
               <span
                 key={`${tag}-${index}`}
                 className="ui-badge ui-badge--tag"
                 style={buildTagBadgeStyle(tag) as React.CSSProperties}
+                title={tag}
               >
                 {isDefault ? null : <Icon icon={icon} className="text-[11px] opacity-70 shrink-0" />}
-                <span className="flex-1 min-w-0">{tag}</span>
+                <span className="flex-1 min-w-0">{label}</span>
               </span>
             );
           })}
@@ -510,6 +549,7 @@ function TaskTable({
   projectId,
   selectedTaskId,
   editingTaskId,
+  uiLanguage,
   colWidths,
   tableRef,
   onSelectTask,
@@ -522,6 +562,7 @@ function TaskTable({
   return (
     <table ref={tableRef} className="task-table">
       <colgroup>
+        <col style={{ width: colWidths.confirm }} />
         <col style={{ width: colWidths.taskIcon }} />
         <col style={colWidths.task ? { width: colWidths.task } : undefined} />
         <col style={{ width: colWidths.status }} />
@@ -531,6 +572,7 @@ function TaskTable({
       </colgroup>
       <thead>
         <tr>
+          <th className="col-confirm"></th>
           {[
             { key: "taskIcon", label: "", icon: "mingcute:ai-line" },
             { key: "task", label: "任务", icon: "mingcute:task-line" },
@@ -574,6 +616,7 @@ function TaskTable({
               selectedTaskId={selectedTaskId}
               editingTaskId={editingTaskId}
               projectId={projectId}
+              uiLanguage={uiLanguage}
               onSelectTask={onSelectTask}
               onEditTask={onEditTask}
               onCommitTaskTitle={onCommitTaskTitle}

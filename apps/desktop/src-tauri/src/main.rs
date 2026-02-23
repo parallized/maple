@@ -426,6 +426,70 @@ fn open_path(path: String) -> Result<bool, String> {
   Ok(true)
 }
 
+#[tauri::command]
+fn open_in_editor(path: String, app: Option<String>) -> Result<bool, String> {
+  let trimmed = path.trim();
+  if trimmed.is_empty() {
+    return Err("path 不能为空".to_string());
+  }
+
+  let target = PathBuf::from(trimmed);
+  if !target.exists() {
+    return Err(format!("路径不存在: {trimmed}"));
+  }
+
+  let app_key = app.unwrap_or_default().trim().to_lowercase();
+
+  #[cfg(target_os = "macos")]
+  let mut command = {
+    let mut cmd = Command::new("open");
+    let app_name = match app_key.as_str() {
+      "vscode" => Some("Visual Studio Code"),
+      "github_desktop" => Some("GitHub Desktop"),
+      "cursor" => Some("Cursor"),
+      "windsurf" => Some("Windsurf"),
+      "visual_studio" => Some("Visual Studio"),
+      _ => None,
+    };
+    if let Some(name) = app_name {
+      cmd.arg("-a").arg(name);
+    }
+    cmd.arg(&target);
+    cmd
+  };
+
+  #[cfg(target_os = "windows")]
+  let mut command = {
+    let mut cmd = match app_key.as_str() {
+      "vscode" => Command::new("code"),
+      "cursor" => Command::new("cursor"),
+      "windsurf" => Command::new("windsurf"),
+      "visual_studio" => Command::new("devenv"),
+      _ => Command::new("explorer"),
+    };
+    cmd.arg(&target);
+    cmd
+  };
+
+  #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+  let mut command = {
+    let mut cmd = match app_key.as_str() {
+      "vscode" => Command::new("code"),
+      "cursor" => Command::new("cursor"),
+      "windsurf" => Command::new("windsurf"),
+      _ => Command::new("xdg-open"),
+    };
+    cmd.arg(&target);
+    cmd
+  };
+
+  command
+    .spawn()
+    .map_err(|error| format!("打开编辑器失败: {error}"))?;
+
+  Ok(true)
+}
+
 fn run_command(
   executable: String,
   args: Vec<String>,
@@ -673,6 +737,7 @@ fn main() {
       send_worker_input,
       stop_worker_session,
       open_path,
+      open_in_editor,
       start_mcp_server,
       stop_mcp_server,
       mcp_server_status,

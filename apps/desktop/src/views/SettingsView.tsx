@@ -2,7 +2,7 @@ import { Icon } from "@iconify/react";
 import { FadeContent } from "../components/ReactBits";
 import { WorkerLogo } from "../components/WorkerLogo";
 import { WORKER_KINDS } from "../lib/constants";
-import type { AiLanguage, ThemeMode, UiLanguage } from "../lib/constants";
+import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage } from "../lib/constants";
 import type { DetailMode, McpServerStatus, WorkerKind } from "../domain";
 
 type SettingsViewProps = {
@@ -12,11 +12,13 @@ type SettingsViewProps = {
   theme: ThemeMode;
   uiLanguage: UiLanguage;
   aiLanguage: AiLanguage;
+  externalEditorApp: ExternalEditorApp;
   onProbeWorker: (kind: WorkerKind) => void;
   onRestartMcpServer: () => void;
   onThemeChange: (mode: ThemeMode) => void;
   onUiLanguageChange: (language: UiLanguage) => void;
   onAiLanguageChange: (language: AiLanguage) => void;
+  onExternalEditorAppChange: (app: ExternalEditorApp) => void;
   onDetailModeChange: (mode: DetailMode) => void;
 };
 
@@ -27,11 +29,13 @@ export function SettingsView({
   theme,
   uiLanguage,
   aiLanguage,
+  externalEditorApp,
   onProbeWorker,
   onRestartMcpServer,
   onThemeChange,
   onUiLanguageChange,
   onAiLanguageChange,
+  onExternalEditorAppChange,
   onDetailModeChange
 }: SettingsViewProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
@@ -135,6 +139,37 @@ export function SettingsView({
 
           <p className="text-xs text-muted mt-2 m-0">
             {t("AI 语言用于引导 Worker 输出报告的结论与标签。", "AI language guides Worker output (conclusion and tags).")}
+          </p>
+        </div>
+
+        <div className="ui-card p-4 mt-3">
+          <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+            <Icon icon="mingcute:code-line" />
+            {t("打开方式", "Open with")}
+          </h3>
+          <div className="flex items-center gap-3 mt-3 flex-wrap">
+            <span className="text-sm">{t("在编辑器打开", "Open in editor")}</span>
+            <div className="flex gap-1 flex-wrap">
+              {([
+                { value: "vscode" as ExternalEditorApp, label: "VS Code" },
+                { value: "cursor" as ExternalEditorApp, label: "Cursor" },
+                { value: "windsurf" as ExternalEditorApp, label: "Windsurf" },
+                { value: "visual_studio" as ExternalEditorApp, label: "Visual Studio" },
+                { value: "github_desktop" as ExternalEditorApp, label: "GitHub Desktop" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`ui-btn ui-btn--sm ${externalEditorApp === opt.value ? "ui-btn--outline" : "ui-btn--ghost"}`}
+                  onClick={() => onExternalEditorAppChange(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-muted mt-2 m-0">
+            {t("侧边栏中的「在编辑器打开」将使用此选项。", "The sidebar “Open in editor” button uses this setting.")}
           </p>
         </div>
 
