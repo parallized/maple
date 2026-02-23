@@ -38,9 +38,11 @@ export type MapleStructuredExecutionOutput = {
   decision: MapleMcpDecision | null;
 };
 
-const TAG_OPTIONS = ["架构", "配置", "UI", "修复"] as const;
 const FINAL_DECISION_STATUSES = ["已完成", "待返工", "已阻塞", "需要更多信息"] as const;
-const OUTPUT_SCHEMA_HINT = `终端最后请输出一个 JSON 代码块（\`\`\`json ... \`\`\`），字段包含：conclusion, changes[], verification[], mcp_decision{status, comment, tags[]}。mcp_decision.status 仅可用：${FINAL_DECISION_STATUSES.join(" / ")}。tags 仅可用：${TAG_OPTIONS.join(" / ")}。`;
+const OUTPUT_SCHEMA_HINT =
+  `终端最后请输出一个 JSON 代码块（\`\`\`json ... \`\`\`），字段包含：conclusion, changes[], verification[], mcp_decision{status, comment, tags[]}。`
+  + `mcp_decision.status 仅可用：${FINAL_DECISION_STATUSES.join(" / ")}。`
+  + "mcp_decision.tags 可填写 0-5 个与任务相关的 tag（建议使用稳定的 tag id；若引入新 tag，请先 upsert_tag_definition 提供 icon 与 zh/en label）。";
 const REQUIRED_DECISION_HINT = "若缺少 mcp_decision，则任务会被判定为已阻塞，不允许兜底标记完成。";
 const REQUIRED_MCP_FLOW_HINT =
   "执行时必须逐条通过 submit_task_report 驱动状态流转：query_project_todos 后，选中要处理的任务先更新为「队列中」；真正开工再更新为「进行中」；结束后更新为「已完成/已阻塞/需要更多信息」。结束前再次 query_project_todos，确认无草稿/待办/待返工/队列中/进行中任务后，再调用 finish_worker（必须作为最后一个 MCP 调用）。";
@@ -106,26 +108,19 @@ function normalizeDecisionStatus(value: unknown): MapleMcpDecisionStatus | null 
   return null;
 }
 
-function normalizeDecisionTag(value: string): string | null {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return null;
-  if (normalized.includes("架构") || normalized.includes("arch")) return "架构";
-  if (normalized.includes("配置") || normalized.includes("config") || normalized.includes("env")) return "配置";
-  if (normalized.includes("ui") || normalized.includes("ux") || normalized.includes("界面") || normalized.includes("交互")) return "UI";
-  if (normalized.includes("修复") || normalized.includes("bug") || normalized.includes("fix") || normalized.includes("错误")) return "修复";
-  return null;
-}
-
 function parseDecisionFromRecord(record: Record<string, unknown>): MapleMcpDecision | null {
   const status = normalizeDecisionStatus(record.status);
   const comment = typeof record.comment === "string" ? record.comment.trim() : "";
-  const tags = [
-    ...new Set(
-      normalizeList(record.tags ?? record.tag)
-        .map((tag) => normalizeDecisionTag(tag))
-        .filter((tag): tag is string => Boolean(tag))
-    )
-  ].slice(0, 5);
+  const tagsInput = normalizeList(record.tags ?? record.tag).map((tag) => tag.trim()).filter(Boolean);
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  for (const tag of tagsInput) {
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+    if (tags.length >= 5) break;
+  }
   if (!status || !comment) return null;
   return { status, comment, tags };
 }
