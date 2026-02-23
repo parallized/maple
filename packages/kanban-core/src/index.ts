@@ -1,4 +1,4 @@
-export const ACTIVE_STATUSES = ["待办", "待返工", "队列中", "进行中", "需要更多信息"] as const;
+export const ACTIVE_STATUSES = ["草稿", "待办", "待返工", "队列中", "进行中", "需要更多信息"] as const;
 export const BLOCKED_STATUS = "已阻塞" as const;
 export const DONE_STATUS = "已完成" as const;
 

@@ -31,6 +31,7 @@
     "@tauri-apps/plugin-dialog": "^2.2.2",
     "@tauri-apps/plugin-notification": "^2.2.2",
     "@types/d3": "^7.4.3",
+    "@types/matter-js": "^0.20.2",
     "@visx/group": "^3.12.0",
     "@visx/shape": "^3.12.0",
     "@visx/visx": "^3.12.0",
@@ -40,6 +41,7 @@
     "font-smiley-sans": "^1.0.0",
     "framer-motion": "^12.34.1",
     "lxgw-wenkai-screen-webfont": "^1.7.0",
+    "matter-js": "^0.20.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
