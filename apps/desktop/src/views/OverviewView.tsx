@@ -3,6 +3,9 @@ import { CountUp, FadeContent, SpotlightCard, SplitText } from "../components/Re
 import { WorkerLogo } from "../components/WorkerLogo";
 import AnimatedList from "../components/reactbits/AnimatedList";
 import type { McpServerStatus, WorkerKind } from "../domain";
+import { Group } from "@visx/group";
+import { Pie } from "@visx/shape";
+import { motion } from "framer-motion";
 
 type OverviewViewProps = {
   metrics: {
@@ -10,7 +13,9 @@ type OverviewViewProps = {
     runningCount: number;
     projectCount: number;
     completedCount: number;
-    tokenUsageTotal: number;
+    inProgressCount: number;
+    allCount: number;
+    statusDistribution: Record<string, number>;
   };
   mcpStatus: McpServerStatus;
   workerAvailability: Array<{
@@ -28,17 +33,36 @@ type OverviewViewProps = {
   }>;
 };
 
-function formatTokenCompact(value: number): string {
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
-  return value.toLocaleString("en-US");
-}
-
 function formatMode(mode: "task"): string {
   return "任务执行";
 }
 
+interface StatusData {
+  label: string;
+  value: number;
+  color: string;
+}
+
 export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPool }: OverviewViewProps) {
+  const pieData: StatusData[] = [
+    { label: "已完成", value: metrics.statusDistribution["已完成"] || 0, color: "var(--color-success)" },
+    { label: "进行中", value: metrics.statusDistribution["进行中"] || 0, color: "var(--color-primary)" },
+    {
+      label: "待处理",
+      value:
+        (metrics.statusDistribution["待办"] || 0) +
+        (metrics.statusDistribution["队列中"] || 0) +
+        (metrics.statusDistribution["待返工"] || 0),
+      color: "var(--color-secondary)",
+    },
+    { label: "需信息", value: metrics.statusDistribution["需要更多信息"] || 0, color: "var(--color-warning)" },
+    { label: "已阻塞", value: metrics.statusDistribution["已阻塞"] || 0, color: "var(--color-error)" },
+  ].filter((d) => d.value > 0);
+
+  const totalTasks = metrics.allCount;
+  const pieSize = 96;
+  const half = pieSize / 2;
+
   return (
     <section className="h-full w-full flex flex-col p-4 md:p-6 lg:p-8 max-w-6xl mx-auto overflow-hidden bg-transparent">
       {/* Notion-style Header */}
@@ -58,39 +82,89 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
 
       <div className="flex-1 min-h-0 flex flex-col gap-4 lg:gap-6 overflow-hidden">
         {/* Top Row: Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 lg:gap-4 flex-none">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4 flex-none">
           <FadeContent delay={100} className="flex min-h-0">
             <div className="w-full rounded-[16px] bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] p-4 lg:p-5 flex flex-col relative transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] hover:border-[color-mix(in_srgb,var(--color-base-content)_12%,transparent)] group">
-              <div className="flex items-center gap-2 text-[12px] lg:text-[13px] font-medium text-muted font-sans">
-                <Icon icon="mingcute:check-circle-line" className="text-[16px] lg:text-lg opacity-60 group-hover:opacity-100 transition-opacity" />
-                <span>完成任务</span>
+              <div className="flex items-center gap-2 text-[12px] lg:text-[13px] font-medium text-muted font-sans mb-3">
+                <Icon icon="mingcute:chart-pie-line" className="text-[16px] lg:text-lg opacity-60 group-hover:opacity-100 transition-opacity" />
+                <span>任务分布</span>
               </div>
-              <div className="mt-3 mb-4 flex-1">
-                <span className="text-[2rem] lg:text-[2.5rem] leading-none font-serif tracking-tight text-(--color-base-content)">
-                  <CountUp from={0} to={metrics.completedCount} duration={1.2} />
-                </span>
-              </div>
-              <div className="mt-auto flex-none">
-                <span className="text-[11px] lg:text-[12px] text-muted opacity-70 font-sans">全项目累计已完成任务数</span>
-              </div>
-            </div>
-          </FadeContent>
+              
+              <div className="flex items-center gap-6 flex-1 min-h-[100px]">
+                {/* Visx Pie Chart */}
+                <div className="relative w-20 h-20 lg:w-24 lg:h-24 flex-none">
+                  <svg width="100%" height="100%" viewBox={`0 0 ${pieSize} ${pieSize}`}>
+                    <Group top={half} left={half}>
+                      <Pie
+                        data={pieData.length > 0 ? pieData : [{ label: "empty", value: 1, color: "var(--color-base-300)" }]}
+                        pieValue={(d) => d.value}
+                        outerRadius={half}
+                        innerRadius={half * 0.7}
+                        padAngle={0.02}
+                      >
+                        {(pie) => {
+                          return pie.arcs.map((arc, index) => {
+                            const { label } = arc.data;
+                            const [centroidX, centerY] = pie.path.centroid(arc);
+                            return (
+                              <g key={`arc-${label}-${index}`}>
+                                <motion.path
+                                  d={pie.path(arc) || ""}
+                                  fill={arc.data.color}
+                                  initial={{ opacity: 0, scale: 0.8 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  transition={{ duration: 0.5, delay: index * 0.05 }}
+                                  className="transition-colors duration-300"
+                                />
+                              </g>
+                            );
+                          });
+                        }}
+                      </Pie>
+                    </Group>
+                  </svg>
+                  {/* Inner Total */}
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span className="text-[14px] lg:text-[16px] font-serif font-semibold text-(--color-base-content)">
+                      {totalTasks}
+                    </span>
+                  </div>
+                </div>
 
-          <FadeContent delay={200} className="flex min-h-0">
-            <div className="w-full rounded-[16px] bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] p-4 lg:p-5 flex flex-col relative transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] hover:border-[color-mix(in_srgb,var(--color-base-content)_12%,transparent)] group">
-              <div className="flex items-center gap-2 text-[12px] lg:text-[13px] font-medium text-muted font-sans">
-                <Icon icon="mingcute:coin-line" className="text-[16px] lg:text-lg opacity-60 group-hover:opacity-100 transition-opacity" />
-                <span>消耗 Token</span>
-              </div>
-              <div className="mt-3 mb-4 flex-1">
-                <span className="text-[2rem] lg:text-[2.5rem] leading-none font-serif tracking-tight text-(--color-base-content)">
-                  {formatTokenCompact(metrics.tokenUsageTotal)}
-                </span>
-              </div>
-              <div className="mt-auto flex-none">
-                <span className="text-[11px] lg:text-[12px] text-muted opacity-70 font-sans tracking-wide">
-                  原始值：{metrics.tokenUsageTotal.toLocaleString("en-US")}
-                </span>
+                <div className="flex flex-col gap-2 flex-1 min-w-0">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-2 h-2 rounded-full bg-(--color-success) flex-none" />
+                      <span className="text-[11px] lg:text-[12px] text-muted truncate">已完成</span>
+                      <span className="text-[11px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
+                        {metrics.completedCount}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-2 h-2 rounded-full bg-(--color-primary) flex-none" />
+                      <span className="text-[11px] lg:text-[12px] text-muted truncate">进行中</span>
+                      <span className="text-[11px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
+                        {metrics.statusDistribution["进行中"] || 0}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-2 h-2 rounded-full bg-(--color-secondary) flex-none opacity-60" />
+                      <span className="text-[11px] lg:text-[12px] text-muted truncate">待处理</span>
+                      <span className="text-[11px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
+                        {(metrics.statusDistribution["待办"] || 0) +
+                          (metrics.statusDistribution["队列中"] || 0) +
+                          (metrics.statusDistribution["待返工"] || 0)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-2 h-2 rounded-full bg-(--color-warning) flex-none" />
+                      <span className="text-[11px] lg:text-[12px] text-muted truncate">需信息</span>
+                      <span className="text-[11px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
+                        {metrics.statusDistribution["需要更多信息"] || 0}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </FadeContent>

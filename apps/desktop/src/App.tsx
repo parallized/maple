@@ -108,9 +108,22 @@ export function App() {
     const completedCount = allTasks.filter((t) => t.status === "已完成").length;
     const inProgressCount = allTasks.filter((t) => t.status === "进行中" || t.status === "队列中").length;
     const runningCount = executingWorkers.size;
-    const tokenUsageTotal = collectTokenUsage(projects, workerLogs);
-    return { pending, completedCount, inProgressCount, runningCount, projectCount: projects.length, tokenUsageTotal };
-  }, [projects, executingWorkers, workerLogs]);
+    
+    const statusDistribution: Record<string, number> = {};
+    allTasks.forEach(t => {
+      statusDistribution[t.status] = (statusDistribution[t.status] || 0) + 1;
+    });
+
+    return { 
+      pending, 
+      completedCount, 
+      inProgressCount, 
+      runningCount, 
+      projectCount: projects.length,
+      allCount: allTasks.length,
+      statusDistribution
+    };
+  }, [projects, executingWorkers]);
 
   const workerAvailability = useMemo(
     () =>
