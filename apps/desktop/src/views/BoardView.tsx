@@ -7,9 +7,11 @@ import { TaskDetailPanel } from "../components/TaskDetailPanel";
 import { WorkerLogo } from "../components/WorkerLogo";
 import { WORKER_KINDS } from "../lib/constants";
 import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
+import { buildTagBadgeStyle } from "../lib/tag-style";
 import { relativeTimeZh, getLastMentionTime, getTimeLevel } from "../lib/utils";
-import type { DetailMode, Project, Task, WorkerKind } from "../domain";
-import React, { useRef, useState } from "react";
+import { type DetailMode, type Project, type Task, type WorkerKind, isMac } from "../domain";
+import React, { useCallback, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 type BoardViewProps = {
   boardProject: Project | null;
@@ -62,6 +64,10 @@ export function BoardView({
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_COL_WIDTHS);
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
 
+  const isExecutingProject = Boolean(
+    boardProject?.tasks.some((task) => task.status === "队列中" || task.status === "进行中")
+  );
+
   function handleResizeStart(col: string, e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -92,6 +98,15 @@ export function BoardView({
   function handleResizeDblClick(col: string) {
     setColWidths((prev) => ({ ...prev, [col]: DEFAULT_COL_WIDTHS[col] }));
   }
+
+  const handleOpenFolder = useCallback(async () => {
+    if (!boardProject?.directory) return;
+    try {
+      await invoke("open_path", { path: boardProject.directory });
+    } catch (err) {
+      console.error("Failed to open folder:", err);
+    }
+  }, [boardProject?.directory]);
 
   const selectedTask = boardProject && selectedTaskId ? boardProject.tasks.find((task) => task.id === selectedTaskId) ?? null : null;
 
@@ -137,28 +152,27 @@ export function BoardView({
               <span className="text-[1.35rem] font-medium truncate tracking-tight text-primary">{boardProject.name}</span>
             </div>
             <PopoverMenu
-              label=""
-              icon="mingcute:more-1-line"
-              align="left"
-              items={
-                [
-                  { kind: "item", key: "release-draft", label: "版本草稿", icon: "mingcute:send-plane-line", onSelect: () => onCreateReleaseDraft(boardProject.id) },
-                  { kind: "heading", label: "Worker" },
-                  ...WORKER_KINDS.map(({ kind, label }) => ({
-                    kind: "item" as const,
-                    key: `worker-${kind}`,
-                    label,
-                    icon: "mingcute:ai-line",
-                    checked: boardProject.workerKind === kind,
-                    onSelect: () => onAssignWorkerKind(boardProject.id, kind)
-                  })),
-                  { kind: "heading", label: "详情展示" },
-                  { kind: "item", key: "detail-sidebar", label: "右侧边栏", icon: "mingcute:layout-right-line", checked: detailMode === "sidebar", onSelect: () => onSetDetailMode("sidebar") },
-                  { kind: "item", key: "detail-modal", label: "弹出式", icon: "mingcute:layout-grid-line", checked: detailMode === "modal", onSelect: () => onSetDetailMode("modal") },
-                  { kind: "heading", label: "" },
-                  { kind: "item", key: "remove-project", label: "删除项目", icon: "mingcute:delete-2-line", onSelect: () => onRemoveProject(boardProject.id) }
-                ] satisfies PopoverMenuItem[]
-              }
+              label="Project Actions"
+              icon="mingcute:more-2-line"
+              align="right"
+              style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
+              items={[
+                { kind: "item", key: "release-draft", label: "版本草稿", icon: "mingcute:send-plane-line", onSelect: () => onCreateReleaseDraft(boardProject.id) },
+                { kind: "heading", label: "Worker" },
+                ...WORKER_KINDS.map(({ kind, label }) => ({
+                  kind: "item" as const,
+                  key: `worker-${kind}`,
+                  label,
+                  icon: "mingcute:ai-line",
+                  checked: boardProject.workerKind === kind,
+                  onSelect: () => onAssignWorkerKind(boardProject.id, kind)
+                })),
+                { kind: "heading", label: "详情展示" },
+                { kind: "item", key: "detail-sidebar", label: "右侧边栏", icon: "mingcute:layout-right-line", checked: detailMode === "sidebar", onSelect: () => onSetDetailMode("sidebar") },
+                { kind: "item", key: "detail-modal", label: "弹出式", icon: "mingcute:layout-grid-line", checked: detailMode === "modal", onSelect: () => onSetDetailMode("modal") },
+                { kind: "heading", label: "" },
+                { kind: "item", key: "remove-project", label: "删除项目", icon: "mingcute:delete-2-line", onSelect: () => onRemoveProject(boardProject.id) }
+              ] satisfies PopoverMenuItem[]}
             />
           </motion.div>
 
@@ -219,23 +233,36 @@ export function BoardView({
             </TiltedCard>
 
             <TiltedCard 
-              className="sidebar-card-btn sidebar-card-btn--primary" 
-              onClick={() => onCompletePending(boardProject.id)}
+              className={`sidebar-card-btn sidebar-card-btn--primary ${isExecutingProject ? "sidebar-card-btn--disabled" : ""}`}
+              onClick={isExecutingProject ? undefined : () => onCompletePending(boardProject.id)}
+              rotateAmplitude={isExecutingProject ? 0 : 12}
+              scaleOnHover={isExecutingProject ? 1 : 1.02}
               style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
             >
               <div className="sidebar-card-btn-content">
                 <span className="sidebar-card-btn-title">
                   <Icon icon="mingcute:play-fill" className="mr-1.5 text-base inline-block -translate-y-px" />
-                  执行待办
+                  {isExecutingProject ? "执行中" : "执行待办"}
                 </span>
-                <span className="sidebar-card-btn-desc">运行当前项目的所有待办</span>
+                <span className="sidebar-card-btn-desc">
+                  {isExecutingProject ? "正在运行当前项目的待办任务" : "运行当前项目的所有待办"}
+                </span>
               </div>
               <div className="sidebar-card-watermark">
                 <Icon icon="mingcute:cursor-3-fill" />
               </div>
             </TiltedCard>
 
-            <div className="mt-4 pt-4 border-t border-(--color-base-300)/20">
+            <div className="mt-4 pt-4 border-t border-(--color-base-300)/20 flex flex-col gap-2">
+              <motion.button 
+                whileTap={{ scale: 0.96 }} 
+                type="button" 
+                className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3" 
+                onClick={handleOpenFolder}
+              >
+                <Icon icon="mingcute:folder-open-line" className="text-base opacity-70" />
+                在文件夹中打开
+              </motion.button>
               <motion.button 
                 whileTap={{ scale: 0.96 }} 
                 type="button" 
@@ -425,9 +452,9 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
                 ? "ui-badge--error"
                 : task.status === "进行中"
                   ? "ui-badge--solid"
-                  : task.status === "需要更多信息"
-                    ? "ui-badge--warning"
-                    : task.status === "队列中" || task.status === "待办"
+                    : task.status === "需要更多信息"
+                      ? "ui-badge--warning"
+                    : task.status === "队列中" || task.status === "待办" || task.status === "待返工"
                       ? "ui-badge--neutral"
                       : ""
           }`}
@@ -448,7 +475,11 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           {task.tags.map((tag, index) => {
             const { icon, isDefault } = resolveTagIconMeta(tag);
             return (
-              <span key={`${tag}-${index}`} className="ui-badge">
+              <span
+                key={`${tag}-${index}`}
+                className="ui-badge ui-badge--tag"
+                style={buildTagBadgeStyle(tag) as React.CSSProperties}
+              >
                 {isDefault ? null : <Icon icon={icon} className="text-[11px] opacity-70 shrink-0" />}
                 <span className="flex-1 min-w-0">{tag}</span>
               </span>

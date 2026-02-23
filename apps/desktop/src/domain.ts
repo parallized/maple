@@ -1,6 +1,13 @@
 export type ViewKey = "overview" | "board" | "progress" | "settings";
 export type WorkerKind = "claude" | "codex" | "iflow";
-export type TaskStatus = "待办" | "队列中" | "进行中" | "需要更多信息" | "已完成" | "已阻塞";
+export type TaskStatus =
+  | "待办"
+  | "待返工"
+  | "队列中"
+  | "进行中"
+  | "需要更多信息"
+  | "已完成"
+  | "已阻塞";
 export type DetailMode = "sidebar" | "modal";
 
 export type WorkerConfig = {
@@ -81,3 +88,5 @@ export type McpWorkerFinishedEvent = {
   project: string;
   summary: string;
 };
+
+export const isMac = navigator.userAgent.includes("Mac");

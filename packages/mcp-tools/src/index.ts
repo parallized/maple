@@ -33,14 +33,18 @@ export type MapleMcpTodoItem = {
 };
 
 export type MapleMcpToolDefinition = {
-  name: "query_project_todos" | "query_recent_context";
+  name: "query_project_todos" | "query_task_details" | "query_recent_context";
   description: string;
 };
 
 export const MAPLE_MCP_TOOLS: MapleMcpToolDefinition[] = [
   {
     name: "query_project_todos",
-    description: "按项目名查询未完成任务，返回状态、更新时间与标签。"
+    description: "按项目名查询未完成任务，返回状态、标签与详情内容。"
+  },
+  {
+    name: "query_task_details",
+    description: "查询指定任务的详情内容（包含 markdown、图片、文件引用等）。"
   },
   {
     name: "query_recent_context",

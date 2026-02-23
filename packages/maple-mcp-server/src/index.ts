@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 // ── Types ──
 
-type TaskStatus = "待办" | "队列中" | "进行中" | "需要更多信息" | "已完成" | "已阻塞";
+type TaskStatus = "待办" | "待返工" | "队列中" | "进行中" | "需要更多信息" | "已完成" | "已阻塞";
 
 type TaskReport = {
   id: string;
@@ -20,6 +20,7 @@ type TaskReport = {
 type Task = {
   id: string;
   title: string;
+  details: string;
   status: TaskStatus;
   tags: string[];
   version: string;
@@ -85,7 +86,7 @@ const server = new McpServer({
 
 server.tool(
   "query_project_todos",
-  "按项目名查询未完成任务，返回状态、更新时间与标签。",
+  "按项目名查询未完成任务，返回状态、标签与详情内容。",
   { project: z.string().describe("项目名称（模糊匹配）") },
   async ({ project }) => {
     const projects = readState();
@@ -105,10 +106,17 @@ server.tool(
     }
     const lines = todos.map((t, i) => {
       const tags = t.tags.length ? ` [${t.tags.join(", ")}]` : "";
-      return `${i + 1}. [${t.status}] ${t.title}${tags}  (id: ${t.id})`;
+      const title = t.title?.trim() ? t.title : "（无标题）";
+      const details = (t.details ?? "").trim();
+      const detailsText = details.length > 0 ? details : "（空）";
+      return [
+        `${i + 1}. [${t.status}] ${title}${tags}  (id: ${t.id})`,
+        "详情：",
+        detailsText,
+      ].join("\n");
     });
     return {
-      content: [{ type: "text" as const, text: `项目「${target.name}」— ${todos.length} 个未完成任务：\n\n${lines.join("\n")}` }],
+      content: [{ type: "text" as const, text: `项目「${target.name}」— ${todos.length} 个未完成任务：\n\n${lines.join("\n\n---\n\n")}` }],
     };
   }
 );
@@ -163,12 +171,61 @@ server.tool(
 );
 
 server.tool(
+  "query_task_details",
+  "查询指定任务的详情内容（包含 markdown、图片、文件引用等）。",
+  {
+    project: z.string().describe("项目名称（模糊匹配）"),
+    task_id: z.string().describe("任务 ID"),
+  },
+  async ({ project, task_id }) => {
+    const projects = readState();
+    const target = findProject(projects, project);
+    if (!target) {
+      return {
+        content: [{ type: "text" as const, text: `未找到匹配项目「${project}」。` }],
+        isError: true,
+      };
+    }
+
+    const task = target.tasks.find((t) => t.id === task_id);
+    if (!task) {
+      return {
+        content: [{ type: "text" as const, text: `项目「${target.name}」中未找到任务 ID「${task_id}」。` }],
+        isError: true,
+      };
+    }
+
+    const tags = task.tags.length > 0 ? task.tags.join("、") : "（无）";
+    const details = (task.details ?? "").trim();
+    const detailsText = details.length > 0 ? details : "（空）";
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: [
+            `任务：${task.title || "（无标题）"}  (id: ${task.id})`,
+            `状态：${task.status}`,
+            `标签：${tags}`,
+            `版本：${task.version}`,
+            `更新时间：${task.updatedAt}`,
+            "",
+            "详情：",
+            detailsText,
+          ].join("\n"),
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
   "submit_task_report",
   "提交任务执行报告，并可修改任务状态。",
   {
     project: z.string().describe("项目名称"),
     task_id: z.string().describe("任务 ID"),
-    status: z.enum(["待办", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"]).optional().describe("新状态（可选）"),
+    status: z.enum(["待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"]).optional().describe("新状态（可选）"),
     report: z.string().describe("报告内容"),
     tags: z.array(z.string()).optional().describe("标签列表（可选，0-5 个）"),
   },
@@ -218,7 +275,7 @@ const SIGNAL_FILE = join(STATE_DIR, "worker-signal.json");
 
 server.tool(
   "finish_worker",
-  "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无待办/队列中/进行中任务。",
+  "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无待办/待返工/队列中/进行中任务。",
   {
     project: z.string().describe("项目名称"),
     summary: z.string().optional().describe("执行总结（可选）"),

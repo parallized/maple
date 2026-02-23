@@ -386,6 +386,46 @@ fn stop_worker_session(
   }
 }
 
+#[tauri::command]
+fn open_path(path: String) -> Result<bool, String> {
+  let trimmed = path.trim();
+  if trimmed.is_empty() {
+    return Err("path 不能为空".to_string());
+  }
+
+  let target = PathBuf::from(trimmed);
+  if !target.exists() {
+    return Err(format!("路径不存在: {trimmed}"));
+  }
+
+  #[cfg(target_os = "macos")]
+  let mut command = {
+    let mut cmd = Command::new("open");
+    cmd.arg(&target);
+    cmd
+  };
+
+  #[cfg(target_os = "windows")]
+  let mut command = {
+    let mut cmd = Command::new("explorer");
+    cmd.arg(&target);
+    cmd
+  };
+
+  #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+  let mut command = {
+    let mut cmd = Command::new("xdg-open");
+    cmd.arg(&target);
+    cmd
+  };
+
+  command
+    .spawn()
+    .map_err(|error| format!("打开路径失败: {error}"))?;
+
+  Ok(true)
+}
+
 fn run_command(
   executable: String,
   args: Vec<String>,
@@ -632,6 +672,7 @@ fn main() {
       start_interactive_worker,
       send_worker_input,
       stop_worker_session,
+      open_path,
       start_mcp_server,
       stop_mcp_server,
       mcp_server_status,

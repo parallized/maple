@@ -3,7 +3,8 @@ import { Icon } from "@iconify/react";
 import type { Task, TaskReport } from "../domain";
 import { relativeTimeZh, getTimeLevel } from "../lib/utils";
 import { renderTaskMarkdown } from "../lib/task-markdown";
-import { useEffect, useMemo, useState } from "react";
+import { buildTagBadgeStyle } from "../lib/tag-style";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { InlineTaskInput } from "./InlineTaskInput";
 import { TaskDetailsEditor } from "./TaskDetailsEditor";
 import { WorkerLogo } from "./WorkerLogo";
@@ -41,7 +42,7 @@ function parseTaskReport(content: string): ParsedTaskReport | null {
     const firstNonEmptyIndex = lines.findIndex((line) => line.trim().length > 0);
     if (firstNonEmptyIndex < 0) return null;
     const firstLine = lines[firstNonEmptyIndex] ?? "";
-    const statusPrefix = firstLine.match(/^\s*(待办|队列中|进行中|需要更多信息|已完成|已阻塞)\s*[:：]\s*(.*)$/);
+    const statusPrefix = firstLine.match(/^\s*(待办|待返工|队列中|进行中|需要更多信息|已完成|已阻塞)\s*[:：]\s*(.*)$/);
     if (!statusPrefix) return null;
     const status = statusPrefix[1]?.trim() ?? "";
     const firstDetail = statusPrefix[2]?.trim() ?? "";
@@ -79,7 +80,7 @@ function reportBadgeClass(status: string): string {
   if (status.includes("已阻塞")) return "ui-badge--error";
   if (status.includes("进行中")) return "ui-badge--solid";
   if (status.includes("需要更多信息")) return "ui-badge--warning";
-  if (status.includes("队列中") || status.includes("待办")) return "ui-badge--neutral";
+  if (status.includes("队列中") || status.includes("待办") || status.includes("待返工")) return "ui-badge--neutral";
   return "";
 }
 
@@ -223,7 +224,11 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
           <div className="flex flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none select-none" style={{ maskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)' }}>
             {task.tags.length === 0 ? <span className="text-muted text-[13px] opacity-40">无标签</span> : null}
             {task.tags.map((tag) => (
-              <span key={tag} className="ui-badge ui-badge--sm shrink-0">
+              <span
+                key={tag}
+                className="ui-badge ui-badge--sm ui-badge--tag shrink-0"
+                style={buildTagBadgeStyle(tag) as CSSProperties}
+              >
                 {tag}
               </span>
             ))}

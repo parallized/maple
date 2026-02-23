@@ -598,14 +598,14 @@ export function App() {
     // Gate on MCP
     const mcpOk = await ensureMcpRunning();
     if (!mcpOk) { setNotice("MCP Server 未运行，无法执行任务。请先在设置中启动 MCP。"); return; }
-    const pendingTasks = project.tasks.filter((t) => t.status === "待办");
+    const pendingTasks = project.tasks.filter((t) => t.status === "待办" || t.status === "待返工");
     if (pendingTasks.length === 0) { setNotice("目前没有更多待办"); return; }
     setProjects((prev) => {
       const now = new Date().toISOString();
       return prev.map((item) => item.id !== project.id ? item : {
         ...item,
         tasks: item.tasks.map((task) => (
-          task.status === "待办"
+          task.status === "待办" || task.status === "待返工"
             ? { ...task, status: "队列中", updatedAt: now }
             : task
         ))

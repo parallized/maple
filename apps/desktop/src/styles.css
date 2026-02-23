@@ -201,6 +201,14 @@ h3 {
   font-weight: 500;
 }
 
+.ui-badge.ui-badge--tag {
+  --tag-color: var(--tag-color, var(--color-secondary));
+  background: color-mix(in srgb, var(--tag-color) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tag-color) 28%, transparent);
+  color: color-mix(in srgb, var(--tag-color) 78%, var(--color-base-content));
+  font-weight: 600;
+}
+
 /* ── Status Dots ── */
 
 .status-dot {
@@ -496,15 +504,53 @@ h3 {
   height: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: var(--worker-color, var(--color-primary));
-  color: #fff;
+  background: color-mix(in srgb, var(--color-base-100) 88%, var(--btn-bg));
+  color: var(--color-base-content);
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
+  position: relative;
+  isolation: isolate;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-base-content) 10%, transparent);
+}
+
+.topnav-queue-count::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from 0deg,
+    color-mix(in srgb, var(--worker-color, var(--color-primary)) 85%, var(--color-base-content) 15%),
+    transparent 35%,
+    color-mix(in srgb, var(--worker-color, var(--color-primary)) 85%, var(--color-base-content) 15%)
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  opacity: 0.95;
+  pointer-events: none;
+  z-index: -1;
+  transform: rotate(0deg);
+  transform-origin: center;
+}
+
+.topnav-queue-count--spinning::before {
+  animation: topnav-queue-spin 1.15s linear infinite;
+}
+
+.topnav-queue-count svg,
+.topnav-queue-count .iconify {
+  display: block;
 }
 
 .topnav-queue-count--global {
   margin-left: 0.05rem;
+}
+
+@keyframes topnav-queue-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .topnav-tab-close {
@@ -1252,6 +1298,16 @@ h3 {
 .sidebar-card-btn:hover {
   background: color-mix(in srgb, var(--color-base-200) 60%, transparent);
   border-color: color-mix(in srgb, var(--color-base-300) 70%, transparent);
+}
+
+.sidebar-card-btn.sidebar-card-btn--disabled {
+  opacity: 0.68;
+  cursor: default;
+}
+
+.sidebar-card-btn.sidebar-card-btn--disabled:hover {
+  background: color-mix(in srgb, var(--color-base-200) 30%, transparent);
+  border-color: color-mix(in srgb, var(--color-base-300) 40%, transparent);
 }
 
 .sidebar-card-btn-content {

@@ -21,9 +21,10 @@ type PopoverMenuProps = {
   icon: string;
   items: PopoverMenuItem[];
   align?: "left" | "right";
+  style?: React.CSSProperties;
 };
 
-export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenuProps) {
+export function PopoverMenu({ label, icon, items, align = "right", style }: PopoverMenuProps) {
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -59,7 +60,7 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
   }, [open]);
 
   return (
-    <div ref={rootRef} className="popover">
+    <div ref={rootRef} className="popover" style={style}>
       <button
         type="button"
         className={`ui-btn ui-btn--sm ui-btn--outline ui-icon-btn ${open ? "popover-trigger active" : "popover-trigger"}`}
@@ -99,7 +100,7 @@ export function PopoverMenu({ label, icon, items, align = "right" }: PopoverMenu
                   <Icon icon={item.icon} />
                 </span>
                 <span>{item.label}</span>
-                <span className="ml-auto w-5 inline-flex justify-end text-(--color-primary)" aria-hidden="true">
+                <span className="ml-auto w-5 inline-flex justify-end text-(--worker-color,var(--color-primary))" aria-hidden="true">
                   {item.checked ? <Icon icon="mingcute:check-line" /> : null}
                 </span>
               </button>

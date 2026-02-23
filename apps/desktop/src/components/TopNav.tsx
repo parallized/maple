@@ -6,6 +6,8 @@ import type { ViewKey } from "../domain";
 import type { Project } from "../domain";
 import type { UiLanguage } from "../lib/constants";
 
+import { WORKER_KINDS } from "../lib/constants";
+
 type TopNavProps = {
   isTauri: boolean;
   windowMaximized: boolean;
@@ -71,6 +73,12 @@ export function TopNav({
             {projects.map((project, index) => {
               const active = view === "board" && boardProjectId === project.id;
               const pending = project.tasks.filter((t) => t.status !== "已完成").length;
+              const isExecuting = project.tasks.some((t) => t.status === "队列中" || t.status === "进行中");
+              const isAllDone = project.tasks.length > 0 && project.tasks.every((t) => t.status === "已完成");
+              const workerColor = project.workerKind 
+                ? WORKER_KINDS.find(w => w.kind === project.workerKind)?.color 
+                : "var(--color-primary)";
+
               return (
                 <motion.button
                   initial={{ opacity: 0, x: -10 }}
@@ -80,6 +88,7 @@ export function TopNav({
                   key={project.id}
                   type="button"
                   className={`topnav-tab ${active ? "active" : ""}`}
+                  style={{ "--worker-color": workerColor } as React.CSSProperties}
                   onClick={() => onProjectSelect(project.id)}
                   title={project.directory}
                 >
@@ -91,7 +100,15 @@ export function TopNav({
                     )}
                   </div>
                   <span className="truncate max-w-[120px]">{project.name}</span>
-                  {pending > 0 ? <span className="topnav-queue-count">{pending}</span> : null}
+                  {pending > 0 || isAllDone ? (
+                    <span className={`topnav-queue-count ${isExecuting ? "topnav-queue-count--spinning" : ""}`}>
+                      {isAllDone ? (
+                        <Icon icon="mingcute:task-fill" className="text-[12px]" />
+                      ) : (
+                        pending
+                      )}
+                    </span>
+                  ) : null}
                 </motion.button>
               );
             })}

@@ -30,6 +30,9 @@ export function buildTrayTaskSnapshot(projects: Project[]): TrayTaskSnapshot {
         case "待办":
           todoCount += 1;
           break;
+        case "待返工":
+          todoCount += 1;
+          break;
         case "需要更多信息":
           needInfoCount += 1;
           break;

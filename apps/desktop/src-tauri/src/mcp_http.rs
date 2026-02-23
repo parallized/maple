@@ -159,13 +159,25 @@ fn tool_query_project_todos(args: &Value) -> Value {
             } else {
                 format!(" [{}]", t.tags.join(", "))
             };
-            format!("{}. [{}] {}{}  (id: {})", i + 1, t.status, t.title, tags, t.id)
+            let title = if t.title.trim().is_empty() {
+                "（无标题）"
+            } else {
+                t.title.as_str()
+            };
+            let details = t.details.trim();
+            let details_text = if details.is_empty() { "（空）" } else { details };
+            vec![
+                format!("{}. [{}] {}{}  (id: {})", i + 1, t.status, title, tags, t.id),
+                "详情：".to_string(),
+                details_text.to_string(),
+            ]
+            .join("\n")
         })
         .collect();
 
     json!({ "content": [{ "type": "text", "text": format!(
         "项目「{}」— {} 个未完成任务：\n\n{}",
-        target.name, todos.len(), lines.join("\n")
+        target.name, todos.len(), lines.join("\n\n---\n\n")
     )}]})
 }
 
@@ -506,7 +518,7 @@ fn tool_definitions() -> Vec<Value> {
     vec![
         json!({
             "name": "query_project_todos",
-            "description": "按项目名查询未完成任务，返回状态、更新时间与标签。",
+            "description": "按项目名查询未完成任务，返回状态、标签与详情内容。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -549,7 +561,7 @@ fn tool_definitions() -> Vec<Value> {
                     "task_id": { "type": "string", "description": "任务 ID" },
                     "status": {
                         "type": "string",
-                        "enum": ["待办", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"],
+                        "enum": ["待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"],
                         "description": "新状态（可选）"
                     },
                     "report": { "type": "string", "description": "报告内容" },
@@ -564,7 +576,7 @@ fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "finish_worker",
-            "description": "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无待办/队列中/进行中任务。",
+            "description": "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无待办/待返工/队列中/进行中任务。",
             "inputSchema": {
                 "type": "object",
                 "properties": {

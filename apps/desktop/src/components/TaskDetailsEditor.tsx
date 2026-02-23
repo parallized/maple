@@ -34,6 +34,8 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
   const currentValueRef = useRef(value);
   const ignoreNextBlurRef = useRef(false);
   const lastSyncedValueRef = useRef<string>("");
+  const autosaveTimerRef = useRef<number | null>(null);
+  const lastAutosaveAtRef = useRef<number>(0);
 
   const editor = useCreateBlockNote(
     {
@@ -58,6 +60,32 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
     currentValueRef.current = nextValue;
     lastSyncedValueRef.current = normalizeForCompare(nextValue);
   }, [editor, onCommit]);
+
+  const scheduleAutosave = useCallback(() => {
+    const maxWaitMs = 2000;
+    const debounceMs = 450;
+    const now = Date.now();
+    const elapsed = now - lastAutosaveAtRef.current;
+
+    if (elapsed >= maxWaitMs) {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+      commitEditorMarkdown();
+      lastAutosaveAtRef.current = Date.now();
+      return;
+    }
+
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+    }
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null;
+      commitEditorMarkdown();
+      lastAutosaveAtRef.current = Date.now();
+    }, debounceMs);
+  }, [commitEditorMarkdown]);
 
   const syncEditorFromMarkdown = useCallback(
     (markdownText: string) => {
@@ -90,6 +118,15 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
     }
   }, [value, syncEditorFromMarkdown]);
 
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <div className="task-details-surface task-details-surface--editing">
       <BlockNoteViewRaw
@@ -103,6 +140,9 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
         filePanel={true}
         tableHandles={false}
         comments={false}
+        onChange={() => {
+          scheduleAutosave();
+        }}
         onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
           if (event.key === "Escape") {
             event.preventDefault();
