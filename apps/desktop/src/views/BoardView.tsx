@@ -35,8 +35,8 @@ type BoardViewProps = {
 
 const TASK_TITLE_MAX_WIDTH = 340;
 const DEFAULT_COL_WIDTHS: Record<string, number> = {
-  confirm: 28,
-  taskIcon: 48,
+  confirm: 14,
+  taskIcon: 20,
   task: TASK_TITLE_MAX_WIDTH,
   status: 100,
   lastMention: 100,
@@ -423,26 +423,26 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
         }
       }}
     >
-      <td className="col-confirm text-center">
+      <td className="col-confirm">
         {task.status === "已完成" && task.needsConfirmation ? (
-          <div className="task-confirm-text" title="待确认">
-            <Icon icon="mingcute:question-2-fill" className="text-[14px]" />
-          </div>
+          <span className="task-confirm-text" title="待确认">
+            <Icon icon="mingcute:question-2-fill" />
+          </span>
         ) : task.status === "需要更多信息" ? (
-          <div className="task-question-text" title="需要更多信息">
-            <Icon icon="mingcute:question-2-fill" className="text-[14px]" />
-          </div>
+          <span className="task-question-text" title="需要更多信息">
+            <Icon icon="mingcute:question-2-fill" />
+          </span>
         ) : null}
       </td>
-      <td className="col-taskIcon text-center">
+      <td className="col-taskIcon">
         {(() => {
           const { icon, isDefault } = resolveTaskIcon(task);
           return (
             <span
-              className={`task-icon-pill ${isDefault ? "opacity-70" : "opacity-100"}`}
+              className={`task-icon-pure ${isDefault ? "opacity-60" : "opacity-90"}`}
               title={task.title || "(无标题)"}
             >
-              <Icon icon={icon} className="text-base" />
+              <Icon icon={icon} />
             </span>
           );
         })()}

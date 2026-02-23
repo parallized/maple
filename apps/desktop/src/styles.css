@@ -307,9 +307,9 @@ h3 {
   padding: 0;
 }
 
-.col-confirm { width: 16px; padding-left: 0; padding-right: 0; }
-.col-taskIcon { width: 24px; padding-left: 0; padding-right: 0; }
-.col-task { padding-left: 4px; }
+.col-confirm { width: 14px; padding: 0 !important; }
+.col-taskIcon { width: 20px; padding: 0 !important; }
+.col-task { padding-left: 2px; }
 .col-tags { width: 120px; }
 .col-date { width: 100px; text-align: right; }
 .col-actions { width: 40px; text-align: right; }
@@ -623,23 +623,34 @@ h3 {
   align-items: center;
   justify-content: center;
   color: #f59e0b;
-  margin: 0 auto;
-  opacity: 0.8;
-  transition: opacity 0.2s ease;
-  background: transparent !important;
+  opacity: 0.7;
+  font-size: 13px;
+  line-height: 1;
+  background: none !important;
   border: none !important;
   box-shadow: none !important;
   padding: 0;
+  width: 12px;
+  height: 18px;
 }
 
-.task-confirm-text:hover,
-.task-question-text:hover {
+.task-icon-pure {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--color-secondary);
+  opacity: 0.6;
+  transition: all 0.2s ease;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.task-row:hover .task-icon-pure {
   opacity: 1;
-}
-
-.task-confirm-badge,
-.task-question-badge {
-  display: none !important;
+  color: var(--color-base-content);
 }
 
 .topnav-queue-count--warning {
@@ -817,18 +828,15 @@ h3 {
 .task-table th.col-confirm,
 .task-table td.col-confirm {
   text-align: center;
-  padding-right: 0.15rem;
-}
-
-.task-table th.col-tags,
-.task-table td.col-tags {
-  min-width: 0;
+  padding: 0 !important;
+  width: 14px !important;
 }
 
 .task-table th.col-taskIcon,
 .task-table td.col-taskIcon {
   text-align: center;
-  padding-right: 0.2rem;
+  padding: 0 !important;
+  width: 20px !important;
 }
 
 .task-row td {
@@ -1044,20 +1052,7 @@ h3 {
 }
 
 .task-icon-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  color: var(--color-secondary);
-  flex-shrink: 0;
-  opacity: 0.8;
-  transition: all 0.2s ease;
-}
-
-.task-row:hover .task-icon-pill {
-  opacity: 1;
-  color: var(--color-base-content);
+  display: none !important;
 }
 
 /* ── Popover ── */
@@ -1535,7 +1530,7 @@ h3 {
   background: var(--color-base-100);
   border: 1px solid color-mix(in srgb, var(--color-base-300) 40%, transparent);
   border-radius: 12px;
-  padding: 0 1.25rem 1rem;
+  padding: 0 0.75rem 1rem;
   overflow: auto;
 }
 
