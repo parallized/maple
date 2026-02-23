@@ -5,6 +5,10 @@ import { normalizeTagId, resolveTagDefinition } from "./tag-catalog";
 
 const TAG_LABELS: Record<UiLanguage, Record<string, string>> = {
   en: {
+    mcp: "MCP",
+    verify: "Verify",
+    verified: "Verified",
+
     "type:feat": "Feat",
     "type:fix": "Fix",
     "type:refactor": "Refactor",
@@ -24,6 +28,10 @@ const TAG_LABELS: Record<UiLanguage, Record<string, string>> = {
     "state:needs-info": "Needs Info",
   },
   zh: {
+    mcp: "MCP",
+    verify: "验证",
+    verified: "已验证",
+
     "type:feat": "新功能",
     "type:fix": "修复",
     "type:refactor": "重构",

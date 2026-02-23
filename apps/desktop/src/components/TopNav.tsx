@@ -111,11 +111,11 @@ export function TopNav({
                   <span className="truncate max-w-[120px]">{project.name}</span>
                   {confirmCount > 0 || isExecuting || todoCount > 0 ? (
                     <span
-                      className={`topnav-queue-count ${!confirmCount && isExecuting ? "topnav-queue-count--spinning" : ""}`}
+                      className={`topnav-queue-count ${confirmCount > 0 ? "topnav-queue-count--warning" : !confirmCount && isExecuting ? "topnav-queue-count--spinning" : ""}`}
                       title={badgeTitle}
                     >
                       {confirmCount > 0 ? (
-                        <Icon icon="mingcute:warning-fill" className="text-[12px] text-(--color-warning)" />
+                        <Icon icon="mingcute:warning-fill" className="text-[12px]" />
                       ) : isExecuting ? (
                         <Icon icon="mingcute:loading-line" className="text-[12px]" />
                       ) : (
@@ -146,10 +146,14 @@ export function TopNav({
           onClick={onToggleConsole}
           title={t("控制台", "Console")}
         >
-          <Icon icon="mingcute:terminal-line" className="text-sm" />
-          {inProgressCount > 0 ? <span className="topnav-queue-count topnav-queue-count--global">{inProgressCount}</span> : null}
-          {runningCount > 0 && (
-            <span className="flex h-2 w-2 rounded-full bg-primary animate-pulse" />
+          <Icon icon="mingcute:terminal-line" className="text-sm opacity-80" />
+          {inProgressCount > 0 ? (
+            <span className="topnav-queue-count topnav-queue-count--global">
+              {inProgressCount}
+            </span>
+          ) : null}
+          {runningCount > 0 && inProgressCount === 0 && (
+            <span className="flex h-1.5 w-1.5 rounded-full bg-(--color-base-content) opacity-40 animate-pulse ml-0.5" />
           )}
         </button>
 

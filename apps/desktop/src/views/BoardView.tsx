@@ -21,6 +21,7 @@ type BoardViewProps = {
   releaseReport: string;
   externalEditorApp: ExternalEditorApp;
   uiLanguage: UiLanguage;
+  tagLanguage: UiLanguage;
   onAddTask: (projectId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
   onDeleteTask: (projectId: string, taskId: string) => void;
@@ -53,6 +54,7 @@ export function BoardView({
   releaseReport,
   externalEditorApp,
   uiLanguage,
+  tagLanguage,
   onAddTask,
   onCommitTaskTitle,
   onDeleteTask,
@@ -255,7 +257,10 @@ export function BoardView({
             >
               <div className="sidebar-card-btn-content">
                 <span className="sidebar-card-btn-title">
-                  <Icon icon="mingcute:play-fill" className="mr-1.5 text-base inline-block -translate-y-px" />
+                  <Icon 
+                    icon={isExecutingProject ? "svg-spinners:pulse-ring" : "mingcute:play-fill"} 
+                    className={`mr-1.5 ${isExecutingProject ? "text-lg" : "text-base"} inline-block -translate-y-px`} 
+                  />
                   {isExecutingProject ? "执行中" : "执行待办"}
                 </span>
                 <span className="sidebar-card-btn-desc">
@@ -315,6 +320,7 @@ export function BoardView({
             selectedTaskId={selectedTaskId}
             editingTaskId={editingTaskId}
             uiLanguage={uiLanguage}
+            tagLanguage={tagLanguage}
             tagCatalog={boardProject.tagCatalog}
             colWidths={colWidths}
             tableRef={tableRef}
@@ -360,6 +366,7 @@ type TaskTableProps = {
   selectedTaskId: string | null;
   editingTaskId: string | null;
   uiLanguage: UiLanguage;
+  tagLanguage: UiLanguage;
   tagCatalog?: TagCatalog | null;
   colWidths: Record<string, number>;
   tableRef: React.Ref<HTMLTableElement>;
@@ -387,6 +394,7 @@ type TaskRowProps = {
   editingTaskId: string | null;
   projectId: string;
   uiLanguage: UiLanguage;
+  tagLanguage: UiLanguage;
   tagCatalog?: TagCatalog | null;
   onSelectTask: (taskId: string) => void;
   onEditTask: (taskId: string) => void;
@@ -401,6 +409,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   editingTaskId,
   projectId,
   uiLanguage,
+  tagLanguage,
   tagCatalog,
   onSelectTask,
   onEditTask,
@@ -431,12 +440,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
     >
       <td className="col-confirm text-center">
         {task.status === "已完成" && task.needsConfirmation ? (
-          <span title="待确认">
-            <Icon
-              icon="mingcute:warning-fill"
-              className="text-[14px] text-(--color-warning)"
-            />
-          </span>
+          <div className="task-confirm-badge" title="待确认" />
         ) : null}
       </td>
       <td className="col-taskIcon text-center">
@@ -457,6 +461,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           <InlineTaskInput
             initialValue={task.title}
             onCommit={(title) => onCommitTaskTitle(projectId, task.id, title)}
+            autoFocus
           />
         ) : (
           <div className="task-title-cell flex items-center gap-1 min-w-0">
@@ -515,7 +520,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           {task.tags.length === 0 ? <span className="text-xs text-muted">—</span> : null}
           {task.tags.map((tag, index) => {
             const { icon, isDefault } = resolveTagIconMeta(tag, tagCatalog);
-            const label = formatTagLabel(tag, uiLanguage, tagCatalog);
+            const label = formatTagLabel(tag, tagLanguage, tagCatalog);
             return (
               <span
                 key={`${tag}-${index}`}
@@ -554,6 +559,7 @@ function TaskTable({
   selectedTaskId,
   editingTaskId,
   uiLanguage,
+  tagLanguage,
   tagCatalog,
   colWidths,
   tableRef,
@@ -622,6 +628,7 @@ function TaskTable({
               editingTaskId={editingTaskId}
               projectId={projectId}
               uiLanguage={uiLanguage}
+              tagLanguage={tagLanguage}
               tagCatalog={tagCatalog}
               onSelectTask={onSelectTask}
               onEditTask={onEditTask}

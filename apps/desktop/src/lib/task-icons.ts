@@ -40,6 +40,8 @@ export function resolveTagIcon(tag: string, tagCatalog?: TagCatalog | null): str
   if (definedIcon && definedIcon.toLowerCase().startsWith("mingcute:")) {
     return definedIcon.toLowerCase();
   }
+  if (normalizedTag === "mcp") return "mingcute:server-line";
+  if (normalizedTag === "verify" || normalizedTag === "verified") return "mingcute:check-circle-line";
   if (normalizedTag.startsWith("type:fix")) return "mingcute:shield-line";
   if (normalizedTag.startsWith("type:feat")) return "mingcute:add-line";
   if (normalizedTag.startsWith("type:refactor")) return "mingcute:refresh-2-line";

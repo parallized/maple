@@ -263,7 +263,18 @@ h3 {
   color: var(--color-warning);
 }
 
-.ui-btn.ui-btn--warning:hover {
+.ui-btn.ui-btn--outline.ui-btn--warning {
+  border-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 5%, var(--color-base-100));
+}
+
+.ui-btn.ui-btn--outline.ui-btn--warning:hover {
+  background: color-mix(in srgb, var(--color-warning) 12%, var(--color-base-100));
+  border-color: color-mix(in srgb, var(--color-warning) 50%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-warning) 15%, transparent);
+}
+
+.ui-btn.ui-btn--warning:not(.ui-btn--outline):hover {
   background: color-mix(in srgb, var(--color-warning) 14%, transparent);
 }
 
@@ -548,10 +559,67 @@ h3 {
 }
 
 .topnav-queue-count--global {
-  margin-left: 0.05rem;
-  background: var(--color-primary);
-  color: #fff;
-  border: none;
+  margin-left: 0.15rem;
+  background: var(--color-base-content) !important;
+  color: var(--color-base-100) !important;
+  border: none !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  min-width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  font-size: 9px;
+}
+
+.task-confirm-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  position: relative;
+  margin: 0 auto;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--color-warning) 40%, transparent);
+}
+
+.task-confirm-badge::after {
+  content: "";
+  position: absolute;
+  width: 1.5px;
+  height: 5px;
+  background: #000;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 0.5px;
+}
+
+.task-confirm-badge::before {
+  content: "";
+  position: absolute;
+  width: 1.5px;
+  height: 1.5px;
+  background: #000;
+  bottom: 2.5px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+}
+
+.topnav-queue-count--warning {
+  background: var(--color-warning);
+  color: #000;
+  border: none !important;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-warning) 30%, transparent);
+  border-radius: 5px;
+  font-weight: 700;
+}
+
+@keyframes warning-pulse {
+  0% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(1.04); filter: brightness(1.1); }
+  100% { transform: scale(1); filter: brightness(1); }
 }
 
 @keyframes topnav-queue-spin {
@@ -836,6 +904,7 @@ h3 {
   line-height: inherit;
   letter-spacing: inherit;
   outline: none;
+  caret-color: var(--color-primary);
   resize: none;
   overflow: hidden;
   word-break: break-word;

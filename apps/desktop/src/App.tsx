@@ -7,7 +7,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { buildWorkerArchiveReport, resolveMcpDecision } from "@maple/worker-skills";
+import { buildWorkerArchiveReport, createWorkerExecutionPrompt, resolveMcpDecision } from "@maple/worker-skills";
 
 import { TopNav } from "./components/TopNav";
 import { TaskDetailPanel } from "./components/TaskDetailPanel";
@@ -98,6 +98,7 @@ export function App() {
   const doneProjectInitRef = useRef(false);
 
   // ── Derived ──
+  const effectiveAiLanguage = aiLanguage === "follow_ui" ? uiLanguage : aiLanguage;
   const boardProject = boardProjectId ? projects.find((p) => p.id === boardProjectId) ?? null : null;
   const currentWorkerLog = workerConsoleWorkerId ? workerLogs[workerConsoleWorkerId] ?? "" : "";
 
@@ -492,14 +493,24 @@ export function App() {
     return parts.map(quoteShellArg).join(" ");
   }
 
-  function buildWorkerRunPayload(workerId: string, config: WorkerConfig): { args: string[]; prompt: string } {
+  function buildWorkerRunPayload(
+    workerId: string,
+    config: WorkerConfig,
+    task: Task,
+    project: Project
+  ): { args: string[]; prompt: string } {
     const kind = parseWorkerId(workerId).kind;
     const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
-    const effectiveLanguage = aiLanguage === "follow_ui" ? uiLanguage : aiLanguage;
-    const prompt =
-      effectiveLanguage === "en"
+    const prompt = [
+      createWorkerExecutionPrompt({
+        projectName: project.name,
+        directory: project.directory,
+        taskTitle: task.title
+      }),
+      effectiveAiLanguage === "en"
         ? "Please write your conclusion and tags in English."
-        : "请用中文输出结论与标签。";
+        : "请用中文输出结论与标签。"
+    ].join("\n\n");
     return { args, prompt };
   }
 
@@ -665,7 +676,7 @@ export function App() {
     payload?: { args: string[]; prompt: string }
   ): Promise<WorkerCommandResult> {
     if (!isTauri) return { success: false, code: null, stdout: "", stderr: "当前环境无法执行 Worker CLI。" };
-    const runPayload = payload ?? buildWorkerRunPayload(workerId, config);
+    const runPayload = payload ?? buildWorkerRunPayload(workerId, config, task, project);
     return invoke<WorkerCommandResult>("run_worker", {
       workerId,
       taskTitle: task.title,
@@ -746,7 +757,7 @@ export function App() {
           continue;
         }
         try {
-          const payload = buildWorkerRunPayload(workerId, config);
+          const payload = buildWorkerRunPayload(workerId, config, task, project);
           appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, payload.args)}\n`);
           const beforeLen = workerLogsRef.current[workerId]?.length ?? 0;
           const result = await runWorkerCommand(workerId, config, task, project, payload);
@@ -983,6 +994,7 @@ export function App() {
                     releaseReport={releaseReport}
                     externalEditorApp={externalEditorApp}
                     uiLanguage={uiLanguage}
+                    tagLanguage={effectiveAiLanguage}
                     onAddTask={addTask}
                     onCommitTaskTitle={commitTaskTitle}
                     onDeleteTask={deleteTask}
@@ -1074,7 +1086,7 @@ export function App() {
             </button>
             <TaskDetailPanel
               task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
-              uiLanguage={uiLanguage}
+              tagLanguage={effectiveAiLanguage}
               tagCatalog={boardProject.tagCatalog}
               onClose={() => setSelectedTaskId(null)}
               onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
@@ -1084,6 +1096,12 @@ export function App() {
                 status: "待返工",
                 needsConfirmation: false,
                 reports: [...t.reports, createTaskReport("user", ["状态：待返工", "描述：", "已标记为返工，请重新执行并修正结果。"].join("\n"))]
+              }))}
+              onComplete={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+                ...t,
+                status: "已完成",
+                needsConfirmation: false,
+                reports: [...t.reports, createTaskReport("user", ["状态：已完成", "描述：", "手动标记为完成。"].join("\n"))]
               }))}
               onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
             />
@@ -1098,7 +1116,7 @@ export function App() {
             <div className="ui-modal-body">
               <TaskDetailPanel
                 task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
-                uiLanguage={uiLanguage}
+                tagLanguage={effectiveAiLanguage}
                 tagCatalog={boardProject.tagCatalog}
                 onClose={() => setSelectedTaskId(null)}
                 onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
@@ -1108,6 +1126,12 @@ export function App() {
                   status: "待返工",
                   needsConfirmation: false,
                   reports: [...t.reports, createTaskReport("user", ["状态：待返工", "描述：", "已标记为返工，请重新执行并修正结果。"].join("\n"))]
+                }))}
+                onComplete={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+                  ...t,
+                  status: "已完成",
+                  needsConfirmation: false,
+                  reports: [...t.reports, createTaskReport("user", ["状态：已完成", "描述：", "手动标记为完成。"].join("\n"))]
                 }))}
                 onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
               />

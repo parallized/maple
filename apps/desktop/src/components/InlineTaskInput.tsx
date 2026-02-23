@@ -7,6 +7,7 @@ type InlineTaskInputProps = {
   placeholder?: string;
   className?: string;
   ariaLabel?: string;
+  autoFocus?: boolean;
 };
 
 export function InlineTaskInput({
@@ -15,12 +16,25 @@ export function InlineTaskInput({
   onCancel,
   placeholder = "输入任务标题…",
   className,
-  ariaLabel
+  ariaLabel,
+  autoFocus = false
 }: InlineTaskInputProps) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const [value, setValue] = useState(initialValue ?? "");
   const committed = useRef(false);
   const composing = useRef(false);
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    const el = ref.current;
+    if (!el) return;
+    const handle = requestAnimationFrame(() => {
+      el.focus();
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [autoFocus]);
 
   useEffect(() => {
     if (ref.current) {
@@ -53,6 +67,7 @@ export function InlineTaskInput({
   return (
     <textarea
       ref={ref}
+      autoFocus={autoFocus}
       className={["inline-task-input", className].filter(Boolean).join(" ")}
       value={value}
       onChange={(e) => {

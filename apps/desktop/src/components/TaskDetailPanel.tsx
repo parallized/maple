@@ -13,11 +13,12 @@ import { WorkerLogo } from "./WorkerLogo";
 
 type TaskDetailPanelProps = {
   task: Task;
-  uiLanguage: UiLanguage;
+  tagLanguage: UiLanguage;
   tagCatalog?: TagCatalog | null;
   onUpdateTitle?: (title: string) => void;
   onUpdateDetails?: (details: string) => void;
   onRework?: () => void;
+  onComplete?: () => void;
   onClose?: () => void;
   onDelete?: () => void;
 };
@@ -100,11 +101,12 @@ function renderAuthorIcon(author: string, size = 14) {
 
 export function TaskDetailPanel({
   task,
-  uiLanguage,
+  tagLanguage,
   tagCatalog,
   onUpdateTitle,
   onUpdateDetails,
   onRework,
+  onComplete,
   onClose
 }: TaskDetailPanelProps) {
   const reports = useMemo(() => {
@@ -237,7 +239,7 @@ export function TaskDetailPanel({
                 style={buildTagBadgeStyle(tag, tagCatalog) as CSSProperties}
                 title={tag}
               >
-                {formatTagLabel(tag, uiLanguage, tagCatalog)}
+                {formatTagLabel(tag, tagLanguage, tagCatalog)}
               </span>
             ))}
           </div>
@@ -343,18 +345,33 @@ export function TaskDetailPanel({
         </motion.div>
       </motion.div>
 
-      {task.status === "已完成" && typeof onRework === "function" ? (
-        <footer className="mt-6 pt-4 border-t border-(--color-base-300)/30 flex items-center justify-end">
-          <button
-            type="button"
-            className="ui-btn ui-btn--sm ui-btn--ghost ui-btn--warning"
-            onClick={onRework}
-            aria-label="标记为待返工"
-            title="将任务标记为待返工，重新进入待办队列"
-          >
-            <Icon icon="mingcute:undo-line" className="text-[16px]" />
-            返工
-          </button>
+      {(task.status === "已完成" && typeof onRework === "function") || (task.status !== "已完成" && typeof onComplete === "function") ? (
+        <footer className="mt-10 pt-4 border-t border-(--color-base-300)/20 flex items-center justify-end gap-3">
+          {task.status === "已完成" && typeof onRework === "function" && (
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-warning/5 hover:border-warning/30 hover:text-warning text-muted transition-all duration-300 gap-1.5 px-4"
+              onClick={onRework}
+              aria-label="标记为待返工"
+              title="将任务标记为待返工，重新进入待办队列"
+            >
+              <Icon icon="mingcute:refresh-3-line" className="text-[14px]" />
+              <span className="font-medium text-[12.5px]">重新执行任务</span>
+            </button>
+          )}
+
+          {task.status !== "已完成" && typeof onComplete === "function" && (
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-success/5 hover:border-success/30 hover:text-success text-muted transition-all duration-300 gap-1.5 px-4"
+              onClick={onComplete}
+              aria-label="标记为已完成"
+              title="将任务标记为已完成"
+            >
+              <Icon icon="mingcute:check-circle-line" className="text-[14px]" />
+              <span className="font-medium text-[12.5px]">标记为已完成</span>
+            </button>
+          )}
         </footer>
       ) : null}
     </motion.section>
