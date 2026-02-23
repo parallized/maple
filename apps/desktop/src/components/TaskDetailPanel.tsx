@@ -300,8 +300,13 @@ export function TaskDetailPanel({ task, onUpdateTitle, onUpdateDetails, onClose 
                         transition={{ type: "spring", stiffness: 400, damping: 30 }}
                         className="flex flex-col"
                       >
-                        <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90">
-                          {parsed ? renderTaskMarkdown(parsed.description) : renderTaskMarkdown(report.content)}
+                        <div className="report-content text-[13.5px] leading-[1.6] text-secondary/90 flex gap-2.5">
+                          <div className="shrink-0 mt-[3px] -ml-[22px] opacity-40">
+                            {renderAuthorIcon(report.author, 15)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            {parsed ? renderTaskMarkdown(parsed.description) : renderTaskMarkdown(report.content)}
+                          </div>
                         </div>
                       </motion.article>
                     );
