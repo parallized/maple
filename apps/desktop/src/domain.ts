@@ -58,6 +58,17 @@ export type TaskReport = {
   createdAt: string;
 };
 
+export type TagDefinition = {
+  color?: string;
+  icon?: string;
+  label?: {
+    zh?: string;
+    en?: string;
+  };
+};
+
+export type TagCatalog = Record<string, TagDefinition>;
+
 export type Task = {
   id: string;
   title: string;
@@ -78,11 +89,17 @@ export type Project = {
   directory: string;
   workerKind?: WorkerKind;
   tasks: Task[];
+  tagCatalog?: TagCatalog;
 };
 
 export type McpTaskUpdatedEvent = {
   projectName: string;
   task: Task;
+};
+
+export type McpTagCatalogUpdatedEvent = {
+  projectName: string;
+  tagCatalog: TagCatalog;
 };
 
 export type McpWorkerFinishedEvent = {

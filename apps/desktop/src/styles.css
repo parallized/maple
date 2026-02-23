@@ -589,6 +589,12 @@ h3 {
   background: var(--color-base-300);
 }
 
+.topnav-tabs-wrapper {
+  overflow: visible;
+  display: flex;
+  align-items: center;
+}
+
 .topnav-scroll {
   display: flex;
   align-items: center;
@@ -597,8 +603,8 @@ h3 {
   min-width: 0;
   overflow-x: auto;
   overflow-y: visible;
-  padding: 8px 0;
-  margin: -8px 0;
+  padding: 10px 0;
+  margin: -10px 0;
   scrollbar-width: none;
 }
 

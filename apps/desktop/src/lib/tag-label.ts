@@ -1,5 +1,7 @@
 import type { UiLanguage } from "./constants";
 import { isVersionTag } from "./task-tags";
+import type { TagCatalog } from "../domain";
+import { normalizeTagId, resolveTagDefinition } from "./tag-catalog";
 
 const TAG_LABELS: Record<UiLanguage, Record<string, string>> = {
   en: {
@@ -42,11 +44,14 @@ const TAG_LABELS: Record<UiLanguage, Record<string, string>> = {
   },
 };
 
-export function formatTagLabel(tag: string, uiLanguage: UiLanguage): string {
+export function formatTagLabel(tag: string, uiLanguage: UiLanguage, tagCatalog?: TagCatalog | null): string {
   const raw = tag.trim();
   if (!raw) return "";
-  const normalized = raw.toLowerCase();
+  const normalized = normalizeTagId(raw);
   if (isVersionTag(normalized)) return raw;
+
+  const catalogLabel = resolveTagDefinition(normalized, tagCatalog)?.label?.[uiLanguage];
+  if (catalogLabel) return catalogLabel;
+
   return TAG_LABELS[uiLanguage]?.[normalized] ?? raw;
 }
-

@@ -1,50 +1,36 @@
 import { isVersionTag } from "./task-tags";
+import type { TagCatalog } from "../domain";
+import { normalizeTagId, resolveTagDefinition } from "./tag-catalog";
 
-type TagColorRule = {
-  test: (normalized: string) => boolean;
-  color: string;
-};
-
-const TAG_COLOR_RULES: TagColorRule[] = [
-  { test: (tag) => tag === "desktop" || tag === "tauri", color: "#0ea5e9" },
-  { test: (tag) => tag === "mcp", color: "#22c55e" },
-  { test: (tag) => tag === "ui" || tag === "ux", color: "#ec4899" },
-  { test: (tag) => tag === "配置" || tag === "config", color: "#f59e0b" },
-  { test: (tag) => tag === "架构" || tag === "arch", color: "#6366f1" },
-  { test: (tag) => tag === "修复" || tag === "bug" || tag === "fix", color: "var(--color-error)" },
-  { test: (tag) => tag === "新功能" || tag === "feat" || tag === "feature", color: "var(--color-success)" },
-  { test: (tag) => tag === "重构" || tag === "refactor", color: "#a855f7" },
-
-  { test: (tag) => tag === "type:fix", color: "var(--color-error)" },
-  { test: (tag) => tag === "type:feat", color: "var(--color-success)" },
-  { test: (tag) => tag === "type:refactor", color: "#a855f7" },
-  { test: (tag) => tag === "type:docs", color: "#3b82f6" },
-  { test: (tag) => tag === "type:chore", color: "#64748b" },
-
-  { test: (tag) => tag === "area:core", color: "#6366f1" },
-  { test: (tag) => tag === "area:ui", color: "#ec4899" },
-  { test: (tag) => tag === "area:task-detail", color: "var(--color-primary)" },
-  { test: (tag) => tag === "area:markdown", color: "#10b981" },
-  { test: (tag) => tag === "area:worker", color: "#f59e0b" },
-  { test: (tag) => tag === "area:mcp", color: "#22c55e" },
-  { test: (tag) => tag === "area:xterm", color: "#0ea5e9" },
-  { test: (tag) => tag === "area:i18n", color: "#a3e635" },
-
-  { test: (tag) => tag === "state:blocked", color: "var(--color-error)" },
-  { test: (tag) => tag === "state:needs-info", color: "var(--color-warning)" },
-];
-
-export function resolveTagColor(tag: string): string | null {
-  const normalized = tag.trim().toLowerCase();
-  if (!normalized) return null;
-  if (isVersionTag(normalized)) return "var(--color-primary)";
-
-  const rule = TAG_COLOR_RULES.find((entry) => entry.test(normalized));
-  return rule?.color ?? null;
+function hash32(input: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
-export function buildTagBadgeStyle(tag: string): Record<string, string> {
-  const color = resolveTagColor(tag);
+function buildAutoTagColor(tagId: string): string {
+  const hue = hash32(tagId) % 360;
+  const saturation = 66;
+  const lightness = 46;
+  return `hsl(${hue} ${saturation}% ${lightness}%)`;
+}
+
+export function resolveTagColor(tag: string, tagCatalog?: TagCatalog | null): string | null {
+  const tagId = normalizeTagId(tag);
+  if (!tagId) return null;
+
+  const catalogColor = resolveTagDefinition(tagId, tagCatalog)?.color?.trim();
+  if (catalogColor) return catalogColor;
+
+  if (isVersionTag(tagId)) return "var(--color-primary)";
+  return buildAutoTagColor(tagId);
+}
+
+export function buildTagBadgeStyle(tag: string, tagCatalog?: TagCatalog | null): Record<string, string> {
+  const color = resolveTagColor(tag, tagCatalog);
   if (!color) return {};
   return { "--tag-color": color };
 }

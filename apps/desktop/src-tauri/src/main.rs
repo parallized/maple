@@ -711,6 +711,16 @@ fn write_state_file(json: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn read_state_file() -> Result<String, String> {
+  let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 目录".to_string())?;
+  let path = PathBuf::from(home).join(".maple").join("state.json");
+  if !path.exists() {
+    return Ok("[]".to_string());
+  }
+  std::fs::read_to_string(&path).map_err(|e| format!("读取状态文件失败: {e}"))
+}
+
+#[tauri::command]
 fn sync_tray_task_badge(
   snapshot: tray_status::TrayTaskSnapshot,
   app_handle: AppHandle,
@@ -742,6 +752,7 @@ fn main() {
       stop_mcp_server,
       mcp_server_status,
       write_state_file,
+      read_state_file,
       sync_tray_task_badge
     ])
     .run(tauri::generate_context!())

@@ -1,4 +1,6 @@
 import type { Task } from "../domain";
+import type { TagCatalog } from "../domain";
+import { normalizeTagId, resolveTagDefinition } from "./tag-catalog";
 
 const DEFAULT_TASK_ICON = "mingcute:task-line";
 const DEFAULT_TAG_ICON = "mingcute:tag-line";
@@ -29,10 +31,14 @@ function normalizeIconName(icon: string | undefined, fallback: string): string {
   return KNOWN_MINGCUTE_ICONS.has(normalized) ? normalized : fallback;
 }
 
-export function resolveTagIcon(tag: string): string {
-  const normalizedTag = tag.trim().toLowerCase();
+export function resolveTagIcon(tag: string, tagCatalog?: TagCatalog | null): string {
+  const normalizedTag = normalizeTagId(tag);
   if (!normalizedTag) {
     return DEFAULT_TAG_ICON;
+  }
+  const definedIcon = resolveTagDefinition(normalizedTag, tagCatalog)?.icon?.trim();
+  if (definedIcon && definedIcon.toLowerCase().startsWith("mingcute:")) {
+    return definedIcon.toLowerCase();
   }
   if (normalizedTag.startsWith("type:fix")) return "mingcute:shield-line";
   if (normalizedTag.startsWith("type:feat")) return "mingcute:add-line";
@@ -60,12 +66,12 @@ export function resolveTagIcon(tag: string): string {
   return DEFAULT_TAG_ICON;
 }
 
-export function resolveTagIconMeta(tag: string): { icon: string; isDefault: boolean } {
-  const icon = resolveTagIcon(tag);
+export function resolveTagIconMeta(tag: string, tagCatalog?: TagCatalog | null): { icon: string; isDefault: boolean } {
+  const icon = resolveTagIcon(tag, tagCatalog);
   return { icon, isDefault: icon === DEFAULT_TAG_ICON };
 }
 
-export function resolveTaskIcon(task: Task): {
+export function resolveTaskIcon(task: Task, tagCatalog?: TagCatalog | null): {
   icon: string;
   isDefault: boolean;
 } {
@@ -75,7 +81,7 @@ export function resolveTaskIcon(task: Task): {
     return { icon, isDefault: icon === DEFAULT_TASK_ICON };
   }
   if (task.tags.length > 0) {
-    const icon = resolveTagIcon(task.tags[0]);
+    const icon = resolveTagIcon(task.tags[0], tagCatalog);
     if (icon === DEFAULT_TAG_ICON) {
       return { icon: DEFAULT_TASK_ICON, isDefault: true };
     }

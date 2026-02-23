@@ -54,7 +54,7 @@ export function TopNav({
         <SplitText text="Maple" className="inline" delay={40} />
       </div>
 
-      <div className="flex items-center gap-2 rounded-xl">
+      <div className="flex items-center gap-2 topnav-tabs-wrapper">
         <button
           type="button"
           className={`topnav-tab ${view === "overview" ? "active" : ""}`}

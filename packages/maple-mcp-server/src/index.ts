@@ -17,6 +17,17 @@ type TaskReport = {
   createdAt: string;
 };
 
+type TagDefinition = {
+  color?: string;
+  icon?: string;
+  label?: {
+    zh?: string;
+    en?: string;
+  };
+};
+
+type TagCatalog = Record<string, TagDefinition>;
+
 type Task = {
   id: string;
   title: string;
@@ -36,6 +47,7 @@ type Project = {
   directory: string;
   workerKind?: string;
   tasks: Task[];
+  tagCatalog?: TagCatalog;
 };
 
 const TERMINAL_TASK_STATUSES: TaskStatus[] = ["已完成", "已阻塞", "需要更多信息"];
@@ -75,6 +87,14 @@ function findProject(projects: Project[], name: string): Project | undefined {
     projects.find((p) => p.name.toLowerCase() === keyword) ??
     projects.find((p) => p.name.toLowerCase().includes(keyword))
   );
+}
+
+function normalizeTagId(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function isValidMingcuteIcon(icon: string): boolean {
+  return icon.trim().toLowerCase().startsWith("mingcute:");
 }
 
 // ── MCP Server ──
@@ -265,6 +285,105 @@ server.tool(
     const statusText = status ? `状态已更新为「${status}」` : "状态未变更";
     return {
       content: [{ type: "text" as const, text: `已提交报告至「${target.name}」任务「${task.title}」。${statusText}。` }],
+    };
+  }
+);
+
+server.tool(
+  "query_tag_catalog",
+  "查询项目 Tag Catalog（标签定义：颜色/图标/多语言 label）。",
+  {
+    project: z.string().describe("项目名称（模糊匹配）"),
+  },
+  async ({ project }) => {
+    const projects = readState();
+    const target = findProject(projects, project);
+    if (!target) {
+      return {
+        content: [{ type: "text" as const, text: `未找到匹配项目「${project}」。` }],
+        isError: true,
+      };
+    }
+
+    const catalog = target.tagCatalog ?? {};
+    const entries = Object.entries(catalog);
+    if (entries.length === 0) {
+      return {
+        content: [{ type: "text" as const, text: `项目「${target.name}」暂无 Tag Catalog。` }],
+      };
+    }
+
+    const lines = entries
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([tag, def]) => {
+        const color = def.color?.trim() ? def.color.trim() : "（未设置）";
+        const icon = def.icon?.trim() ? def.icon.trim() : "（未设置）";
+        const labelZh = def.label?.zh?.trim() ? def.label.zh.trim() : "（未设置）";
+        const labelEn = def.label?.en?.trim() ? def.label.en.trim() : "（未设置）";
+        return `- ${tag}  color: ${color}  icon: ${icon}  label.zh: ${labelZh}  label.en: ${labelEn}`;
+      });
+
+    return {
+      content: [{ type: "text" as const, text: `项目「${target.name}」Tag Catalog：\n${lines.join("\n")}` }],
+    };
+  }
+);
+
+server.tool(
+  "upsert_tag_definition",
+  "创建或更新 Tag 定义（用于 UI 渲染颜色/图标/多语言 label）。",
+  {
+    project: z.string().describe("项目名称（模糊匹配）"),
+    tag: z.string().describe("Tag ID（会被 trim + lower-case 归一化）"),
+    color: z.string().optional().describe("CSS 颜色（例如 #22c55e / hsl(...) / var(--color-primary)）"),
+    icon: z.string().optional().describe("Iconify 图标（仅允许 mingcute 集，例如 mingcute:tag-line）"),
+    label_zh: z.string().optional().describe("中文展示名（可选）"),
+    label_en: z.string().optional().describe("英文展示名（可选）"),
+  },
+  async ({ project, tag, color, icon, label_zh, label_en }) => {
+    const projects = readState();
+    const target = findProject(projects, project);
+    if (!target) {
+      return {
+        content: [{ type: "text" as const, text: `未找到匹配项目「${project}」。` }],
+        isError: true,
+      };
+    }
+
+    const tagId = normalizeTagId(tag);
+    if (!tagId) {
+      return {
+        content: [{ type: "text" as const, text: "tag 不能为空。" }],
+        isError: true,
+      };
+    }
+
+    if (icon?.trim() && !isValidMingcuteIcon(icon)) {
+      return {
+        content: [{ type: "text" as const, text: "icon 必须是 Iconify 的 mingcute 图标（例如 mingcute:tag-line）。" }],
+        isError: true,
+      };
+    }
+
+    target.tagCatalog ??= {};
+    const existing = target.tagCatalog[tagId] ?? {};
+    const next: TagDefinition = { ...existing };
+
+    if (typeof color === "string" && color.trim()) next.color = color.trim();
+    if (typeof icon === "string" && icon.trim()) next.icon = icon.trim().toLowerCase();
+
+    if (typeof label_zh === "string" || typeof label_en === "string") {
+      const label: NonNullable<TagDefinition["label"]> = { ...(existing.label ?? {}) };
+      if (label_zh?.trim()) label.zh = label_zh.trim();
+      if (label_en?.trim()) label.en = label_en.trim();
+      next.label = Object.keys(label).length > 0 ? label : undefined;
+    }
+
+    target.tagCatalog[tagId] = next;
+    writeState(projects);
+
+    return {
+      content: [{ type: "text" as const, text: `已更新「${target.name}」Tag「${tagId}」定义。` }],
     };
   }
 );

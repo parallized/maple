@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { Icon } from "@iconify/react";
-import type { Task, TaskReport } from "../domain";
+import type { TagCatalog, Task, TaskReport } from "../domain";
 import { relativeTimeZh, getTimeLevel } from "../lib/utils";
 import { renderTaskMarkdown } from "../lib/task-markdown";
 import { buildTagBadgeStyle } from "../lib/tag-style";
@@ -14,6 +14,7 @@ import { WorkerLogo } from "./WorkerLogo";
 type TaskDetailPanelProps = {
   task: Task;
   uiLanguage: UiLanguage;
+  tagCatalog?: TagCatalog | null;
   onUpdateTitle?: (title: string) => void;
   onUpdateDetails?: (details: string) => void;
   onRework?: () => void;
@@ -88,14 +89,6 @@ function reportBadgeClass(status: string): string {
   return "";
 }
 
-function isCompletedReport(report: TaskReport): boolean {
-  const parsed = parseTaskReport(report.content);
-  if (parsed?.status.includes("已完成")) return true;
-
-  const normalized = report.content.toLowerCase();
-  return /status[:：].*completed/.test(normalized) || /状态[:：].*已完成/.test(report.content);
-}
-
 function renderAuthorIcon(author: string, size = 14) {
   const normalized = author.toLowerCase();
   if (normalized === "claude") return <WorkerLogo kind="claude" size={size} />;
@@ -105,24 +98,34 @@ function renderAuthorIcon(author: string, size = 14) {
   return <Icon icon="mingcute:paper-line" className="opacity-60" style={{ fontSize: size }} />;
 }
 
-export function TaskDetailPanel({ task, uiLanguage, onUpdateTitle, onUpdateDetails, onRework, onClose }: TaskDetailPanelProps) {
-  const completedReports = useMemo(
-    () => task.reports.filter(isCompletedReport),
-    [task.reports]
-  );
+export function TaskDetailPanel({
+  task,
+  uiLanguage,
+  tagCatalog,
+  onUpdateTitle,
+  onUpdateDetails,
+  onRework,
+  onClose
+}: TaskDetailPanelProps) {
+  const reports = useMemo(() => {
+    return task.reports
+      .filter((report) => report.content.trim().length > 0)
+      .slice()
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [task.reports]);
   const [activeReportId, setActiveReportId] = useState<string | null>(
-    completedReports.length > 0 ? completedReports[completedReports.length - 1]!.id : null
+    reports.length > 0 ? reports[0]!.id : null
   );
 
   useEffect(() => {
-    if (completedReports.length === 0) {
+    if (reports.length === 0) {
       setActiveReportId(null);
       return;
     }
-    if (!activeReportId || !completedReports.some((report) => report.id === activeReportId)) {
-      setActiveReportId(completedReports[completedReports.length - 1]!.id);
+    if (!activeReportId || !reports.some((report) => report.id === activeReportId)) {
+      setActiveReportId(reports[0]!.id);
     }
-  }, [activeReportId, completedReports]);
+  }, [activeReportId, reports]);
 
   return (
     <motion.section 
@@ -231,10 +234,10 @@ export function TaskDetailPanel({ task, uiLanguage, onUpdateTitle, onUpdateDetai
               <span
                 key={tag}
                 className="ui-badge ui-badge--sm ui-badge--tag shrink-0"
-                style={buildTagBadgeStyle(tag) as CSSProperties}
+                style={buildTagBadgeStyle(tag, tagCatalog) as CSSProperties}
                 title={tag}
               >
-                {formatTagLabel(tag, uiLanguage)}
+                {formatTagLabel(tag, uiLanguage, tagCatalog)}
               </span>
             ))}
           </div>
@@ -244,16 +247,16 @@ export function TaskDetailPanel({ task, uiLanguage, onUpdateTitle, onUpdateDetai
           variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
           className="flex flex-col"
         >
-          <header className={`flex items-center gap-4 h-9 ${completedReports.length > 0 ? 'border-b border-(--color-base-300)/30 mb-4' : ''}`}>
+          <header className={`flex items-center gap-4 h-9 ${reports.length > 0 ? 'border-b border-(--color-base-300)/30 mb-4' : ''}`}>
             <h3 className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px] m-0">
               <Icon icon="mingcute:comment-line" className="text-[15px] opacity-60" />
               执行报告
             </h3>
             
             <div className="flex-1 min-h-0 self-stretch flex items-end">
-              {completedReports.length > 0 ? (
+              {reports.length > 0 ? (
                 <nav className="flex items-center gap-5 overflow-x-auto scrollbar-none w-full">
-                  {completedReports.slice(-3).map((report, index) => {
+                  {reports.slice(0, 3).map((report, index) => {
                     const active = activeReportId === report.id;
                     return (
                       <motion.button
@@ -291,10 +294,10 @@ export function TaskDetailPanel({ task, uiLanguage, onUpdateTitle, onUpdateDetai
           </header>
 
           <div className="pl-[22px] mt-1">
-            {completedReports.length > 0 && (
+            {reports.length > 0 && (
               <div className="relative">
                 <AnimatePresence mode="wait">
-                  {completedReports.filter(r => r.id === activeReportId).map((report) => {
+                  {reports.filter(r => r.id === activeReportId).map((report) => {
                     const parsed = parseTaskReport(report.content);
                     return (
                       <motion.article 

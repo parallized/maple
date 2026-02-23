@@ -1,6 +1,7 @@
 import type { Project, Task, TaskReport } from "../domain";
 import type { ThemeMode } from "./constants";
 import { WORKER_KINDS } from "./constants";
+import { normalizeTagCatalog } from "./tag-catalog";
 
 export function bumpPatch(version: string): string {
   const [major, minor, patch] = version.split(".").map((part) => Number(part));
@@ -61,6 +62,7 @@ export function normalizeProjects(projects: Project[]): Project[] {
         ...project,
         directory,
         workerKind,
+        tagCatalog: normalizeTagCatalog((project as Project).tagCatalog),
         tasks: project.tasks.map((task) => {
           const createdAt =
             typeof task.createdAt === "string" && task.createdAt

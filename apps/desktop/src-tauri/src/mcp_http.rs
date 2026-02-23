@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::collections::BTreeMap;
 use tauri::Emitter;
 
 const MCP_PORT: u16 = 45819;
@@ -26,6 +27,13 @@ pub struct McpHttpState {
 struct TaskUpdatedEvent {
     project_name: String,
     task: Task,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct TagCatalogUpdatedEvent {
+    project_name: String,
+    tag_catalog: BTreeMap<String, TagDefinition>,
 }
 
 #[derive(Serialize, Clone)]
@@ -62,6 +70,24 @@ struct Task {
     reports: Vec<TaskReport>,
 }
 
+#[derive(Deserialize, Serialize, Clone, Default)]
+struct TagLabel {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zh: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    en: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default)]
+struct TagDefinition {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<TagLabel>,
+}
+
 #[derive(Deserialize, Serialize, Clone)]
 struct Project {
     id: String,
@@ -71,6 +97,8 @@ struct Project {
     #[serde(rename = "workerKind", skip_serializing_if = "Option::is_none")]
     worker_kind: Option<String>,
     tasks: Vec<Task>,
+    #[serde(rename = "tagCatalog", default)]
+    tag_catalog: BTreeMap<String, TagDefinition>,
 }
 
 // ── State File ──
@@ -124,6 +152,14 @@ fn truncate_chars(s: &str, max: usize) -> &str {
 
 fn is_terminal_task_status(status: &str) -> bool {
     matches!(status, "已完成" | "已阻塞" | "需要更多信息")
+}
+
+fn normalize_tag_id(raw: &str) -> String {
+    raw.trim().to_lowercase()
+}
+
+fn is_valid_mingcute_icon(icon: &str) -> bool {
+    icon.trim().to_lowercase().starts_with("mingcute:")
 }
 
 // ── MCP Tool Handlers ──
@@ -368,6 +404,130 @@ fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
     }]})
 }
 
+fn tool_query_tag_catalog(args: &Value) -> Value {
+    let name = args.get("project").and_then(|v| v.as_str()).unwrap_or("");
+    let projects = read_state();
+
+    let Some(idx) = find_project_index(&projects, name) else {
+        return json!({
+            "content": [{ "type": "text", "text": format!("未找到匹配项目「{name}」。") }],
+            "isError": true
+        });
+    };
+
+    let target = &projects[idx];
+    if target.tag_catalog.is_empty() {
+        return json!({ "content": [{ "type": "text", "text":
+            format!("项目「{}」暂无 Tag Catalog。", target.name)
+        }]});
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    for (tag, def) in &target.tag_catalog {
+        let color = def
+            .color
+            .as_deref()
+            .unwrap_or("（未设置）");
+        let icon = def
+            .icon
+            .as_deref()
+            .unwrap_or("（未设置）");
+        let label_zh = def
+            .label
+            .as_ref()
+            .and_then(|label| label.zh.as_deref())
+            .unwrap_or("（未设置）");
+        let label_en = def
+            .label
+            .as_ref()
+            .and_then(|label| label.en.as_deref())
+            .unwrap_or("（未设置）");
+        lines.push(format!(
+            "- {}  color: {}  icon: {}  label.zh: {}  label.en: {}",
+            tag, color, icon, label_zh, label_en
+        ));
+    }
+
+    json!({ "content": [{ "type": "text", "text": format!(
+        "项目「{}」Tag Catalog：\n{}",
+        target.name,
+        lines.join("\n")
+    )}]})
+}
+
+fn tool_upsert_tag_definition(args: &Value, state: &McpHttpState) -> Value {
+    let project_name = args.get("project").and_then(|v| v.as_str()).unwrap_or("");
+    let tag_raw = args.get("tag").and_then(|v| v.as_str()).unwrap_or("");
+    let tag_id = normalize_tag_id(tag_raw);
+    if tag_id.is_empty() {
+        return json!({
+            "content": [{ "type": "text", "text": "tag 不能为空。"}],
+            "isError": true
+        });
+    }
+
+    let color = args.get("color").and_then(|v| v.as_str()).map(|s| s.trim()).filter(|s| !s.is_empty());
+    let icon = args.get("icon").and_then(|v| v.as_str()).map(|s| s.trim()).filter(|s| !s.is_empty());
+    if let Some(i) = icon {
+        if !is_valid_mingcute_icon(i) {
+            return json!({
+                "content": [{ "type": "text", "text": "icon 必须是 Iconify 的 mingcute 图标（例如 mingcute:tag-line）。"}],
+                "isError": true
+            });
+        }
+    }
+    let label_zh = args.get("label_zh").and_then(|v| v.as_str()).map(|s| s.trim()).filter(|s| !s.is_empty());
+    let label_en = args.get("label_en").and_then(|v| v.as_str()).map(|s| s.trim()).filter(|s| !s.is_empty());
+
+    let mut projects = read_state();
+    let Some(idx) = find_project_index(&projects, project_name) else {
+        return json!({
+            "content": [{ "type": "text", "text": format!("未找到匹配项目「{project_name}」。") }],
+            "isError": true
+        });
+    };
+
+    let target = &mut projects[idx];
+    let target_name = target.name.clone();
+
+    let entry = target.tag_catalog.entry(tag_id.clone()).or_default();
+    if let Some(c) = color {
+        entry.color = Some(c.to_string());
+    }
+    if let Some(i) = icon {
+        entry.icon = Some(i.to_lowercase());
+    }
+    if label_zh.is_some() || label_en.is_some() {
+        let mut label = entry.label.clone().unwrap_or_default();
+        if let Some(zh) = label_zh {
+            label.zh = Some(zh.to_string());
+        }
+        if let Some(en) = label_en {
+            label.en = Some(en.to_string());
+        }
+        if label.zh.is_none() && label.en.is_none() {
+            entry.label = None;
+        } else {
+            entry.label = Some(label);
+        }
+    }
+
+    let catalog_snapshot = target.tag_catalog.clone();
+
+    write_state(&projects);
+    let _ = state.app_handle.emit(
+        "maple://tag-catalog-updated",
+        TagCatalogUpdatedEvent {
+            project_name: target_name.clone(),
+            tag_catalog: catalog_snapshot.clone(),
+        },
+    );
+
+    json!({ "content": [{ "type": "text", "text":
+        format!("已更新「{target_name}」Tag「{tag_id}」定义。")
+    }]})
+}
+
 fn tool_finish_worker(args: &Value, state: &McpHttpState) -> Value {
     let project_name = args
         .get("project")
@@ -488,6 +648,8 @@ async fn handle_mcp_post(
                 "query_recent_context" => tool_query_recent_context(&arguments),
                 "query_task_details" => tool_query_task_details(&arguments),
                 "submit_task_report" => tool_submit_task_report(&arguments, state.as_ref()),
+                "query_tag_catalog" => tool_query_tag_catalog(&arguments),
+                "upsert_tag_definition" => tool_upsert_tag_definition(&arguments, state.as_ref()),
                 "finish_worker" => tool_finish_worker(&arguments, state.as_ref()),
                 _ => json!({
                     "content": [{ "type": "text", "text": format!("未知工具：{tool_name}") }],
@@ -572,6 +734,33 @@ fn tool_definitions() -> Vec<Value> {
                     }
                 },
                 "required": ["project", "task_id", "report"]
+            }
+        }),
+        json!({
+            "name": "query_tag_catalog",
+            "description": "查询项目 Tag Catalog（标签定义：颜色/图标/多语言 label）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": { "type": "string", "description": "项目名称（模糊匹配）" }
+                },
+                "required": ["project"]
+            }
+        }),
+        json!({
+            "name": "upsert_tag_definition",
+            "description": "创建或更新 Tag 定义（用于 UI 渲染颜色/图标/多语言 label）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": { "type": "string", "description": "项目名称（模糊匹配）" },
+                    "tag": { "type": "string", "description": "Tag ID（会被 trim + lower-case 归一化）" },
+                    "color": { "type": "string", "description": "CSS 颜色（例如 #22c55e / hsl(...) / var(--color-primary)）" },
+                    "icon": { "type": "string", "description": "Iconify 图标（仅允许 mingcute 集，例如 mingcute:tag-line）" },
+                    "label_zh": { "type": "string", "description": "中文展示名（可选）" },
+                    "label_en": { "type": "string", "description": "英文展示名（可选）" }
+                },
+                "required": ["project", "tag"]
             }
         }),
         json!({

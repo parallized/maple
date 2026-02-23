@@ -37,7 +37,8 @@ import {
   parseArgs,
   deriveProjectName,
   createTask,
-  createTaskReport
+  createTaskReport,
+  normalizeProjects
 } from "./lib/utils";
 import { collectTokenUsage } from "./lib/token-usage";
 import { generatePrStyleTags } from "./lib/pr-tags";
@@ -49,6 +50,7 @@ import { buildTrayTaskSnapshot } from "./lib/task-tray";
 import type {
   DetailMode,
   McpTaskUpdatedEvent,
+  McpTagCatalogUpdatedEvent,
   McpWorkerFinishedEvent,
   McpServerConfig,
   McpServerStatus,
@@ -68,6 +70,7 @@ export function App() {
   // ── Core State ──
   const [view, setView] = useState<ViewKey>("overview");
   const [projects, setProjects] = useState<Project[]>(() => loadProjects());
+  const [stateBootstrapped, setStateBootstrapped] = useState(() => !isTauri);
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => loadUiLanguage());
   const [aiLanguage, setAiLanguage] = useState<AiLanguage>(() => loadAiLanguage());
   const [externalEditorApp, setExternalEditorApp] = useState<ExternalEditorApp>(() => loadExternalEditorApp());
@@ -178,8 +181,30 @@ export function App() {
   useEffect(() => { localStorage.setItem(STORAGE_EDITOR_APP, externalEditorApp); }, [externalEditorApp]);
   useEffect(() => {
     if (!isTauri) return;
+    let cancelled = false;
+    invoke<string>("read_state_file")
+      .then((raw) => {
+        if (cancelled) return;
+        const trimmed = raw.trim();
+        if (!trimmed) return;
+        const parsed = JSON.parse(trimmed) as Project[];
+        if (!Array.isArray(parsed) || parsed.length === 0) return;
+        setProjects(normalizeProjects(parsed));
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setStateBootstrapped(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!isTauri) return;
+    if (!stateBootstrapped) return;
     invoke("write_state_file", { json: JSON.stringify(projects) }).catch(() => {});
-  }, [projects]);
+  }, [isTauri, stateBootstrapped, projects]);
   useEffect(() => {
     if (!isTauri) return;
     const snapshot = buildTrayTaskSnapshot(projects);
@@ -342,6 +367,38 @@ export function App() {
           };
           changed = true;
           return { ...project, tasks };
+        });
+        return changed ? next : prev;
+      });
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        cleanup = unlisten;
+      }
+    });
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [isTauri]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    void listen<McpTagCatalogUpdatedEvent>("maple://tag-catalog-updated", (event) => {
+      const { projectName, tagCatalog } = event.payload;
+      const needle = projectName.trim().toLowerCase();
+      if (!needle) return;
+      setProjects((prev) => {
+        let changed = false;
+        const next = prev.map((project) => {
+          const normalized = project.name.toLowerCase();
+          const matches = normalized === needle || normalized.includes(needle);
+          if (!matches) return project;
+          changed = true;
+          return { ...project, tagCatalog };
         });
         return changed ? next : prev;
       });
@@ -1015,6 +1072,7 @@ export function App() {
             <TaskDetailPanel
               task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
               uiLanguage={uiLanguage}
+              tagCatalog={boardProject.tagCatalog}
               onClose={() => setSelectedTaskId(null)}
               onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
               onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
@@ -1038,6 +1096,7 @@ export function App() {
               <TaskDetailPanel
                 task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
                 uiLanguage={uiLanguage}
+                tagCatalog={boardProject.tagCatalog}
                 onClose={() => setSelectedTaskId(null)}
                 onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
                 onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}

@@ -9,7 +9,7 @@ import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
 import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { relativeTimeZh, getLastMentionTime, getTimeLevel } from "../lib/utils";
-import { type DetailMode, type Project, type Task, type WorkerKind } from "../domain";
+import { type DetailMode, type Project, type TagCatalog, type Task, type WorkerKind } from "../domain";
 import React, { useCallback, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -315,6 +315,7 @@ export function BoardView({
             selectedTaskId={selectedTaskId}
             editingTaskId={editingTaskId}
             uiLanguage={uiLanguage}
+            tagCatalog={boardProject.tagCatalog}
             colWidths={colWidths}
             tableRef={tableRef}
             onSelectTask={onSelectTask}
@@ -359,6 +360,7 @@ type TaskTableProps = {
   selectedTaskId: string | null;
   editingTaskId: string | null;
   uiLanguage: UiLanguage;
+  tagCatalog?: TagCatalog | null;
   colWidths: Record<string, number>;
   tableRef: React.Ref<HTMLTableElement>;
   onSelectTask: (taskId: string) => void;
@@ -385,6 +387,7 @@ type TaskRowProps = {
   editingTaskId: string | null;
   projectId: string;
   uiLanguage: UiLanguage;
+  tagCatalog?: TagCatalog | null;
   onSelectTask: (taskId: string) => void;
   onEditTask: (taskId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
@@ -398,6 +401,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   editingTaskId,
   projectId,
   uiLanguage,
+  tagCatalog,
   onSelectTask,
   onEditTask,
 	onCommitTaskTitle,
@@ -510,13 +514,13 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
         <div className="tags-inline">
           {task.tags.length === 0 ? <span className="text-xs text-muted">—</span> : null}
           {task.tags.map((tag, index) => {
-            const { icon, isDefault } = resolveTagIconMeta(tag);
-            const label = formatTagLabel(tag, uiLanguage);
+            const { icon, isDefault } = resolveTagIconMeta(tag, tagCatalog);
+            const label = formatTagLabel(tag, uiLanguage, tagCatalog);
             return (
               <span
                 key={`${tag}-${index}`}
                 className="ui-badge ui-badge--tag"
-                style={buildTagBadgeStyle(tag) as React.CSSProperties}
+                style={buildTagBadgeStyle(tag, tagCatalog) as React.CSSProperties}
                 title={tag}
               >
                 {isDefault ? null : <Icon icon={icon} className="text-[11px] opacity-70 shrink-0" />}
@@ -550,6 +554,7 @@ function TaskTable({
   selectedTaskId,
   editingTaskId,
   uiLanguage,
+  tagCatalog,
   colWidths,
   tableRef,
   onSelectTask,
@@ -617,6 +622,7 @@ function TaskTable({
               editingTaskId={editingTaskId}
               projectId={projectId}
               uiLanguage={uiLanguage}
+              tagCatalog={tagCatalog}
               onSelectTask={onSelectTask}
               onEditTask={onEditTask}
               onCommitTaskTitle={onCommitTaskTitle}
