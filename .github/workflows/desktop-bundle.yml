@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build worker skills
+        run: pnpm --filter @maple/worker-skills build
+
       - name: Typecheck
         run: pnpm --filter @maple/desktop typecheck
 
