@@ -109,18 +109,15 @@ export function TopNav({
                     )}
                   </div>
                   <span className="truncate max-w-[120px]">{project.name}</span>
-                  {confirmCount > 0 || isExecuting || todoCount > 0 ? (
-                    <span
-                      className={`topnav-queue-count ${confirmCount > 0 ? "topnav-queue-count--warning" : !confirmCount && isExecuting ? "topnav-queue-count--spinning" : ""}`}
-                      title={badgeTitle}
-                    >
-                      {confirmCount > 0 ? (
-                        <Icon icon="mingcute:question-line" className="text-[14px]" />
-                      ) : isExecuting ? (
-                        <Icon icon="mingcute:loading-line" className="text-[12px]" />
-                      ) : (
-                        todoCount
-                      )}
+                  {confirmCount > 0 ? (
+                    <span className="topnav-queue-count--warning" title={badgeTitle}>?</span>
+                  ) : isExecuting ? (
+                    <span className="topnav-queue-count topnav-queue-count--spinning" title={badgeTitle}>
+                      <Icon icon="mingcute:loading-line" className="text-[12px]" />
+                    </span>
+                  ) : todoCount > 0 ? (
+                    <span className="topnav-queue-count" title={badgeTitle}>
+                      {todoCount}
                     </span>
                   ) : null}
                 </motion.button>

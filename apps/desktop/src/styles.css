@@ -619,13 +619,17 @@ h3 {
 
 .task-confirm-text,
 .task-question-text {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: #f59e0b;
-  opacity: 0.7;
-  font-weight: 300;
-  cursor: help;
-  line-height: 1;
-  vertical-align: middle;
+  margin: 0 auto;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0;
 }
 
 .task-confirm-text:hover,
@@ -643,15 +647,14 @@ h3 {
   color: #f59e0b !important;
   border: none !important;
   box-shadow: none !important;
-  font-weight: 400;
-  font-size: 13px;
   padding: 0;
   height: auto;
   min-width: unset;
-  display: inline-block;
-  margin-left: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
   opacity: 0.8;
-  vertical-align: middle;
 }
 
 @keyframes warning-pulse {
