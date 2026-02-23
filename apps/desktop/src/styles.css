@@ -570,7 +570,7 @@ h3 {
   font-size: 9px;
 }
 
-.task-confirm-badge {
+.task-question-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -581,27 +581,68 @@ h3 {
   position: relative;
   margin: 0 auto;
   box-shadow: 0 0 10px color-mix(in srgb, var(--color-warning) 40%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 60%, #000);
+}
+
+.task-question-badge::after {
+  content: "";
+  position: absolute;
+  width: 7.5px;
+  height: 7.5px;
+  border: 2.2px solid #000;
+  border-bottom: none;
+  border-left: none;
+  border-radius: 50% 50% 50% 0;
+  top: 1.2px;
+  left: 50%;
+  transform: translateX(-60%) rotate(-30deg);
+}
+
+.task-question-badge::before {
+  content: "";
+  position: absolute;
+  width: 2.8px;
+  height: 2.8px;
+  background: #000;
+  bottom: 1.5px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+}
+
+.task-confirm-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  position: relative;
+  margin: 0 auto;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--color-warning) 50%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 60%, #000);
 }
 
 .task-confirm-badge::after {
   content: "";
   position: absolute;
-  width: 1.5px;
-  height: 5px;
+  width: 2.5px;
+  height: 6.5px;
   background: #000;
-  top: 3px;
+  top: 1.5px;
   left: 50%;
   transform: translateX(-50%);
-  border-radius: 0.5px;
+  border-radius: 2px 2px 2px 2px / 3px 3px 2px 2px;
 }
 
 .task-confirm-badge::before {
   content: "";
   position: absolute;
-  width: 1.5px;
-  height: 1.5px;
+  width: 2.8px;
+  height: 2.8px;
   background: #000;
-  bottom: 2.5px;
+  bottom: 1.5px;
   left: 50%;
   transform: translateX(-50%);
   border-radius: 50%;

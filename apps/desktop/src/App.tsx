@@ -1084,27 +1084,27 @@ export function App() {
             >
               <Icon icon="mingcute:close-line" />
             </button>
-            <TaskDetailPanel
-              task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
-              tagLanguage={effectiveAiLanguage}
-              tagCatalog={boardProject.tagCatalog}
-              onClose={() => setSelectedTaskId(null)}
-              onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
-              onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
-              onRework={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
-                ...t,
-                status: "待返工",
-                needsConfirmation: false,
-                reports: [...t.reports, createTaskReport("user", ["状态：待返工", "描述：", "已标记为返工，请重新执行并修正结果。"].join("\n"))]
-              }))}
-              onComplete={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
-                ...t,
-                status: "已完成",
-                needsConfirmation: false,
-                reports: [...t.reports, createTaskReport("user", ["状态：已完成", "描述：", "手动标记为完成。"].join("\n"))]
-              }))}
-              onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
-            />
+	            <TaskDetailPanel
+	              task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
+	              tagLanguage={effectiveAiLanguage}
+	              tagCatalog={boardProject.tagCatalog}
+	              onClose={() => setSelectedTaskId(null)}
+	              onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
+	              onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
+	              onRework={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                ...t,
+	                status: "待返工",
+	                needsConfirmation: false,
+	                reports: [...t.reports, createTaskReport("user", ["状态：待返工", "描述：", "已标记为返工，请重新执行并修正结果。"].join("\n"))]
+	              }))}
+	              onMarkAsTodo={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                ...t,
+	                status: "待办",
+	                needsConfirmation: false,
+	                reports: [...t.reports, createTaskReport("user", ["状态：待办", "描述：", "手动标记为待办。"].join("\n"))]
+	              }))}
+	              onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
+	            />
           </aside>
         </div>
       ) : null}
@@ -1114,27 +1114,27 @@ export function App() {
           <div className="ui-modal-backdrop" onClick={() => setSelectedTaskId(null)} />
           <div className="ui-modal-panel">
             <div className="ui-modal-body">
-              <TaskDetailPanel
-                task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
-                tagLanguage={effectiveAiLanguage}
-                tagCatalog={boardProject.tagCatalog}
-                onClose={() => setSelectedTaskId(null)}
-                onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
-                onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
-                onRework={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
-                  ...t,
-                  status: "待返工",
-                  needsConfirmation: false,
-                  reports: [...t.reports, createTaskReport("user", ["状态：待返工", "描述：", "已标记为返工，请重新执行并修正结果。"].join("\n"))]
-                }))}
-                onComplete={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
-                  ...t,
-                  status: "已完成",
-                  needsConfirmation: false,
-                  reports: [...t.reports, createTaskReport("user", ["状态：已完成", "描述：", "手动标记为完成。"].join("\n"))]
-                }))}
-                onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
-              />
+	              <TaskDetailPanel
+	                task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
+	                tagLanguage={effectiveAiLanguage}
+	                tagCatalog={boardProject.tagCatalog}
+	                onClose={() => setSelectedTaskId(null)}
+	                onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
+	                onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
+	                onRework={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                  ...t,
+	                  status: "待返工",
+	                  needsConfirmation: false,
+	                  reports: [...t.reports, createTaskReport("user", ["状态：待返工", "描述：", "已标记为返工，请重新执行并修正结果。"].join("\n"))]
+	                }))}
+	                onMarkAsTodo={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                  ...t,
+	                  status: "待办",
+	                  needsConfirmation: false,
+	                  reports: [...t.reports, createTaskReport("user", ["状态：待办", "描述：", "手动标记为待办。"].join("\n"))]
+	                }))}
+	                onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
+	              />
             </div>
           </div>
         </div>

@@ -273,6 +273,15 @@ export function BoardView({
             </TiltedCard>
 
             <div className="mt-4 pt-4 border-t border-(--color-base-300)/20 flex flex-col gap-2">
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                type="button"
+                className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3"
+                onClick={() => onCreateReleaseDraft(boardProject.id)}
+              >
+                <Icon icon="mingcute:send-plane-line" className="text-base opacity-70" />
+                生成版本草稿
+              </motion.button>
               <motion.button 
                 whileTap={{ scale: 0.96 }} 
                 type="button" 
@@ -441,6 +450,8 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       <td className="col-confirm text-center">
         {task.status === "已完成" && task.needsConfirmation ? (
           <div className="task-confirm-badge" title="待确认" />
+        ) : task.status === "需要更多信息" ? (
+          <div className="task-question-badge" title="需要更多信息" />
         ) : null}
       </td>
       <td className="col-taskIcon text-center">
