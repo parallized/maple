@@ -150,6 +150,64 @@ fn truncate_chars(s: &str, max: usize) -> &str {
     }
 }
 
+fn summarize_report_content(content: &str, max_chars: usize) -> String {
+    let collapsed = content
+        .replace("\r\n", "\n")
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" / ");
+    if collapsed.is_empty() {
+        return "（空）".to_string();
+    }
+    let preview = truncate_chars(&collapsed, max_chars);
+    if collapsed.chars().count() > max_chars {
+        format!("{preview}...")
+    } else {
+        preview.to_string()
+    }
+}
+
+fn build_report_history_lines(reports: &[TaskReport]) -> Vec<String> {
+    let mut sorted: Vec<&TaskReport> = reports
+        .iter()
+        .filter(|report| !report.content.trim().is_empty())
+        .collect();
+    if sorted.is_empty() {
+        return vec!["历史报告：".to_string(), "（无）".to_string()];
+    }
+
+    sorted.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    let total = sorted.len();
+    let max_items = 5usize;
+    let displayed = sorted.into_iter().take(max_items).collect::<Vec<_>>();
+
+    let mut lines = vec![format!(
+        "历史报告（最近 {} / 共 {} 条）：",
+        displayed.len(),
+        total
+    )];
+    lines.extend(displayed.into_iter().map(|report| {
+        let author = if report.author.trim().is_empty() {
+            "unknown"
+        } else {
+            report.author.trim()
+        };
+        let timestamp = if report.created_at.trim().is_empty() {
+            "未知时间"
+        } else {
+            report.created_at.trim()
+        };
+        let preview = summarize_report_content(&report.content, 220);
+        format!("- {author} @ {timestamp}: {preview}")
+    }));
+    if total > max_items {
+        lines.push(format!("... 其余 {} 条已省略。", total - max_items));
+    }
+    lines
+}
+
 fn is_terminal_task_status(status: &str) -> bool {
     matches!(status, "已完成" | "已阻塞" | "需要更多信息")
 }
@@ -177,12 +235,16 @@ fn tool_query_project_todos(args: &Value) -> Value {
     };
 
     let target = &projects[idx];
-    let mut todos: Vec<&Task> = target.tasks.iter().filter(|t| t.status != "已完成").collect();
+    let mut todos: Vec<&Task> = target
+        .tasks
+        .iter()
+        .filter(|t| t.status != "已完成" && t.status != "草稿")
+        .collect();
     todos.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
     if todos.is_empty() {
         return json!({ "content": [{ "type": "text", "text":
-            format!("项目「{}」暂无未完成任务。", target.name)
+            format!("项目「{}」暂无待处理任务。", target.name)
         }]});
     }
 
@@ -202,17 +264,19 @@ fn tool_query_project_todos(args: &Value) -> Value {
             };
             let details = t.details.trim();
             let details_text = if details.is_empty() { "（空）" } else { details };
-            vec![
+            let mut block = vec![
                 format!("{}. [{}] {}{}  (id: {})", i + 1, t.status, title, tags, t.id),
                 "详情：".to_string(),
                 details_text.to_string(),
-            ]
-            .join("\n")
+                String::new(),
+            ];
+            block.extend(build_report_history_lines(&t.reports));
+            block.join("\n")
         })
         .collect();
 
     json!({ "content": [{ "type": "text", "text": format!(
-        "项目「{}」— {} 个未完成任务：\n\n{}",
+        "项目「{}」— {} 个待处理任务（不含草稿）：\n\n{}",
         target.name, todos.len(), lines.join("\n\n---\n\n")
     )}]})
 }
@@ -680,7 +744,7 @@ fn tool_definitions() -> Vec<Value> {
     vec![
         json!({
             "name": "query_project_todos",
-            "description": "按项目名查询未完成任务，返回状态、标签与详情内容。",
+            "description": "按项目名查询待处理任务（不含草稿/已完成），返回状态、标签、详情与历史报告摘要。",
             "inputSchema": {
                 "type": "object",
                 "properties": {

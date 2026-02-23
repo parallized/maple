@@ -47,11 +47,11 @@ jobs:
 
       - name: Build Tauri bundle (macOS)
         if: runner.os == 'macOS'
-        run: pnpm --filter @maple/desktop tauri:build -- --bundles dmg
+        run: pnpm --filter @maple/desktop tauri:build:dmg
 
       - name: Build Tauri bundle (Windows)
         if: runner.os == 'Windows'
-        run: pnpm --filter @maple/desktop tauri:build -- --bundles msi
+        run: pnpm --filter @maple/desktop tauri:build:msi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

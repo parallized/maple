@@ -131,15 +131,48 @@ export function TaskDetailPanel({
     }
   }, [activeReportId, reports]);
 
+  const primaryAction =
+    task.status === "待办" && typeof onMarkAsDone === "function"
+      ? {
+          label: "标记为已完成",
+          ariaLabel: "标记为已完成",
+          title: "将任务标记为已完成",
+          icon: "mingcute:check-line",
+          className:
+            "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4",
+          onClick: onMarkAsDone,
+        }
+      : task.status === "已完成" && typeof onReworkToDraft === "function"
+        ? {
+            label: "返工",
+            ariaLabel: "返工并设为草稿",
+            title: "将任务返工并设置为草稿（可继续编辑后再设置为待办）",
+            icon: "mingcute:refresh-3-line",
+            className:
+              "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-warning/5 hover:border-warning/30 hover:text-warning text-muted transition-all duration-300 gap-1.5 px-4",
+            onClick: onReworkToDraft,
+          }
+        : task.status === "草稿" && typeof onSetAsTodo === "function"
+          ? {
+              label: "设置为待办",
+              ariaLabel: "设置为待办",
+              title: "将草稿任务设置为待办",
+              icon: "mingcute:undo-line",
+              className:
+                "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4",
+              onClick: onSetAsTodo,
+            }
+          : null;
+
   return (
     <motion.section 
       initial={{ x: 300, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 300, opacity: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="task-detail-panel flex flex-col pb-10"
+      className="task-detail-panel flex flex-col h-full min-h-0 pb-6"
     >
-      <header className="mb-6 relative">
+      <header className="mb-4 relative">
         <div className="flex items-start gap-4 pr-10">
           <div className="flex-1 min-w-0">
             <InlineTaskInput
@@ -155,6 +188,20 @@ export function TaskDetailPanel({
             />
           </div>
         </div>
+        {primaryAction ? (
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              className={primaryAction.className}
+              onClick={primaryAction.onClick}
+              aria-label={primaryAction.ariaLabel}
+              title={primaryAction.title}
+            >
+              <Icon icon={primaryAction.icon} className="text-[14px]" />
+              <span className="font-medium text-[12.5px]">{primaryAction.label}</span>
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <motion.div 
@@ -164,7 +211,7 @@ export function TaskDetailPanel({
           hidden: { opacity: 0 },
           visible: { opacity: 1, transition: { staggerChildren: 0.04, delayChildren: 0.05 } }
         }}
-        className="task-properties flex flex-col gap-y-0.5"
+        className="task-properties flex flex-col gap-y-0.5 flex-1 min-h-0"
       >
         <motion.div 
           variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
@@ -331,7 +378,7 @@ export function TaskDetailPanel({
 
         <motion.div 
           variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
-          className="flex flex-col mt-4 pt-4 border-t border-(--color-base-300)/30"
+          className="flex flex-col mt-4 flex-1 min-h-0"
         >
           {onUpdateDetails ? (
             <TaskDetailsEditor value={task.details ?? ""} onCommit={onUpdateDetails} />
@@ -346,57 +393,6 @@ export function TaskDetailPanel({
           )}
         </motion.div>
       </motion.div>
-
-      {(() => {
-        const action =
-          task.status === "待办" && typeof onMarkAsDone === "function"
-            ? {
-                label: "标记为已完成",
-                ariaLabel: "标记为已完成",
-                title: "将任务标记为已完成",
-                icon: "mingcute:check-line",
-                className:
-                  "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4",
-                onClick: onMarkAsDone,
-              }
-            : task.status === "已完成" && typeof onReworkToDraft === "function"
-              ? {
-                  label: "返工",
-                  ariaLabel: "返工并设为草稿",
-                  title: "将任务返工并设置为草稿（可继续编辑后再设置为待办）",
-                  icon: "mingcute:refresh-3-line",
-                  className:
-                    "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-warning/5 hover:border-warning/30 hover:text-warning text-muted transition-all duration-300 gap-1.5 px-4",
-                  onClick: onReworkToDraft,
-                }
-              : task.status === "草稿" && typeof onSetAsTodo === "function"
-                ? {
-                    label: "设置为待办",
-                    ariaLabel: "设置为待办",
-                    title: "将草稿任务设置为待办",
-                    icon: "mingcute:undo-line",
-                    className:
-                      "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4",
-                    onClick: onSetAsTodo,
-                  }
-                : null;
-
-        if (!action) return null;
-        return (
-          <footer className="mt-10 pt-4 border-t border-(--color-base-300)/20 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              className={action.className}
-              onClick={action.onClick}
-              aria-label={action.ariaLabel}
-              title={action.title}
-            >
-              <Icon icon={action.icon} className="text-[14px]" />
-              <span className="font-medium text-[12.5px]">{action.label}</span>
-            </button>
-          </footer>
-        );
-      })()}
     </motion.section>
   );
 }

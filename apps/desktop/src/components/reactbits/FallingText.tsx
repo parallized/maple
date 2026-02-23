@@ -18,7 +18,7 @@ export function FallingText({
   text,
   className = "",
   fontSize = "1.5rem",
-  fontFamily = "serif",
+  fontFamily = "var(--font-sans)",
   gravity = 0.5,
   friction = 0.1,
   restitution = 0.5,
@@ -60,16 +60,24 @@ export function FallingText({
     const textArray = text.split(/\s+/);
     const wordBodies: Array<{ text: string; body: Matter.Body; color: string }> = [];
 
+    // Better estimation of word dimensions based on fontSize
+    const sizeMatch = fontSize.match(/([\d.]+)(rem|px|em)/);
+    const sizeValue = sizeMatch ? parseFloat(sizeMatch[1]) : 20;
+    const unit = sizeMatch ? sizeMatch[2] : "px";
+    const baseSize = unit === "rem" ? sizeValue * 16 : sizeValue;
+
     textArray.forEach((word, i) => {
-      // 随机化初始位置，让一部分文字已经在屏幕内，一部分在上方排队
       const x = Math.random() * width;
-      const y = (Math.random() * height) - height; // 范围从 -height 到 0，确保立即有文字出现
+      // Stagger the initial y positions to prevent initial explosion/overlap
+      const y = -i * (baseSize * 2) - 50; 
       
-      // 估计单词宽度进行碰撞检测
-      const wordWidth = word.length * 12 + 15;
-      const body = Bodies.rectangle(x, y, wordWidth, 28, {
+      const wordWidth = word.length * (baseSize * 0.55) + 15;
+      const wordHeight = baseSize * 0.9;
+
+      const body = Bodies.rectangle(x, y, wordWidth, wordHeight, {
         friction,
         restitution,
+        frictionAir: 0.05, // Add air friction to slow down falling and prevent chaotic overlapping
         label: word,
         angle: (Math.random() - 0.5) * 0.5,
       });
@@ -107,7 +115,7 @@ export function FallingText({
   }, [text, gravity, friction, restitution, colorsKey]);
 
   return (
-    <div ref={containerRef} className={`absolute inset-0 overflow-hidden pointer-events-none ${className}`} style={{ zIndex: 0 }}>
+    <div ref={containerRef} className={`absolute inset-0 overflow-hidden pointer-events-none ${className}`} style={{ zIndex: -1 }}>
       {words.map((w, i) => {
         const { x, y } = w.body.position;
         const angle = w.body.angle;

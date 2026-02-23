@@ -11,8 +11,6 @@ type TaskDetailsEditorProps = {
   onCommit: (nextValue: string) => void;
 };
 
-const EMPTY_LINE_MARKER = "\u200B";
-
 const EMPTY_BLOCK: PartialBlock = {
   type: "paragraph",
   content: ""
@@ -73,11 +71,11 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
     const serializableBlocks = hasTrailingEmptyParagraph ? blocks.slice(0, -1) : blocks;
 
     const parts = serializableBlocks.map((block) => {
-      if (isEmptyParagraphBlock(block)) return EMPTY_LINE_MARKER;
+      if (isEmptyParagraphBlock(block)) return "";
       return stripTrailingNewlines(normalizeLineEndings(editor.blocksToMarkdownLossy([block])));
     });
 
-    return parts.join("\n\n").trimEnd();
+    return parts.join("\n").trimEnd();
   }, [editor]);
 
   const commitEditorMarkdown = useCallback(() => {

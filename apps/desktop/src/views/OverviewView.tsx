@@ -68,13 +68,13 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
   return (
     <section className="h-full w-full flex flex-col p-4 md:p-6 lg:p-8 max-w-6xl mx-auto overflow-hidden bg-transparent relative">
       {/* Background Falling Text */}
-      <div className="absolute inset-0 pointer-events-none opacity-[0.1] z-0 overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none opacity-[0.1] -z-10 overflow-hidden">
         <FallingText 
-          text="MAPLE AI WORKER AUTOMATION AGENTIC WORKFLOW INTELLIGENCE INNOVATION AUTONOMY COGNITIVE TASK FLOW"
-          fontSize="2rem"
-          gravity={0.02}
-          friction={0.1}
-          restitution={0.6}
+          text="MAPLE AI WORKER MAPLE MAPLE AUTOMATION AGENTIC MAPLE MAPLE WORKFLOW INTELLIGENCE INNOVATION MAPLE MAPLE AUTONOMY COGNITIVE TASK FLOW"
+          fontSize="3rem"
+          gravity={0.9}
+          friction={0.5}
+          restitution={0.25}
         />
       </div>
 
@@ -83,7 +83,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
         <header>
           <div className="flex items-center gap-3 mb-1.5">
             <Icon icon="mingcute:dashboard-2-line" className="text-[24px] text-(--color-base-content) opacity-80" />
-            <h2 className="text-[26px] leading-tight font-serif font-medium tracking-tight m-0 text-(--color-base-content)">
+            <h2 className="text-[26px] leading-tight font-sans font-medium tracking-tight m-0 text-(--color-base-content)">
               <SplitText text="执行总览" delay={30} />
             </h2>
           </div>
@@ -138,7 +138,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                   </svg>
                   {/* Inner Total */}
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="text-[14px] lg:text-[16px] font-serif font-semibold text-(--color-base-content)">
+                    <span className="text-[14px] lg:text-[16px] font-sans font-semibold text-(--color-base-content)">
                       {totalTasks}
                     </span>
                   </div>
@@ -240,7 +240,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
           <FadeContent delay={400} className="lg:col-span-4 flex flex-col min-h-0 relative">
             <div className="flex items-center gap-2 mb-3 lg:mb-4 px-1 flex-none">
               <Icon icon="mingcute:ai-line" className="text-[16px] lg:text-lg text-muted opacity-80" />
-              <h3 className="text-[15px] lg:text-[16px] font-serif font-medium m-0 text-(--color-base-content)">
+              <h3 className="text-[15px] lg:text-[16px] font-sans font-medium m-0 text-(--color-base-content)">
                 Worker 配置
               </h3>
             </div>
@@ -274,7 +274,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
             <div className="flex items-end justify-between mb-3 lg:mb-4 px-1 flex-none">
               <div className="flex items-center gap-2">
                 <Icon icon="mingcute:layers-line" className="text-[16px] lg:text-lg text-muted opacity-80" />
-                <h3 className="text-[15px] lg:text-[16px] font-serif font-medium m-0 text-(--color-base-content)">
+                <h3 className="text-[15px] lg:text-[16px] font-sans font-medium m-0 text-(--color-base-content)">
                   运行队列
                 </h3>
               </div>

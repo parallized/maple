@@ -11,7 +11,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"lint not configured for @maple/desktop\"",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:build:dmg": "tauri build --bundles dmg",
+    "tauri:build:msi": "tauri build --bundles msi"
   },
   "dependencies": {
     "@blocknote/core": "^0.46.2",

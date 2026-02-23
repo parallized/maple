@@ -97,6 +97,38 @@ function isValidMingcuteIcon(icon: string): boolean {
   return icon.trim().toLowerCase().startsWith("mingcute:");
 }
 
+function summarizeReportContent(content: string, maxChars: number): string {
+  const collapsed = content
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" / ");
+  if (!collapsed) return "（空）";
+  if (collapsed.length <= maxChars) return collapsed;
+  return `${collapsed.slice(0, maxChars)}...`;
+}
+
+function buildReportHistoryLines(reports: TaskReport[]): string[] {
+  const sorted = [...reports]
+    .filter((report) => report.content.trim().length > 0)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  if (sorted.length === 0) return ["历史报告：", "（无）"];
+
+  const maxItems = 5;
+  const displayed = sorted.slice(0, maxItems);
+  const lines = [`历史报告（最近 ${displayed.length} / 共 ${sorted.length} 条）：`];
+  for (const report of displayed) {
+    const author = report.author.trim() || "unknown";
+    const timestamp = report.createdAt?.trim() || "未知时间";
+    lines.push(`- ${author} @ ${timestamp}: ${summarizeReportContent(report.content, 220)}`);
+  }
+  if (sorted.length > maxItems) {
+    lines.push(`... 其余 ${sorted.length - maxItems} 条已省略。`);
+  }
+  return lines;
+}
+
 // ── MCP Server ──
 
 const server = new McpServer({
@@ -106,7 +138,7 @@ const server = new McpServer({
 
 server.tool(
   "query_project_todos",
-  "按项目名查询未完成任务，返回状态、标签与详情内容。",
+  "按项目名查询待处理任务（不含草稿/已完成），返回状态、标签、详情与历史报告摘要。",
   { project: z.string().describe("项目名称（模糊匹配）") },
   async ({ project }) => {
     const projects = readState();
@@ -117,11 +149,11 @@ server.tool(
       };
     }
     const todos = target.tasks
-      .filter((t) => t.status !== "已完成")
+      .filter((t) => t.status !== "已完成" && t.status !== "草稿")
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     if (todos.length === 0) {
       return {
-        content: [{ type: "text" as const, text: `项目「${target.name}」暂无未完成任务。` }],
+        content: [{ type: "text" as const, text: `项目「${target.name}」暂无待处理任务。` }],
       };
     }
     const lines = todos.map((t, i) => {
@@ -129,14 +161,17 @@ server.tool(
       const title = t.title?.trim() ? t.title : "（无标题）";
       const details = (t.details ?? "").trim();
       const detailsText = details.length > 0 ? details : "（空）";
+      const reportLines = buildReportHistoryLines(t.reports ?? []);
       return [
         `${i + 1}. [${t.status}] ${title}${tags}  (id: ${t.id})`,
         "详情：",
         detailsText,
+        "",
+        ...reportLines,
       ].join("\n");
     });
     return {
-      content: [{ type: "text" as const, text: `项目「${target.name}」— ${todos.length} 个未完成任务：\n\n${lines.join("\n\n---\n\n")}` }],
+      content: [{ type: "text" as const, text: `项目「${target.name}」— ${todos.length} 个待处理任务（不含草稿）：\n\n${lines.join("\n\n---\n\n")}` }],
     };
   }
 );
