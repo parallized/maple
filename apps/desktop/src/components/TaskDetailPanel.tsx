@@ -189,7 +189,7 @@ export function TaskDetailPanel({
           </div>
         </div>
         {primaryAction ? (
-          <div className="mt-3 flex justify-end">
+          <div className={`mt-3 flex ${task.status === "已完成" ? "justify-start" : "justify-end"}`}>
             <button
               type="button"
               className={primaryAction.className}

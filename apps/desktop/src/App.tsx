@@ -43,6 +43,7 @@ import {
 import { collectTokenUsage } from "./lib/token-usage";
 import { generatePrStyleTags } from "./lib/pr-tags";
 import { buildVersionTag, mergeTaskTags } from "./lib/task-tags";
+import { normalizeTagsForAiLanguage } from "./lib/tag-language";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
 import { mergeWithBuiltinTagCatalog } from "./lib/builtin-tag-catalog";
 import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadMcpServerConfig, loadTheme, loadUiLanguage } from "./lib/storage";
@@ -521,8 +522,8 @@ export function App() {
         taskTitle: task.title
       }),
       effectiveAiLanguage === "en"
-        ? "Please write your conclusion and tags in English."
-        : "请用中文输出结论与标签。"
+        ? "You must output `mcp_decision.tags` in English only. No Chinese tags and no mixed-language fallback."
+        : "你必须仅使用中文输出 `mcp_decision.tags`，禁止英文或中英混写标签，不允许任何兜底。"
     ].join("\n\n");
     return { args, prompt };
   }
@@ -800,12 +801,20 @@ export function App() {
             updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, report] }));
             continue;
           }
+          const localizedDecisionTags = normalizeTagsForAiLanguage({
+            tags: decision.tags,
+            language: effectiveAiLanguage,
+            tagCatalog: project.tagCatalog,
+            max: 5
+          });
           const generatedTags = generatePrStyleTags({
             title: task.title,
             status: decision.status,
-            decisionTags: decision.tags,
-            reportContent: report.content
+            decisionTags: localizedDecisionTags,
+            reportContent: report.content,
+            language: effectiveAiLanguage
           });
+          const workerAndSystemTags = [...localizedDecisionTags, ...generatedTags];
 
           updateTask(project.id, task.id, (c) => ({
             ...c,
@@ -813,7 +822,7 @@ export function App() {
             needsConfirmation: decision.status === "已完成" ? true : c.needsConfirmation,
             tags: mergeTaskTags({
               existing: c.tags,
-              generated: generatedTags,
+              generated: workerAndSystemTags,
               versionTag: decision.status === "已完成" ? buildVersionTag(nextVersion) : null,
               max: 6
             }),

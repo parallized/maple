@@ -72,6 +72,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
         <FallingText 
           text="MAPLE AI WORKER MAPLE MAPLE AUTOMATION AGENTIC MAPLE MAPLE WORKFLOW INTELLIGENCE INNOVATION MAPLE MAPLE AUTONOMY COGNITIVE TASK FLOW"
           fontSize="3rem"
+          colors={["#D97757", "#000000", "#5C5C5C"]}
           gravity={0.9}
           friction={0.5}
           restitution={0.25}
@@ -79,7 +80,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
       </div>
 
       {/* Notion-style Header */}
-      <FadeContent delay={0} className="flex-none mb-4 lg:mb-6">
+      <FadeContent delay={0} className="flex-none mb-4 lg:mb-6 relative z-10">
         <header>
           <div className="flex items-center gap-3 mb-1.5">
             <Icon icon="mingcute:dashboard-2-line" className="text-[24px] text-(--color-base-content) opacity-80" />
@@ -93,7 +94,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
         </header>
       </FadeContent>
 
-      <div className="flex-1 min-h-0 flex flex-col gap-4 lg:gap-6 overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col gap-4 lg:gap-6 overflow-hidden relative z-10">
         {/* Top Row: Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4 flex-none">
           <FadeContent delay={100} className="flex min-h-0">

@@ -19,6 +19,16 @@ const BUILTIN_TAG_CATALOG: TagCatalog = {
   "type:refactor": { icon: "mingcute:refresh-2-line", label: { zh: "重构", en: "Refactor" } },
   "type:docs": { icon: "mingcute:information-line", label: { zh: "文档", en: "Docs" } },
   "type:chore": { icon: "mingcute:settings-3-line", label: { zh: "配置", en: "Chore" } },
+  "新功能": { icon: "mingcute:add-line", label: { zh: "新功能", en: "Feat" } },
+  "重构": { icon: "mingcute:refresh-2-line", label: { zh: "重构", en: "Refactor" } },
+  "文档格式": { icon: "mingcute:layers-line", label: { zh: "文档格式", en: "Markdown" } },
+  "界面": { icon: "mingcute:palette-line", label: { zh: "界面", en: "UI" } },
+  "核心": { icon: "mingcute:layout-grid-line", label: { zh: "核心", en: "Core" } },
+  "详情": { icon: "mingcute:layout-right-line", label: { zh: "详情", en: "Detail" } },
+  "执行器": { icon: "mingcute:ai-line", label: { zh: "执行器", en: "Worker" } },
+  "协议层": { icon: "mingcute:server-line", label: { zh: "协议层", en: "MCP" } },
+  "终端": { icon: "mingcute:terminal-box-line", label: { zh: "终端", en: "Terminal" } },
+  "多语言": { icon: "mingcute:translate-line", label: { zh: "多语言", en: "i18n" } },
 
   "area:core": { icon: "mingcute:layout-grid-line", label: { zh: "核心", en: "Core" } },
   "area:ui": { icon: "mingcute:palette-line", label: { zh: "UI", en: "UI" } },
@@ -31,6 +41,8 @@ const BUILTIN_TAG_CATALOG: TagCatalog = {
 
   "state:blocked": { icon: "mingcute:shield-line", label: { zh: "阻塞", en: "Blocked" } },
   "state:needs-info": { icon: "mingcute:information-line", label: { zh: "待补充", en: "Needs Info" } },
+  "阻塞": { icon: "mingcute:shield-line", label: { zh: "阻塞", en: "Blocked" } },
+  "待补充": { icon: "mingcute:information-line", label: { zh: "待补充", en: "Needs Info" } },
 };
 
 function mergeTagLabel(existing: TagDefinition["label"], builtin: TagDefinition["label"]): TagDefinition["label"] | undefined {
@@ -79,4 +91,3 @@ export function mergeWithBuiltinTagCatalog(catalog: TagCatalog | null | undefine
 
   return next;
 }
-
