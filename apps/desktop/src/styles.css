@@ -203,10 +203,14 @@ h3 {
 
 .ui-badge.ui-badge--tag {
   --tag-color: var(--tag-color, var(--color-secondary));
-  background: color-mix(in srgb, var(--tag-color) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--tag-color) 28%, transparent);
-  color: color-mix(in srgb, var(--tag-color) 78%, var(--color-base-content));
+  background: color-mix(in srgb, var(--tag-color) 12%, transparent);
+  border: none;
+  color: color-mix(in srgb, var(--tag-color) 85%, var(--color-base-content));
   font-weight: 600;
+  font-size: 11px;
+  padding: 0 6px;
+  height: 18px;
+  line-height: 18px;
 }
 
 /* ── Status Dots ── */
@@ -253,6 +257,14 @@ h3 {
 .ui-btn.ui-btn--danger:hover {
   color: var(--color-error);
   border-color: rgba(212, 112, 73, 0.35);
+}
+
+.ui-btn.ui-btn--warning {
+  color: var(--color-warning);
+}
+
+.ui-btn.ui-btn--warning:hover {
+  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
 }
 
 .ui-btn.ui-btn--sm {

@@ -23,7 +23,7 @@ export const MAPLE_WORKER_SKILLS: MapleWorkerSkill[] = [
   { id: "summarize", title: "结果归档", objective: "汇总变更、影响范围与后续风险，便于回写任务系统。" }
 ];
 
-export type MapleMcpDecisionStatus = "队列中" | "进行中" | "已完成" | "已阻塞" | "需要更多信息";
+export type MapleMcpDecisionStatus = "队列中" | "进行中" | "待返工" | "已完成" | "已阻塞" | "需要更多信息";
 
 export type MapleMcpDecision = {
   status: MapleMcpDecisionStatus;
@@ -39,7 +39,7 @@ export type MapleStructuredExecutionOutput = {
 };
 
 const TAG_OPTIONS = ["架构", "配置", "UI", "修复"] as const;
-const FINAL_DECISION_STATUSES = ["已完成", "已阻塞", "需要更多信息"] as const;
+const FINAL_DECISION_STATUSES = ["已完成", "待返工", "已阻塞", "需要更多信息"] as const;
 const OUTPUT_SCHEMA_HINT = `终端最后请输出一个 JSON 代码块（\`\`\`json ... \`\`\`），字段包含：conclusion, changes[], verification[], mcp_decision{status, comment, tags[]}。mcp_decision.status 仅可用：${FINAL_DECISION_STATUSES.join(" / ")}。tags 仅可用：${TAG_OPTIONS.join(" / ")}。`;
 const REQUIRED_DECISION_HINT = "若缺少 mcp_decision，则任务会被判定为已阻塞，不允许兜底标记完成。";
 const REQUIRED_MCP_FLOW_HINT = "执行时必须逐条通过 submit_task_report 驱动状态流转：每条任务开始先更新为进行中，结束后再更新为已完成/已阻塞/需要更多信息；结束前再次 query_project_todos，确认无待办/待返工/队列中/进行中任务后，再调用 finish_worker（必须作为最后一个 MCP 调用）。";
@@ -95,6 +95,7 @@ function normalizeDecisionStatus(value: unknown): MapleMcpDecisionStatus | null 
   if (!raw) return null;
   if (raw === "队列中" || raw === "queued" || raw === "queue") return "队列中";
   if (raw === "进行中" || raw === "in_progress" || raw === "in progress" || raw === "running") return "进行中";
+  if (raw === "待返工" || raw === "rework" || raw === "redo" || raw === "revise") return "待返工";
   if (raw === "已完成" || raw === "done" || raw === "completed" || raw === "success") return "已完成";
   if (raw === "已阻塞" || raw === "blocked" || raw === "fail" || raw === "failed") return "已阻塞";
   if (raw === "需要更多信息" || raw === "need_more_info" || raw === "needs_info") return "需要更多信息";
@@ -190,9 +191,11 @@ export function buildWorkerArchiveReport(result: WorkerExecutionResultLike, task
         ? "进行中（等待继续处理）"
         : decision.status === "队列中"
           ? "队列中（等待执行）"
-          : decision.status === "需要更多信息"
-            ? "需要更多信息（请补充后继续）"
-            : "已阻塞（执行受阻）";
+          : decision.status === "待返工"
+            ? "待返工（需要继续处理）"
+            : decision.status === "需要更多信息"
+              ? "需要更多信息（请补充后继续）"
+              : "已阻塞（执行受阻）";
 
   const description = decision.comment.trim() || taskTitle;
 

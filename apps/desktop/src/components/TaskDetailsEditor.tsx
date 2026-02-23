@@ -3,6 +3,8 @@ import { BlockNoteViewRaw, useCreateBlockNote } from "@blocknote/react";
 import "@blocknote/react/style.css";
 import { type FocusEvent, type KeyboardEvent, useCallback, useEffect, useRef } from "react";
 
+import { hasTauriRuntime } from "../lib/utils";
+
 type TaskDetailsEditorProps = {
   value: string;
   onCommit: (nextValue: string) => void;
@@ -36,6 +38,7 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
   const lastSyncedValueRef = useRef<string>("");
   const debounceTimerRef = useRef<number | null>(null);
   const maxWaitTimerRef = useRef<number | null>(null);
+  const isTauri = hasTauriRuntime();
 
   const editor = useCreateBlockNote(
     {
@@ -139,7 +142,7 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
         className="task-details-cm"
         formattingToolbar={false}
         linkToolbar={false}
-        slashMenu={true}
+        slashMenu={!isTauri}
         emojiPicker={false}
         sideMenu={false}
         filePanel={true}
@@ -149,12 +152,6 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
           scheduleAutosave();
         }}
         onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            ignoreNextBlurRef.current = true;
-            editor.blur();
-            return;
-          }
           if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
             event.preventDefault();
             ignoreNextBlurRef.current = true;

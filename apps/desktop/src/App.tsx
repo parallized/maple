@@ -213,6 +213,19 @@ export function App() {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
       if (event.defaultPrevented) return;
+      const panel = document.querySelector(".task-detail-panel");
+      const activeElement = document.activeElement;
+      if (panel && activeElement instanceof HTMLElement && panel.contains(activeElement)) {
+        const isEditable =
+          activeElement instanceof HTMLInputElement ||
+          activeElement instanceof HTMLTextAreaElement ||
+          activeElement.isContentEditable;
+        if (isEditable) {
+          activeElement.blur();
+          event.preventDefault();
+          return;
+        }
+      }
       setSelectedTaskId(null);
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -1005,6 +1018,12 @@ export function App() {
               onClose={() => setSelectedTaskId(null)}
               onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
               onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
+              onRework={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+                ...t,
+                status: "待返工",
+                needsConfirmation: false,
+                reports: [...t.reports, createTaskReport("user", ["状态：待返工", "描述：", "已标记为返工，请重新执行并修正结果。"].join("\n"))]
+              }))}
               onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
             />
           </aside>
@@ -1022,6 +1041,12 @@ export function App() {
                 onClose={() => setSelectedTaskId(null)}
                 onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
                 onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
+                onRework={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+                  ...t,
+                  status: "待返工",
+                  needsConfirmation: false,
+                  reports: [...t.reports, createTaskReport("user", ["状态：待返工", "描述：", "已标记为返工，请重新执行并修正结果。"].join("\n"))]
+                }))}
                 onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
               />
             </div>

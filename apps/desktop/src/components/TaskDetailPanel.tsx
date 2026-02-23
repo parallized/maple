@@ -16,6 +16,7 @@ type TaskDetailPanelProps = {
   uiLanguage: UiLanguage;
   onUpdateTitle?: (title: string) => void;
   onUpdateDetails?: (details: string) => void;
+  onRework?: () => void;
   onClose?: () => void;
   onDelete?: () => void;
 };
@@ -104,7 +105,7 @@ function renderAuthorIcon(author: string, size = 14) {
   return <Icon icon="mingcute:paper-line" className="opacity-60" style={{ fontSize: size }} />;
 }
 
-export function TaskDetailPanel({ task, uiLanguage, onUpdateTitle, onUpdateDetails, onClose }: TaskDetailPanelProps) {
+export function TaskDetailPanel({ task, uiLanguage, onUpdateTitle, onUpdateDetails, onRework, onClose }: TaskDetailPanelProps) {
   const completedReports = useMemo(
     () => task.reports.filter(isCompletedReport),
     [task.reports]
@@ -338,6 +339,21 @@ export function TaskDetailPanel({ task, uiLanguage, onUpdateTitle, onUpdateDetai
           )}
         </motion.div>
       </motion.div>
+
+      {task.status === "已完成" && typeof onRework === "function" ? (
+        <footer className="mt-6 pt-4 border-t border-(--color-base-300)/30 flex items-center justify-end">
+          <button
+            type="button"
+            className="ui-btn ui-btn--sm ui-btn--ghost ui-btn--warning"
+            onClick={onRework}
+            aria-label="标记为待返工"
+            title="将任务标记为待返工，重新进入待办队列"
+          >
+            <Icon icon="mingcute:undo-line" className="text-[16px]" />
+            返工
+          </button>
+        </footer>
+      ) : null}
     </motion.section>
   );
 }
