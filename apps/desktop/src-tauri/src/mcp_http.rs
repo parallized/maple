@@ -60,6 +60,8 @@ struct Task {
     title: String,
     #[serde(default)]
     details: String,
+    #[serde(rename = "detailsDoc", default, skip_serializing_if = "Option::is_none")]
+    details_doc: Option<Value>,
     status: String,
     tags: Vec<String>,
     version: String,
@@ -214,6 +216,150 @@ fn is_terminal_task_status(status: &str) -> bool {
 
 fn normalize_tag_id(raw: &str) -> String {
     raw.trim().to_lowercase()
+}
+
+fn has_cjk(value: &str) -> bool {
+    value
+        .chars()
+        .any(|ch| ('\u{3400}'..='\u{9FFF}').contains(&ch))
+}
+
+fn has_latin(value: &str) -> bool {
+    value.chars().any(|ch| ch.is_ascii_alphabetic())
+}
+
+fn resolve_tag_preset(tag_id: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    match tag_id {
+        "mcp" => Some(("MCP", "MCP", "mingcute:server-line")),
+        "verify" => Some(("验证", "Verify", "mingcute:check-line")),
+        "verified" => Some(("已验证", "Verified", "mingcute:check-line")),
+        "ui" => Some(("UI", "UI", "mingcute:palette-line")),
+        "fix" => Some(("修复", "Fix", "mingcute:shield-line")),
+        "i18n" => Some(("多语言", "i18n", "mingcute:translate-line")),
+        "tag" => Some(("标签", "Tag", "mingcute:tag-line")),
+        "icon" => Some(("图标", "Icon", "mingcute:tag-line")),
+        "image" => Some(("图片", "Image", "mingcute:layers-line")),
+        "editor" => Some(("编辑器", "Editor", "mingcute:code-line")),
+        "desktop" => Some(("桌面端", "Desktop", "mingcute:computer-line")),
+        "ci" => Some(("CI", "CI", "mingcute:settings-3-line")),
+        "release" => Some(("发布", "Release", "mingcute:settings-3-line")),
+        "research" => Some(("调研", "Research", "mingcute:search-line")),
+        "blocknote" => Some(("BlockNote", "BlockNote", "mingcute:layers-line")),
+        "hapi" => Some(("Hapi", "Hapi", "mingcute:server-line")),
+        "interactive" => Some(("交互", "Interactive", "mingcute:palette-line")),
+        "area:build" => Some(("构建", "Build", "mingcute:settings-3-line")),
+        "area:tags" => Some(("标签", "Tags", "mingcute:tag-line")),
+        "area:research" => Some(("调研", "Research", "mingcute:search-line")),
+        _ => {
+            if let Some(area) = tag_id.strip_prefix("area:") {
+                return match area {
+                    "core" => Some(("核心", "Core", "mingcute:layout-grid-line")),
+                    "ui" => Some(("UI", "UI", "mingcute:palette-line")),
+                    "task-detail" => Some(("详情", "Detail", "mingcute:layout-right-line")),
+                    "markdown" => Some(("Markdown", "Markdown", "mingcute:layers-line")),
+                    "worker" => Some(("执行器", "Worker", "mingcute:ai-line")),
+                    "mcp" => Some(("MCP", "MCP", "mingcute:server-line")),
+                    "xterm" => Some(("终端", "Terminal", "mingcute:terminal-box-line")),
+                    "i18n" => Some(("多语言", "i18n", "mingcute:translate-line")),
+                    "build" => Some(("构建", "Build", "mingcute:settings-3-line")),
+                    "tags" => Some(("标签", "Tags", "mingcute:tag-line")),
+                    "research" => Some(("调研", "Research", "mingcute:search-line")),
+                    _ => None,
+                };
+            }
+            None
+        }
+    }
+}
+
+fn build_auto_tag_definition(raw_tag: &str) -> TagDefinition {
+    let raw = raw_tag.trim();
+    let tag_id = normalize_tag_id(raw);
+    let preset = resolve_tag_preset(&tag_id);
+
+    let mut label = TagLabel::default();
+    if let Some((zh, en, _)) = preset {
+        label.zh = Some(zh.to_string());
+        label.en = Some(en.to_string());
+    }
+
+    if label.zh.is_none() && !raw.is_empty() && has_cjk(raw) {
+        label.zh = Some(raw.to_string());
+    }
+    if label.en.is_none() && !raw.is_empty() && has_latin(raw) {
+        label.en = Some(raw.to_string());
+    }
+    if label.zh.is_none() && !raw.is_empty() {
+        label.zh = Some(raw.to_string());
+    }
+    if label.en.is_none()
+        && label
+            .zh
+            .as_ref()
+            .map(|value| has_latin(value))
+            .unwrap_or(false)
+    {
+        label.en = label.zh.clone();
+    }
+
+    TagDefinition {
+        color: None,
+        icon: Some(
+            preset
+                .map(|(_, _, icon)| icon.to_string())
+                .unwrap_or_else(|| "mingcute:tag-line".to_string()),
+        ),
+        label: if label.zh.is_some() || label.en.is_some() {
+            Some(label)
+        } else {
+            None
+        },
+    }
+}
+
+fn ensure_tag_catalog_for_tags(
+    catalog: &mut BTreeMap<String, TagDefinition>,
+    tags: &[String],
+) -> bool {
+    let mut changed = false;
+
+    for raw_tag in tags {
+        let tag_id = normalize_tag_id(raw_tag);
+        if tag_id.is_empty() {
+            continue;
+        }
+
+        let inferred = build_auto_tag_definition(raw_tag);
+        let entry = catalog.entry(tag_id).or_default();
+
+        if entry.icon.is_none() && inferred.icon.is_some() {
+            entry.icon = inferred.icon;
+            changed = true;
+        }
+
+        let mut label = entry.label.clone().unwrap_or_default();
+        let mut label_changed = false;
+
+        if label.zh.is_none() {
+            if let Some(value) = inferred.label.as_ref().and_then(|item| item.zh.clone()) {
+                label.zh = Some(value);
+                label_changed = true;
+            }
+        }
+        if label.en.is_none() {
+            if let Some(value) = inferred.label.as_ref().and_then(|item| item.en.clone()) {
+                label.en = Some(value);
+                label_changed = true;
+            }
+        }
+
+        if label_changed {
+            entry.label = Some(label);
+            changed = true;
+        }
+    }
+
+    changed
 }
 
 fn is_valid_mingcute_icon(icon: &str) -> bool {
@@ -421,7 +567,7 @@ fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
     let target = &mut projects[idx];
     let target_name = target.name.clone();
 
-    let Some(task) = target.tasks.iter_mut().find(|t| t.id == task_id) else {
+    let Some(task_index) = target.tasks.iter().position(|t| t.id == task_id) else {
         return json!({
             "content": [{ "type": "text", "text": format!("项目「{target_name}」中未找到任务 ID「{task_id}」。") }],
             "isError": true
@@ -429,26 +575,36 @@ fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
     };
 
     let now = iso_now();
-    let task_title = task.title.clone();
+    let task_title = target.tasks[task_index].title.clone();
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
 
-    task.reports.push(TaskReport {
-        id: format!("report-{ts}"),
-        author: "mcp".into(),
-        content: report_content.into(),
-        created_at: now.clone(),
-    });
-    task.updated_at = now;
-    if let Some(s) = status {
-        task.status = s.into();
+    {
+        let task = &mut target.tasks[task_index];
+        task.reports.push(TaskReport {
+            id: format!("report-{ts}"),
+            author: "mcp".into(),
+            content: report_content.into(),
+            created_at: now.clone(),
+        });
+        task.updated_at = now;
+        if let Some(s) = status {
+            task.status = s.into();
+        }
+        if !tags.is_empty() {
+            task.tags = tags.clone();
+        }
     }
-    if !tags.is_empty() {
-        task.tags = tags;
-    }
-    let task_snapshot = task.clone();
+
+    let task_snapshot = target.tasks[task_index].clone();
+    let catalog_changed = ensure_tag_catalog_for_tags(&mut target.tag_catalog, &task_snapshot.tags);
+    let catalog_snapshot = if catalog_changed {
+        Some(target.tag_catalog.clone())
+    } else {
+        None
+    };
 
     write_state(&projects);
     let _ = state.app_handle.emit(
@@ -458,6 +614,15 @@ fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
             task: task_snapshot,
         },
     );
+    if let Some(tag_catalog) = catalog_snapshot {
+        let _ = state.app_handle.emit(
+            "maple://tag-catalog-updated",
+            TagCatalogUpdatedEvent {
+                project_name: target_name.clone(),
+                tag_catalog,
+            },
+        );
+    }
 
     let status_text = status
         .map(|s| format!("状态已更新为「{s}」"))

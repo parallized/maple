@@ -1,5 +1,5 @@
 import { motion, useMotionValue, useSpring, useInView, animate } from "framer-motion";
-import { useEffect, useRef, useState, type ReactNode, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type MouseEvent, type KeyboardEvent, type PointerEvent } from "react";
 
 /* ── CurvedLoop ── */
 
@@ -240,5 +240,119 @@ export function TiltedCard({
     >
       {children}
     </motion.div>
+  );
+}
+
+/* ── ClickSpark ── */
+
+type ClickSparkPoint = {
+  id: number;
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+  size: number;
+};
+
+export function ClickSpark({
+  children,
+  className,
+  disabled = false,
+  sparkColor = "var(--color-primary)"
+}: {
+  children: ReactNode;
+  className?: string;
+  disabled?: boolean;
+  sparkColor?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [sparks, setSparks] = useState<ClickSparkPoint[]>([]);
+  const nextIdRef = useRef(0);
+
+  function emitSparkAt(x: number, y: number) {
+    const count = 8;
+
+    const created: ClickSparkPoint[] = Array.from({ length: count }, (_, idx) => {
+      const angle = (Math.PI * 2 * idx) / count + Math.random() * 0.28;
+      const distance = 16 + Math.random() * 16;
+      const id = nextIdRef.current + idx + 1;
+      return {
+        id,
+        x,
+        y,
+        dx: Math.cos(angle) * distance,
+        dy: Math.sin(angle) * distance,
+        size: 2 + Math.random() * 2
+      };
+    });
+    nextIdRef.current += count;
+    setSparks((prev) => [...prev, ...created]);
+    window.setTimeout(() => {
+      setSparks((prev) => prev.filter((spark) => !created.some((item) => item.id === spark.id)));
+    }, 520);
+  }
+
+  function emitSpark(event: PointerEvent<HTMLDivElement>) {
+    if (disabled) return;
+    const rect = ref.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    emitSparkAt(x, y);
+  }
+
+  function emitSparkFromFocus(event: KeyboardEvent<HTMLDivElement>) {
+    if (disabled) return;
+    if (event.key !== "Enter" && event.key !== "NumpadEnter") return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.repeat) return;
+
+    const hostRect = ref.current?.getBoundingClientRect();
+    if (!hostRect) return;
+    const focused = document.activeElement;
+    if (!(focused instanceof HTMLElement) || !ref.current?.contains(focused)) return;
+    const rect = focused.getBoundingClientRect();
+    const x = rect.left + rect.width / 2 - hostRect.left;
+    const y = rect.top + rect.height / 2 - hostRect.top;
+    emitSparkAt(x, y);
+  }
+
+  return (
+    <div
+      ref={ref}
+      className={className}
+      onPointerDownCapture={emitSpark}
+      onKeyDownCapture={emitSparkFromFocus}
+      style={{ position: "relative", width: "100%" }}
+    >
+      {children}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          overflow: "visible"
+        }}
+      >
+        {sparks.map((spark) => (
+          <motion.span
+            key={spark.id}
+            initial={{ opacity: 0.9, scale: 1, x: spark.x, y: spark.y }}
+            animate={{ opacity: 0, scale: 0.2, x: spark.x + spark.dx, y: spark.y + spark.dy }}
+            transition={{ duration: 0.5, ease: [0.2, 0.8, 0.3, 1] }}
+            style={{
+              position: "absolute",
+              width: spark.size,
+              height: spark.size,
+              borderRadius: "999px",
+              background: sparkColor,
+              boxShadow: `0 0 8px ${sparkColor}`,
+              transform: "translate(-50%, -50%)"
+            }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }

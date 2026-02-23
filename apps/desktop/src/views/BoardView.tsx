@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Icon } from "@iconify/react";
-import { FadeContent, TiltedCard } from "../components/ReactBits";
+import { ClickSpark, FadeContent, TiltedCard } from "../components/ReactBits";
 import { InlineTaskInput } from "../components/InlineTaskInput";
 import { PopoverMenu, type PopoverMenuItem } from "../components/PopoverMenu";
 import { WorkerLogo } from "../components/WorkerLogo";
@@ -9,8 +9,9 @@ import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
 import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { relativeTimeZh, getLastMentionTime, getTimeLevel } from "../lib/utils";
+import { resolveImageSrc } from "../lib/maple-assets";
 import { type DetailMode, type Project, type TagCatalog, type Task, type WorkerKind } from "../domain";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 type BoardViewProps = {
@@ -35,6 +36,8 @@ type BoardViewProps = {
 };
 
 const TASK_TITLE_MAX_WIDTH = 340;
+const NEW_TASK_WATERMARK_ICON_ASSET = "maple://asset/f8a2849550a76507ac90f02f616649e0ffae28b096dfa6c0491b0073020e9989.svg";
+const EXECUTE_TASK_WATERMARK_ICON_ASSET = "maple://asset/bbdcbd6960c49ffe5970e2dd57fe2b3359659d54d4999e41309d57583663c096.svg";
 const DEFAULT_COL_WIDTHS: Record<string, number> = {
   confirm: 20,
   taskIcon: 24,
@@ -44,6 +47,36 @@ const DEFAULT_COL_WIDTHS: Record<string, number> = {
   tags: 0,
   actions: 40
 };
+
+function SidebarWatermarkAssetIcon({ assetUrl }: { assetUrl: string }) {
+  const [src, setSrc] = useState(assetUrl);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSrc(assetUrl);
+    void resolveImageSrc(assetUrl)
+      .then((resolved) => {
+        if (cancelled || !resolved) return;
+        setSrc(resolved);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assetUrl]);
+
+  return (
+    <img
+      src={src}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      loading="lazy"
+      className="sidebar-card-watermark-icon--metallic"
+    />
+  );
+}
 
 export function BoardView({
   boardProject,
@@ -227,86 +260,87 @@ export function BoardView({
               visible: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 25 } }
             }}
             className="board-sidebar-nav"
+            style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
           >
-            <TiltedCard 
-              className="sidebar-card-btn sidebar-card-btn--primary" 
-              onClick={() => onAddTask(boardProject.id)}
-              style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
-            >
-              <div className="sidebar-card-btn-content">
-                <span className="sidebar-card-btn-title">
-                  <Icon icon="mingcute:plus-fill" className="mr-1.5 text-base inline-block -translate-y-px" />
-                  新建任务
-                </span>
-                <span className="sidebar-card-btn-desc">创建一个新的任务条目</span>
-              </div>
-              <div className="sidebar-card-watermark">
-                <Icon icon="mingcute:quill-pen-ai-fill" />
-              </div>
-            </TiltedCard>
+            <ClickSpark sparkColor="color-mix(in srgb, var(--worker-color, var(--color-primary)) 76%, white 24%)">
+              <TiltedCard 
+                className="sidebar-card-btn sidebar-card-btn--primary" 
+                onClick={() => onAddTask(boardProject.id)}
+              >
+                <div className="sidebar-card-btn-content">
+                  <span className="sidebar-card-btn-title">
+                    <Icon icon="mingcute:plus-fill" className="mr-1.5 text-base inline-block -translate-y-px" />
+                    新建任务
+                  </span>
+                  <span className="sidebar-card-btn-desc">创建一个新的任务条目</span>
+                </div>
+                <div className="sidebar-card-watermark sidebar-card-watermark--metallic">
+                  <SidebarWatermarkAssetIcon assetUrl={NEW_TASK_WATERMARK_ICON_ASSET} />
+                </div>
+              </TiltedCard>
 
-            <TiltedCard 
-              className={`sidebar-card-btn sidebar-card-btn--primary ${isExecutingProject ? "sidebar-card-btn--disabled" : ""}`}
-              onClick={isExecutingProject ? undefined : () => onCompletePending(boardProject.id)}
-              rotateAmplitude={isExecutingProject ? 0 : 12}
-              scaleOnHover={isExecutingProject ? 1 : 1.02}
-              style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
-            >
-              <div className="sidebar-card-btn-content">
-                <span className="sidebar-card-btn-title">
-                  <Icon 
-                    icon={isExecutingProject ? "svg-spinners:pulse-ring" : "mingcute:play-fill"} 
-                    className={`mr-1.5 ${isExecutingProject ? "text-lg" : "text-base"} inline-block -translate-y-px`} 
-                  />
-                  {isExecutingProject ? "执行中" : "执行待办"}
-                </span>
-                <span className="sidebar-card-btn-desc">
-                  {isExecutingProject ? "正在运行当前项目的待办任务" : "运行当前项目的所有待办"}
-                </span>
-              </div>
-              <div className="sidebar-card-watermark">
-                <Icon icon="mingcute:cursor-3-fill" />
-              </div>
-            </TiltedCard>
+              <TiltedCard 
+                className={`sidebar-card-btn sidebar-card-btn--primary ${isExecutingProject ? "sidebar-card-btn--disabled" : ""}`}
+                onClick={isExecutingProject ? undefined : () => onCompletePending(boardProject.id)}
+                rotateAmplitude={isExecutingProject ? 0 : 12}
+                scaleOnHover={isExecutingProject ? 1 : 1.02}
+              >
+                <div className="sidebar-card-btn-content">
+                  <span className="sidebar-card-btn-title">
+                    <Icon 
+                      icon={isExecutingProject ? "svg-spinners:pulse-ring" : "mingcute:play-fill"} 
+                      className={`mr-1.5 ${isExecutingProject ? "text-lg" : "text-base"} inline-block -translate-y-px`} 
+                    />
+                    {isExecutingProject ? "执行中" : "执行待办"}
+                  </span>
+                  <span className="sidebar-card-btn-desc">
+                    {isExecutingProject ? "正在运行当前项目的待办任务" : "运行当前项目的所有待办"}
+                  </span>
+                </div>
+                <div className="sidebar-card-watermark sidebar-card-watermark--metallic">
+                  <SidebarWatermarkAssetIcon assetUrl={EXECUTE_TASK_WATERMARK_ICON_ASSET} />
+                </div>
+              </TiltedCard>
 
-            <div className="mt-4 pt-4 border-t border-(--color-base-300)/20 flex flex-col gap-2">
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                type="button"
-                className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3"
-                onClick={() => onAddDraftTask(boardProject.id)}
-              >
-                <Icon icon="mingcute:edit-line" className="text-base opacity-70" />
-                新建草稿
-              </motion.button>
-              <motion.button 
-                whileTap={{ scale: 0.96 }} 
-                type="button" 
-                className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3" 
-                onClick={handleOpenFolder}
-              >
-                <Icon icon="mingcute:folder-open-line" className="text-base opacity-70" />
-                在文件夹中打开
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                type="button"
-                className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3"
-                onClick={handleOpenInEditor}
-              >
-                <Icon icon="mingcute:code-line" className="text-base opacity-70" />
-                在编辑器打开
-              </motion.button>
-              <motion.button 
-                whileTap={{ scale: 0.96 }} 
-                type="button" 
-                className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3" 
-                onClick={onOpenConsole}
-              >
-                <Icon icon="mingcute:terminal-box-line" className="text-base opacity-70" />
-                控制台
-              </motion.button>
-            </div>
+              <div className="mt-4 pt-4 border-t border-(--color-base-300)/20 flex flex-col gap-2">
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
+                  type="button"
+                  className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3"
+                  onClick={() => onAddDraftTask(boardProject.id)}
+                >
+                  <Icon icon="mingcute:edit-line" className="text-base opacity-70" />
+                  新建草稿
+                </motion.button>
+                <motion.button 
+                  whileTap={{ scale: 0.96 }} 
+                  type="button" 
+                  className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3" 
+                  onClick={handleOpenFolder}
+                >
+                  <Icon icon="mingcute:folder-open-line" className="text-base opacity-70" />
+                  在文件夹中打开
+                </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.96 }}
+                  type="button"
+                  className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3"
+                  onClick={handleOpenInEditor}
+                >
+                  <Icon icon="mingcute:code-line" className="text-base opacity-70" />
+                  在编辑器打开
+                </motion.button>
+                <motion.button 
+                  whileTap={{ scale: 0.96 }} 
+                  type="button" 
+                  className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3" 
+                  onClick={onOpenConsole}
+                >
+                  <Icon icon="mingcute:terminal-box-line" className="text-base opacity-70" />
+                  控制台
+                </motion.button>
+              </div>
+            </ClickSpark>
           </motion.div>
         </motion.aside>
         </AnimatePresence>

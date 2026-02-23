@@ -10,13 +10,14 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { InlineTaskInput } from "./InlineTaskInput";
 import { TaskDetailsEditor } from "./TaskDetailsEditor";
 import { WorkerLogo } from "./WorkerLogo";
+import { resolveTagIconMeta } from "../lib/task-icons";
 
 type TaskDetailPanelProps = {
   task: Task;
   tagLanguage: UiLanguage;
   tagCatalog?: TagCatalog | null;
   onUpdateTitle?: (title: string) => void;
-  onUpdateDetails?: (details: string) => void;
+  onUpdateDetails?: (details: string, detailsDoc: unknown) => void;
   onMarkAsDone?: () => void;
   onReworkToDraft?: () => void;
   onSetAsTodo?: () => void;
@@ -157,7 +158,7 @@ export function TaskDetailPanel({
               label: "设置为待办",
               ariaLabel: "设置为待办",
               title: "将草稿任务设置为待办",
-              icon: "mingcute:undo-line",
+              icon: "mingcute:time-line",
               className:
                 "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4",
               onClick: onSetAsTodo,
@@ -189,7 +190,7 @@ export function TaskDetailPanel({
           </div>
         </div>
         {primaryAction ? (
-          <div className={`mt-3 flex ${task.status === "已完成" ? "justify-start" : "justify-end"}`}>
+          <div className="mt-3 flex justify-start">
             <button
               type="button"
               className={primaryAction.className}
@@ -284,11 +285,12 @@ export function TaskDetailPanel({
             {task.tags.map((tag) => (
               <span
                 key={tag}
-                className="ui-badge ui-badge--sm ui-badge--tag shrink-0"
+                className="ui-badge ui-badge--sm ui-badge--tag shrink-0 inline-flex items-center gap-1"
                 style={buildTagBadgeStyle(tag, tagCatalog) as CSSProperties}
                 title={tag}
               >
-                {formatTagLabel(tag, tagLanguage, tagCatalog)}
+                <Icon icon={resolveTagIconMeta(tag, tagCatalog).icon} className="text-[12px] opacity-80" />
+                <span>{formatTagLabel(tag, tagLanguage, tagCatalog)}</span>
               </span>
             ))}
           </div>
@@ -378,10 +380,10 @@ export function TaskDetailPanel({
 
         <motion.div 
           variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
-          className="flex flex-col mt-4 flex-1 min-h-0"
+          className="flex flex-col mt-4 pt-4 border-t border-(--color-base-300)/18 flex-1 min-h-0"
         >
           {onUpdateDetails ? (
-            <TaskDetailsEditor value={task.details ?? ""} onCommit={onUpdateDetails} />
+            <TaskDetailsEditor value={task.details ?? ""} valueDoc={task.detailsDoc} onCommit={onUpdateDetails} />
           ) : (
             <div className="task-details-surface">
               {task.details?.trim() ? (

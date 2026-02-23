@@ -8,7 +8,8 @@ import { resolveImageSrc, saveImageAsset } from "../lib/maple-assets";
 
 type TaskDetailsEditorProps = {
   value: string;
-  onCommit: (nextValue: string) => void;
+  valueDoc?: unknown;
+  onCommit: (nextValue: string, nextValueDoc: unknown) => void;
 };
 
 const EMPTY_BLOCK: PartialBlock = {
@@ -28,6 +29,28 @@ function stripTrailingNewlines(text: string): string {
   return text.replace(/\n+$/g, "");
 }
 
+function normalizeDocForCompare(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return "";
+  }
+}
+
+function cloneValue<T>(value: T): T {
+  try {
+    return structuredClone(value);
+  } catch {
+    return JSON.parse(JSON.stringify(value)) as T;
+  }
+}
+
+function resolveBlocksFromDoc(value: unknown): PartialBlock[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.length === 0) return [EMPTY_BLOCK];
+  return cloneValue(value as PartialBlock[]);
+}
+
 function isEmptyParagraphBlock(block: unknown): boolean {
   if (!block || typeof block !== "object") return false;
   const maybe = block as { type?: unknown; content?: unknown };
@@ -40,10 +63,12 @@ function isEmptyParagraphBlock(block: unknown): boolean {
   return false;
 }
 
-export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
+export function TaskDetailsEditor({ value, valueDoc, onCommit }: TaskDetailsEditorProps) {
   const currentValueRef = useRef(value);
+  const currentValueDocRef = useRef<unknown>(valueDoc);
   const ignoreNextBlurRef = useRef(false);
   const lastSyncedValueRef = useRef<string>("");
+  const lastSyncedDocRef = useRef<string>("");
   const debounceTimerRef = useRef<number | null>(null);
   const maxWaitTimerRef = useRef<number | null>(null);
   const isTauri = hasTauriRuntime();
@@ -80,16 +105,26 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
 
   const commitEditorMarkdown = useCallback(() => {
     let nextValue = currentValueRef.current;
+    let nextValueDoc: unknown = currentValueDocRef.current;
     try {
       nextValue = serializeEditorMarkdown();
+      nextValueDoc = cloneValue(editor.document ?? []);
     } catch {
       nextValue = currentValueRef.current;
+      nextValueDoc = currentValueDocRef.current;
     }
-    if (normalizeForCompare(nextValue) === normalizeForCompare(currentValueRef.current)) return;
-    onCommit(nextValue);
+    const normalizedText = normalizeForCompare(nextValue);
+    const normalizedDoc = normalizeDocForCompare(nextValueDoc);
+    const textUnchanged = normalizedText === normalizeForCompare(currentValueRef.current);
+    const docUnchanged = normalizedDoc === lastSyncedDocRef.current;
+    if (textUnchanged && docUnchanged) return;
+
+    onCommit(nextValue, nextValueDoc);
     currentValueRef.current = nextValue;
-    lastSyncedValueRef.current = normalizeForCompare(nextValue);
-  }, [onCommit, serializeEditorMarkdown]);
+    currentValueDocRef.current = nextValueDoc;
+    lastSyncedValueRef.current = normalizedText;
+    lastSyncedDocRef.current = normalizedDoc;
+  }, [editor, onCommit, serializeEditorMarkdown]);
 
   const scheduleAutosave = useCallback(() => {
     const maxWaitMs = 2000;
@@ -137,11 +172,12 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
     });
   }, [editor]);
 
-  const syncEditorFromMarkdown = useCallback(
-    (markdownText: string) => {
-      const parsed = markdownText.trim()
+  const syncEditorContent = useCallback(
+    (markdownText: string, docValue: unknown) => {
+      const parsedFromDoc = resolveBlocksFromDoc(docValue);
+      const parsed = parsedFromDoc ?? (markdownText.trim()
         ? editor.tryParseMarkdownToBlocks(markdownText)
-        : [EMPTY_BLOCK];
+        : [EMPTY_BLOCK]);
       const nextBlocks = parsed.length > 0 ? parsed : [EMPTY_BLOCK];
       const currentBlocks = editor.document;
 
@@ -157,16 +193,22 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
 
   useEffect(() => {
     currentValueRef.current = value;
+    currentValueDocRef.current = valueDoc;
     const normalizedIncoming = normalizeForCompare(value);
-    if (normalizedIncoming === lastSyncedValueRef.current) return;
+    const normalizedIncomingDoc = normalizeDocForCompare(valueDoc);
+    if (
+      normalizedIncoming === lastSyncedValueRef.current
+      && normalizedIncomingDoc === lastSyncedDocRef.current
+    ) return;
 
     try {
-      syncEditorFromMarkdown(value);
+      syncEditorContent(value, valueDoc);
       lastSyncedValueRef.current = normalizedIncoming;
+      lastSyncedDocRef.current = normalizedIncomingDoc;
     } catch {
       // Keep editor interactive even if parsing a malformed markdown chunk fails.
     }
-  }, [value, syncEditorFromMarkdown]);
+  }, [value, valueDoc, syncEditorContent]);
 
   useEffect(() => {
     return () => {

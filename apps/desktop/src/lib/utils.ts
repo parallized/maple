@@ -2,7 +2,6 @@ import type { Project, Task, TaskReport, TaskStatus } from "../domain";
 import type { ThemeMode } from "./constants";
 import { WORKER_KINDS } from "./constants";
 import { normalizeTagCatalog } from "./tag-catalog";
-import { mergeWithBuiltinTagCatalog } from "./builtin-tag-catalog";
 
 export function bumpPatch(version: string): string {
   const [major, minor, patch] = version.split(".").map((part) => Number(part));
@@ -28,6 +27,7 @@ export function createTask(taskTitle: string, projectVersion: string, status: Ta
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: taskTitle,
     details: "",
+    detailsDoc: undefined,
     status,
     needsConfirmation: false,
     tags: [],
@@ -63,7 +63,7 @@ export function normalizeProjects(projects: Project[]): Project[] {
         ...project,
         directory,
         workerKind,
-        tagCatalog: mergeWithBuiltinTagCatalog(normalizeTagCatalog((project as Project).tagCatalog)),
+        tagCatalog: normalizeTagCatalog((project as Project).tagCatalog),
         tasks: project.tasks.map((task) => {
           const createdAt =
             typeof task.createdAt === "string" && task.createdAt
@@ -79,6 +79,7 @@ export function normalizeProjects(projects: Project[]): Project[] {
             typeof (task as Task).details === "string"
               ? (task as Task).details
               : "";
+          const detailsDoc = (task as Task).detailsDoc;
           const needsConfirmation =
             typeof (task as Task).needsConfirmation === "boolean"
               ? Boolean((task as Task).needsConfirmation)
@@ -87,6 +88,7 @@ export function normalizeProjects(projects: Project[]): Project[] {
             ...task,
             status,
             details,
+            detailsDoc,
             needsConfirmation,
             createdAt,
             updatedAt,

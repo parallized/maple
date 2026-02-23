@@ -72,7 +72,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
         <FallingText 
           text="MAPLE AI WORKER MAPLE MAPLE AUTOMATION AGENTIC MAPLE MAPLE WORKFLOW INTELLIGENCE INNOVATION MAPLE MAPLE AUTONOMY COGNITIVE TASK FLOW"
           fontSize="3rem"
-          colors={["#D97757", "#000000", "#5C5C5C"]}
+          colors={["#d97757", "#f5f5f7", "#6366f1"]}
           gravity={0.9}
           friction={0.5}
           restitution={0.25}

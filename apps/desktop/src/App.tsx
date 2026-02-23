@@ -45,9 +45,10 @@ import { generatePrStyleTags } from "./lib/pr-tags";
 import { buildVersionTag, mergeTaskTags } from "./lib/task-tags";
 import { normalizeTagsForAiLanguage } from "./lib/tag-language";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
-import { mergeWithBuiltinTagCatalog } from "./lib/builtin-tag-catalog";
 import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadMcpServerConfig, loadTheme, loadUiLanguage } from "./lib/storage";
 import { buildTrayTaskSnapshot } from "./lib/task-tray";
+import { normalizeTagCatalog } from "./lib/tag-catalog";
+import { ensureTagCatalogDefinition } from "./lib/auto-tag-definition";
 
 import type {
   DetailMode,
@@ -63,8 +64,16 @@ import type {
   WorkerConfig,
   WorkerDoneEvent,
   WorkerKind,
-  WorkerLogEvent
+  WorkerLogEvent,
 } from "./domain";
+
+function areTagListsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
 
 export function App() {
   const isTauri = hasTauriRuntime();
@@ -102,6 +111,48 @@ export function App() {
   const effectiveAiLanguage = aiLanguage === "follow_ui" ? uiLanguage : aiLanguage;
   const boardProject = boardProjectId ? projects.find((p) => p.id === boardProjectId) ?? null : null;
   const currentWorkerLog = workerConsoleWorkerId ? workerLogs[workerConsoleWorkerId] ?? "" : "";
+
+  useEffect(() => {
+    setProjects((prev) => {
+      let changed = false;
+      const next = prev.map((project) => {
+        let projectChanged = false;
+        const nextCatalog = normalizeTagCatalog(project.tagCatalog);
+        for (const task of project.tasks) {
+          for (const tag of task.tags) {
+            if (ensureTagCatalogDefinition(nextCatalog, tag, effectiveAiLanguage)) {
+              projectChanged = true;
+            }
+          }
+        }
+
+        const tasks = project.tasks.map((task) => {
+          const normalizedTags = normalizeTagsForAiLanguage({
+            tags: task.tags,
+            language: effectiveAiLanguage,
+            tagCatalog: nextCatalog,
+            max: 6
+          });
+          if (areTagListsEqual(task.tags, normalizedTags)) return task;
+          projectChanged = true;
+          return { ...task, tags: normalizedTags };
+        });
+
+        for (const task of tasks) {
+          for (const tag of task.tags) {
+            if (ensureTagCatalogDefinition(nextCatalog, tag, effectiveAiLanguage)) {
+              projectChanged = true;
+            }
+          }
+        }
+
+        if (!projectChanged) return project;
+        changed = true;
+        return { ...project, tasks, tagCatalog: nextCatalog };
+      });
+      return changed ? next : prev;
+    });
+  }, [effectiveAiLanguage]);
 
   const metrics = useMemo(() => {
     const allTasks = projects.flatMap((p) => p.tasks);
@@ -416,7 +467,7 @@ export function App() {
           const matches = normalized === needle || normalized.includes(needle);
           if (!matches) return project;
           changed = true;
-          return { ...project, tagCatalog: mergeWithBuiltinTagCatalog(tagCatalog) };
+          return { ...project, tagCatalog: normalizeTagCatalog(tagCatalog) };
         });
         return changed ? next : prev;
       });
@@ -656,7 +707,7 @@ export function App() {
       version: "0.1.0",
       directory,
       tasks: [],
-      tagCatalog: mergeWithBuiltinTagCatalog({})
+      tagCatalog: {}
     };
     setProjects((prev) => [project, ...prev]);
     setView("board");
@@ -1107,7 +1158,7 @@ export function App() {
 	              tagCatalog={boardProject.tagCatalog}
 	              onClose={() => setSelectedTaskId(null)}
 	              onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
-	              onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
+	              onUpdateDetails={(nextDetails, nextDetailsDoc) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails, detailsDoc: nextDetailsDoc }))}
 	              onMarkAsDone={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                ...t,
 	                status: "已完成",
@@ -1143,7 +1194,7 @@ export function App() {
 	                tagCatalog={boardProject.tagCatalog}
 	                onClose={() => setSelectedTaskId(null)}
 	                onUpdateTitle={(nextTitle) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, title: nextTitle }))}
-	                onUpdateDetails={(nextDetails) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails }))}
+	                onUpdateDetails={(nextDetails, nextDetailsDoc) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, details: nextDetails, detailsDoc: nextDetailsDoc }))}
 	                onMarkAsDone={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                  ...t,
 	                  status: "已完成",
