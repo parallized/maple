@@ -1,0 +1,59 @@
+name: Desktop Bundles
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "desktop-v*"
+      - "v*"
+
+jobs:
+  bundle:
+    name: ${{ matrix.os }} bundle
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm --filter @maple/desktop typecheck
+
+      - name: Install WiX Toolset (Windows)
+        if: runner.os == 'Windows'
+        run: choco install wixtoolset -y
+
+      - name: Build Tauri bundle (macOS)
+        if: runner.os == 'macOS'
+        run: pnpm --filter @maple/desktop tauri:build -- --bundles dmg
+
+      - name: Build Tauri bundle (Windows)
+        if: runner.os == 'Windows'
+        run: pnpm --filter @maple/desktop tauri:build -- --bundles msi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: maple-desktop-${{ runner.os }}
+          path: apps/desktop/src-tauri/target/release/bundle/**

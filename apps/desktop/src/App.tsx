@@ -415,7 +415,7 @@ export function App() {
           const matches = normalized === needle || normalized.includes(needle);
           if (!matches) return project;
           changed = true;
-          return { ...project, tagCatalog };
+          return { ...project, tagCatalog: mergeWithBuiltinTagCatalog(tagCatalog) };
         });
         return changed ? next : prev;
       });

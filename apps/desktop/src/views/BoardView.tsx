@@ -176,7 +176,7 @@ export function BoardView({
                   kind: "item" as const,
                   key: `worker-${kind}`,
                   label,
-                  icon: "mingcute:ai-line",
+                  iconNode: <WorkerLogo kind={kind} size={16} className="opacity-85" />,
                   checked: boardProject.workerKind === kind,
                   onSelect: () => onAssignWorkerKind(boardProject.id, kind)
                 })),

@@ -789,6 +789,22 @@ fn get_asset_file_path(file_name: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn read_asset_file_base64(file_name: String) -> Result<String, String> {
+  let trimmed_name = file_name.trim();
+  if !is_valid_asset_file_name(trimmed_name) {
+    return Err("无效的 asset 文件名（必须为 64 位小写 hex + 扩展名）。".to_string());
+  }
+  let dir = asset_dir()?;
+  let path = dir.join(trimmed_name);
+  if !path.exists() {
+    return Err("asset 文件不存在。".to_string());
+  }
+
+  let bytes = std::fs::read(&path).map_err(|e| format!("读取图片文件失败: {e}"))?;
+  Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+#[tauri::command]
 fn sync_tray_task_badge(
   snapshot: tray_status::TrayTaskSnapshot,
   app_handle: AppHandle,
@@ -823,6 +839,7 @@ fn main() {
       read_state_file,
       save_asset_file,
       get_asset_file_path,
+      read_asset_file_base64,
       sync_tray_task_badge
     ])
     .run(tauri::generate_context!())

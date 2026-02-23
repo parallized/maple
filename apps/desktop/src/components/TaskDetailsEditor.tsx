@@ -4,12 +4,14 @@ import "@blocknote/react/style.css";
 import { type FocusEvent, type KeyboardEvent, useCallback, useEffect, useRef } from "react";
 
 import { hasTauriRuntime } from "../lib/utils";
-import { saveImageAsset } from "../lib/maple-assets";
+import { resolveImageSrc, saveImageAsset } from "../lib/maple-assets";
 
 type TaskDetailsEditorProps = {
   value: string;
   onCommit: (nextValue: string) => void;
 };
+
+const EMPTY_LINE_MARKER = "\u200B";
 
 const EMPTY_BLOCK: PartialBlock = {
   type: "paragraph",
@@ -22,6 +24,22 @@ function normalizeLineEndings(text: string): string {
 
 function normalizeForCompare(text: string): string {
   return normalizeLineEndings(text).trimEnd();
+}
+
+function stripTrailingNewlines(text: string): string {
+  return text.replace(/\n+$/g, "");
+}
+
+function isEmptyParagraphBlock(block: unknown): boolean {
+  if (!block || typeof block !== "object") return false;
+  const maybe = block as { type?: unknown; content?: unknown };
+  if (maybe.type !== "paragraph") return false;
+
+  const content = maybe.content;
+  if (content == null) return true;
+  if (typeof content === "string") return content.length === 0;
+  if (Array.isArray(content)) return content.length === 0;
+  return false;
 }
 
 export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
@@ -38,15 +56,34 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
         emptyDocument: "输入任务详情…",
         default: "输入任务详情…"
       },
-      uploadFile: async (file) => saveImageAsset(file)
+      uploadFile: async (file) => saveImageAsset(file),
+      resolveFileUrl: async (url) => (await resolveImageSrc(url).catch(() => null)) ?? url
     },
     []
   );
 
+  const serializeEditorMarkdown = useCallback((): string => {
+    const blocks = editor.document ?? [];
+    if (blocks.length === 0) return "";
+
+    const allEmpty = blocks.every((block) => isEmptyParagraphBlock(block));
+    if (allEmpty) return "";
+
+    const hasTrailingEmptyParagraph = isEmptyParagraphBlock(blocks[blocks.length - 1]);
+    const serializableBlocks = hasTrailingEmptyParagraph ? blocks.slice(0, -1) : blocks;
+
+    const parts = serializableBlocks.map((block) => {
+      if (isEmptyParagraphBlock(block)) return EMPTY_LINE_MARKER;
+      return stripTrailingNewlines(normalizeLineEndings(editor.blocksToMarkdownLossy([block])));
+    });
+
+    return parts.join("\n\n").trimEnd();
+  }, [editor]);
+
   const commitEditorMarkdown = useCallback(() => {
     let nextValue = currentValueRef.current;
     try {
-      nextValue = editor.isEmpty ? "" : normalizeLineEndings(editor.blocksToMarkdownLossy(editor.document)).trimEnd();
+      nextValue = serializeEditorMarkdown();
     } catch {
       nextValue = currentValueRef.current;
     }
@@ -54,7 +91,7 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
     onCommit(nextValue);
     currentValueRef.current = nextValue;
     lastSyncedValueRef.current = normalizeForCompare(nextValue);
-  }, [editor, onCommit]);
+  }, [onCommit, serializeEditorMarkdown]);
 
   const scheduleAutosave = useCallback(() => {
     const maxWaitMs = 2000;
@@ -81,6 +118,26 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
       maxWaitTimerRef.current = window.setTimeout(commit, maxWaitMs);
     }
   }, [commitEditorMarkdown]);
+
+  useEffect(() => {
+    return editor.onUploadEnd((blockId) => {
+      if (!blockId) return;
+      const uploaded = editor.getBlock(blockId);
+      if (!uploaded || uploaded.type !== "image") return;
+
+      const next = editor.getNextBlock(blockId);
+      if (next && isEmptyParagraphBlock(next)) {
+        editor.setTextCursorPosition(next, "start");
+        return;
+      }
+
+      const inserted = editor.insertBlocks([{ type: "paragraph", content: "" }], blockId, "after");
+      const target = inserted[0];
+      if (target) {
+        editor.setTextCursorPosition(target, "start");
+      }
+    });
+  }, [editor]);
 
   const syncEditorFromMarkdown = useCallback(
     (markdownText: string) => {

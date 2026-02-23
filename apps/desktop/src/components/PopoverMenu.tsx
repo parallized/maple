@@ -1,20 +1,19 @@
 import { Icon } from "@iconify/react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 export type PopoverMenuItem =
   | {
       kind: "heading";
       label: string;
     }
-  | {
+  | ({
       kind: "item";
       key: string;
       label: string;
-      icon: string;
       checked?: boolean;
       disabled?: boolean;
       onSelect: () => void;
-    };
+    } & ({ icon: string; iconNode?: never } | { icon?: never; iconNode: ReactNode }));
 
 type PopoverMenuProps = {
   label: string;
@@ -97,7 +96,7 @@ export function PopoverMenu({ label, icon, items, align = "right", style }: Popo
                 }}
               >
                 <span className="w-5 inline-flex justify-center" aria-hidden="true">
-                  <Icon icon={item.icon} />
+                  {"iconNode" in item ? item.iconNode : <Icon icon={item.icon} />}
                 </span>
                 <span>{item.label}</span>
                 <span className="ml-auto w-5 inline-flex justify-end text-(--worker-color,var(--color-primary))" aria-hidden="true">

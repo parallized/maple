@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { hasTauriRuntime } from "./utils";
 
@@ -64,6 +63,25 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 type AssetDbRecord = { fileName: string; blob: Blob };
+
+function mimeFromExtension(ext: string): string {
+  const normalized = ext.trim().toLowerCase();
+  if (normalized === "png") return "image/png";
+  if (normalized === "jpg" || normalized === "jpeg") return "image/jpeg";
+  if (normalized === "webp") return "image/webp";
+  if (normalized === "gif") return "image/gif";
+  if (normalized === "svg") return "image/svg+xml";
+  return "application/octet-stream";
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binary = atob(base64.trim());
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
 
 function openAssetDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -134,8 +152,9 @@ export async function resolveImageSrc(assetUrl: string): Promise<string | null> 
   if (cached) return cached;
 
   if (hasTauriRuntime()) {
-    const filePath = await invoke<string>("get_asset_file_path", { fileName: descriptor.fileName });
-    const src = convertFileSrc(filePath);
+    const bytesBase64 = await invoke<string>("read_asset_file_base64", { fileName: descriptor.fileName });
+    const bytes = base64ToUint8Array(bytesBase64);
+    const src = URL.createObjectURL(new Blob([bytes], { type: mimeFromExtension(descriptor.ext) }));
     resolvedSrcCache.set(descriptor.fileName, src);
     return src;
   }
@@ -146,4 +165,3 @@ export async function resolveImageSrc(assetUrl: string): Promise<string | null> 
   resolvedSrcCache.set(descriptor.fileName, src);
   return src;
 }
-
