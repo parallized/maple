@@ -4,6 +4,7 @@ import "@blocknote/react/style.css";
 import { type FocusEvent, type KeyboardEvent, useCallback, useEffect, useRef } from "react";
 
 import { hasTauriRuntime } from "../lib/utils";
+import { saveImageAsset } from "../lib/maple-assets";
 
 type TaskDetailsEditorProps = {
   value: string;
@@ -23,15 +24,6 @@ function normalizeForCompare(text: string): string {
   return normalizeLineEndings(text).trimEnd();
 }
 
-async function uploadFileAsDataUrl(file: File): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(reader.error ?? new Error("文件读取失败"));
-    reader.readAsDataURL(file);
-  });
-}
-
 export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
   const currentValueRef = useRef(value);
   const ignoreNextBlurRef = useRef(false);
@@ -46,7 +38,7 @@ export function TaskDetailsEditor({ value, onCommit }: TaskDetailsEditorProps) {
         emptyDocument: "输入任务详情…",
         default: "输入任务详情…"
       },
-      uploadFile: async (file) => uploadFileAsDataUrl(file)
+      uploadFile: async (file) => saveImageAsset(file)
     },
     []
   );

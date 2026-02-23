@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { MapleAssetImage } from "./maple-asset-image";
+import { parseMapleAssetUrl } from "./maple-assets";
 
 type MarkdownListItem = {
   text: string;
@@ -280,6 +282,16 @@ export function renderTaskMarkdown(markdown: string, emptyText = "无"): ReactNo
         }
 
         if (block.kind === "image") {
+          if (parseMapleAssetUrl(block.src)) {
+            return (
+              <MapleAssetImage
+                key={`asset-image-${blockIndex}`}
+                assetUrl={block.src}
+                alt={block.alt}
+              />
+            );
+          }
+
           return isSafeUrl(block.src) ? (
             <figure
               key={`image-${blockIndex}`}

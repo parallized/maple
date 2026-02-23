@@ -22,6 +22,7 @@ type BoardViewProps = {
   uiLanguage: UiLanguage;
   tagLanguage: UiLanguage;
   onAddTask: (projectId: string) => void;
+  onAddDraftTask: (projectId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
   onDeleteTask: (projectId: string, taskId: string) => void;
   onSelectTask: (taskId: string | null) => void;
@@ -53,6 +54,7 @@ export function BoardView({
   uiLanguage,
   tagLanguage,
   onAddTask,
+  onAddDraftTask,
   onCommitTaskTitle,
   onDeleteTask,
   onSelectTask,
@@ -268,6 +270,15 @@ export function BoardView({
             </TiltedCard>
 
             <div className="mt-4 pt-4 border-t border-(--color-base-300)/20 flex flex-col gap-2">
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                type="button"
+                className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3"
+                onClick={() => onAddDraftTask(boardProject.id)}
+              >
+                <Icon icon="mingcute:edit-line" className="text-base opacity-70" />
+                新建草稿
+              </motion.button>
               <motion.button 
                 whileTap={{ scale: 0.96 }} 
                 type="button" 
@@ -436,7 +447,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       </td>
       <td className="col-taskIcon">
         {(() => {
-          const { icon, isDefault } = resolveTaskIcon(task);
+          const { icon, isDefault } = resolveTaskIcon(task, tagCatalog);
           return (
             <span
               className={`task-icon-pure ${isDefault ? "opacity-60" : "opacity-90"}`}
@@ -583,7 +594,7 @@ function TaskTable({
             { key: "tags", label: "标签", icon: "mingcute:tag-line" },
           ].map((col) => (
             <th key={col.key} className={`col-${col.key}`}>
-              <span className={`flex items-center ${col.label ? "justify-start" : "justify-center"} gap-1.5 translate-y-px w-full`}>
+              <span className={`flex items-center ${col.label ? "justify-start translate-y-px" : "justify-center"} gap-1.5 w-full`}>
                 {col.icon ? <Icon icon={col.icon} className="text-[14px] opacity-70" /> : null}
                 {col.label ? col.label : null}
               </span>

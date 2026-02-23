@@ -3,6 +3,7 @@
 mod mcp_http;
 mod tray_status;
 
+use base64::Engine;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -700,10 +701,43 @@ fn command_string(executable: &str, args: &[String]) -> String {
   }
 }
 
+fn maple_home_dir() -> Result<PathBuf, String> {
+  let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 目录".to_string())?;
+  Ok(PathBuf::from(home).join(".maple"))
+}
+
+fn asset_dir() -> Result<PathBuf, String> {
+  let dir = maple_home_dir()?.join("assets");
+  std::fs::create_dir_all(&dir).map_err(|e| format!("创建 assets 目录失败: {e}"))?;
+  Ok(dir)
+}
+
+fn is_valid_asset_file_name(value: &str) -> bool {
+  let trimmed = value.trim();
+  if trimmed.len() < 66 || trimmed.len() > 73 {
+    return false;
+  }
+  if trimmed.contains('/') || trimmed.contains('\\') {
+    return false;
+  }
+  let mut parts = trimmed.splitn(2, '.');
+  let Some(hash) = parts.next() else { return false };
+  let Some(ext) = parts.next() else { return false };
+  if hash.len() != 64 || ext.is_empty() || ext.len() > 8 {
+    return false;
+  }
+  if !hash.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')) {
+    return false;
+  }
+  if !ext.chars().all(|c| c.is_ascii_alphanumeric()) {
+    return false;
+  }
+  true
+}
+
 #[tauri::command]
 fn write_state_file(json: String) -> Result<(), String> {
-  let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 目录".to_string())?;
-  let dir = PathBuf::from(home).join(".maple");
+  let dir = maple_home_dir()?;
   std::fs::create_dir_all(&dir).map_err(|e| format!("创建 .maple 目录失败: {e}"))?;
   let path = dir.join("state.json");
   std::fs::write(&path, json.as_bytes()).map_err(|e| format!("写入状态文件失败: {e}"))?;
@@ -712,12 +746,46 @@ fn write_state_file(json: String) -> Result<(), String> {
 
 #[tauri::command]
 fn read_state_file() -> Result<String, String> {
-  let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 目录".to_string())?;
-  let path = PathBuf::from(home).join(".maple").join("state.json");
+  let path = maple_home_dir()?.join("state.json");
   if !path.exists() {
     return Ok("[]".to_string());
   }
   std::fs::read_to_string(&path).map_err(|e| format!("读取状态文件失败: {e}"))
+}
+
+#[tauri::command]
+fn save_asset_file(file_name: String, bytes_base64: String) -> Result<bool, String> {
+  let trimmed_name = file_name.trim();
+  if !is_valid_asset_file_name(trimmed_name) {
+    return Err("无效的 asset 文件名（必须为 64 位小写 hex + 扩展名）。".to_string());
+  }
+
+  let bytes = base64::engine::general_purpose::STANDARD
+    .decode(bytes_base64.trim().as_bytes())
+    .map_err(|e| format!("解码图片数据失败: {e}"))?;
+
+  let dir = asset_dir()?;
+  let path = dir.join(trimmed_name);
+  if path.exists() {
+    return Ok(true);
+  }
+
+  std::fs::write(&path, &bytes).map_err(|e| format!("写入图片文件失败: {e}"))?;
+  Ok(true)
+}
+
+#[tauri::command]
+fn get_asset_file_path(file_name: String) -> Result<String, String> {
+  let trimmed_name = file_name.trim();
+  if !is_valid_asset_file_name(trimmed_name) {
+    return Err("无效的 asset 文件名（必须为 64 位小写 hex + 扩展名）。".to_string());
+  }
+  let dir = asset_dir()?;
+  let path = dir.join(trimmed_name);
+  if !path.exists() {
+    return Err("asset 文件不存在。".to_string());
+  }
+  Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -753,6 +821,8 @@ fn main() {
       mcp_server_status,
       write_state_file,
       read_state_file,
+      save_asset_file,
+      get_asset_file_path,
       sync_tray_task_badge
     ])
     .run(tauri::generate_context!())

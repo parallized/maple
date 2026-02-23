@@ -1,7 +1,8 @@
-import type { Project, Task, TaskReport } from "../domain";
+import type { Project, Task, TaskReport, TaskStatus } from "../domain";
 import type { ThemeMode } from "./constants";
 import { WORKER_KINDS } from "./constants";
 import { normalizeTagCatalog } from "./tag-catalog";
+import { mergeWithBuiltinTagCatalog } from "./builtin-tag-catalog";
 
 export function bumpPatch(version: string): string {
   const [major, minor, patch] = version.split(".").map((part) => Number(part));
@@ -20,14 +21,14 @@ export function deriveProjectName(path: string): string {
   return segments[segments.length - 1] ?? "新项目";
 }
 
-export function createTask(taskTitle: string, projectVersion: string): Task {
+export function createTask(taskTitle: string, projectVersion: string, status: TaskStatus = "待办"): Task {
   const nextVersion = bumpPatch(projectVersion);
   const now = new Date().toISOString();
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title: taskTitle,
     details: "",
-    status: "待办",
+    status,
     needsConfirmation: false,
     tags: [],
     version: nextVersion,
@@ -62,7 +63,7 @@ export function normalizeProjects(projects: Project[]): Project[] {
         ...project,
         directory,
         workerKind,
-        tagCatalog: normalizeTagCatalog((project as Project).tagCatalog),
+        tagCatalog: mergeWithBuiltinTagCatalog(normalizeTagCatalog((project as Project).tagCatalog)),
         tasks: project.tasks.map((task) => {
           const createdAt =
             typeof task.createdAt === "string" && task.createdAt

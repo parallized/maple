@@ -44,6 +44,7 @@ import { collectTokenUsage } from "./lib/token-usage";
 import { generatePrStyleTags } from "./lib/pr-tags";
 import { buildVersionTag, mergeTaskTags } from "./lib/task-tags";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
+import { mergeWithBuiltinTagCatalog } from "./lib/builtin-tag-catalog";
 import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadMcpServerConfig, loadTheme, loadUiLanguage } from "./lib/storage";
 import { buildTrayTaskSnapshot } from "./lib/task-tray";
 
@@ -555,6 +556,14 @@ export function App() {
     setEditingTaskId(newTask.id);
   }
 
+  function addDraftTask(projectId: string) {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return;
+    const newTask = createTask("", project.version, "草稿");
+    setProjects((prev) => prev.map((p) => p.id !== projectId ? p : { ...p, tasks: [newTask, ...p.tasks] }));
+    setEditingTaskId(newTask.id);
+  }
+
   function selectTask(taskId: string | null) {
     setSelectedTaskId(taskId);
     if (!taskId || !boardProjectId) return;
@@ -640,7 +649,14 @@ export function App() {
     const directory = await pickStandaloneDirectory();
     if (!directory) return;
     const id = `project-${Math.random().toString(36).slice(2, 8)}`;
-    const project: Project = { id, name: deriveProjectName(directory), version: "0.1.0", directory, tasks: [] };
+    const project: Project = {
+      id,
+      name: deriveProjectName(directory),
+      version: "0.1.0",
+      directory,
+      tasks: [],
+      tagCatalog: mergeWithBuiltinTagCatalog({})
+    };
     setProjects((prev) => [project, ...prev]);
     setView("board");
     setBoardProjectId(id);
@@ -988,6 +1004,7 @@ export function App() {
                     uiLanguage={uiLanguage}
                     tagLanguage={effectiveAiLanguage}
                     onAddTask={addTask}
+                    onAddDraftTask={addDraftTask}
                     onCommitTaskTitle={commitTaskTitle}
                     onDeleteTask={deleteTask}
                     onSelectTask={selectTask}

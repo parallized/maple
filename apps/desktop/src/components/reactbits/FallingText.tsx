@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import Matter from "matter-js";
 
+const DEFAULT_COLORS = ["#f59e0b", "#d97706", "#b45309"]; // 使用橙黄色系
+
 interface FallingTextProps {
   text: string;
   className?: string;
@@ -20,13 +22,15 @@ export function FallingText({
   gravity = 0.5,
   friction = 0.1,
   restitution = 0.5,
-  colors = ["#f59e0b", "#d97706", "#b45309"], // 使用橙黄色系
+  colors = DEFAULT_COLORS,
 }: FallingTextProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<Matter.Engine | null>(null);
   const runnerRef = useRef<Matter.Runner | null>(null);
   const [words, setWords] = useState<Array<{ text: string; body: Matter.Body; color: string }>>([]);
   const [, setFrame] = useState(0);
+
+  const colorsKey = colors.join("|");
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -100,7 +104,7 @@ export function FallingText({
       Engine.clear(engine);
       if (runnerRef.current) Runner.stop(runnerRef.current);
     };
-  }, [text, gravity, friction, restitution, colors]);
+  }, [text, gravity, friction, restitution, colorsKey]);
 
   return (
     <div ref={containerRef} className={`absolute inset-0 overflow-hidden pointer-events-none ${className}`} style={{ zIndex: 0 }}>
