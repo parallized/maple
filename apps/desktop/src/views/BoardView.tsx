@@ -35,7 +35,7 @@ type BoardViewProps = {
 
 const TASK_TITLE_MAX_WIDTH = 340;
 const DEFAULT_COL_WIDTHS: Record<string, number> = {
-  confirm: 14,
+  confirm: 12,
   taskIcon: 20,
   task: TASK_TITLE_MAX_WIDTH,
   status: 100,
@@ -583,8 +583,8 @@ function TaskTable({
             { key: "tags", label: "标签", icon: "mingcute:tag-line" },
           ].map((col) => (
             <th key={col.key} className={`col-${col.key}`}>
-              <span className="inline-flex items-center gap-1">
-                <Icon icon={col.icon} className={`opacity-60 ${col.key === "taskIcon" ? "text-sm" : "text-xs"}`} />
+              <span className="inline-flex items-center gap-1.5">
+                <Icon icon={col.icon} className="text-[15px] opacity-60 translate-y-[0.5px]" />
                 {col.label ? col.label : null}
               </span>
               {col.key !== "taskIcon" ? (
