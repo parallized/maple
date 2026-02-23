@@ -45,6 +45,10 @@ export function CurvedLoop({
   );
 }
 
+/* ── FallingText ── */
+
+export { FallingText } from "./reactbits/FallingText";
+
 /* ── SplitText ── */
 
 export function SplitText({ text, className, delay = 30 }: { text: string; className?: string; delay?: number }) {

@@ -425,9 +425,13 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
     >
       <td className="col-confirm text-center">
         {task.status === "已完成" && task.needsConfirmation ? (
-          <div className="task-confirm-badge" title="待确认" />
+          <div className="task-confirm-badge" title="待确认">
+            <Icon icon="mingcute:warning-fill" className="text-[13px]" />
+          </div>
         ) : task.status === "需要更多信息" ? (
-          <div className="task-question-badge" title="需要更多信息" />
+          <div className="task-question-badge" title="需要更多信息">
+            <Icon icon="mingcute:question-fill" className="text-[13px]" />
+          </div>
         ) : null}
       </td>
       <td className="col-taskIcon text-center">
