@@ -307,9 +307,21 @@ h3 {
   padding: 0;
 }
 
-.col-confirm { width: 12px !important; padding: 0 !important; }
-.col-taskIcon { width: 22px !important; padding: 0 !important; }
-.col-task { padding-left: 2px !important; }
+.col-confirm { 
+  width: 16px !important; 
+  padding: 0 !important; 
+  text-align: center !important;
+}
+
+.col-taskIcon { 
+  width: 24px !important; 
+  padding: 0 !important; 
+  text-align: center !important;
+}
+
+.col-task { 
+  padding-left: 4px !important; 
+}
 .col-tags { width: 120px; }
 .col-date { width: 100px; text-align: right; }
 .col-actions { width: 40px; text-align: right; }
@@ -826,17 +838,12 @@ h3 {
 }
 
 .task-table th.col-confirm,
-.task-table td.col-confirm {
-  text-align: center;
-  padding: 0 !important;
-  width: 14px !important;
-}
-
+.task-table td.col-confirm,
 .task-table th.col-taskIcon,
 .task-table td.col-taskIcon {
-  text-align: center;
+  text-align: center !important;
   padding: 0 !important;
-  width: 20px !important;
+  vertical-align: middle;
 }
 
 .task-row td {
