@@ -211,7 +211,7 @@ fn build_report_history_lines(reports: &[TaskReport]) -> Vec<String> {
 }
 
 fn is_terminal_task_status(status: &str) -> bool {
-    matches!(status, "已完成" | "已阻塞" | "需要更多信息")
+    matches!(status, "草稿" | "已完成" | "已阻塞" | "需要更多信息")
 }
 
 fn normalize_tag_id(raw: &str) -> String {
@@ -789,7 +789,7 @@ fn tool_finish_worker(args: &Value, state: &McpHttpState) -> Value {
                 target.name,
                 unresolved_tasks.len()
             ),
-            "请先对每条任务调用 submit_task_report，将状态更新为：已完成 / 已阻塞 / 需要更多信息。".into(),
+            "请先对每条任务调用 submit_task_report，将状态更新为：草稿 / 已完成 / 已阻塞 / 需要更多信息。".into(),
             String::new(),
         ];
         lines.extend(
@@ -994,7 +994,7 @@ fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "finish_worker",
-            "description": "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无草稿/待办/待返工/队列中/进行中任务。",
+            "description": "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无待办/待返工/队列中/进行中任务。",
             "inputSchema": {
                 "type": "object",
                 "properties": {

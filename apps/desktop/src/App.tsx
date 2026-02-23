@@ -19,11 +19,9 @@ import { BoardView } from "./views/BoardView";
 import { SettingsView } from "./views/SettingsView";
 
 import {
-  DEFAULT_MCP_CONFIG,
   DEFAULT_WORKER_CONFIGS,
   STORAGE_AI_LANGUAGE,
   STORAGE_EDITOR_APP,
-  STORAGE_MCP_CONFIG,
   STORAGE_PROJECTS,
   STORAGE_THEME,
   STORAGE_UI_LANGUAGE,
@@ -45,7 +43,7 @@ import { generatePrStyleTags } from "./lib/pr-tags";
 import { buildVersionTag, mergeTaskTags } from "./lib/task-tags";
 import { normalizeTagsForAiLanguage } from "./lib/tag-language";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
-import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadMcpServerConfig, loadTheme, loadUiLanguage } from "./lib/storage";
+import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadTheme, loadUiLanguage } from "./lib/storage";
 import { buildTrayTaskSnapshot } from "./lib/task-tray";
 import { normalizeTagCatalog } from "./lib/tag-catalog";
 import { ensureTagCatalogDefinition } from "./lib/auto-tag-definition";
@@ -55,7 +53,6 @@ import type {
   McpTaskUpdatedEvent,
   McpTagCatalogUpdatedEvent,
   McpWorkerFinishedEvent,
-  McpServerConfig,
   McpServerStatus,
   Project,
   Task,
@@ -86,7 +83,6 @@ export function App() {
   const [aiLanguage, setAiLanguage] = useState<AiLanguage>(() => loadAiLanguage());
   const [externalEditorApp, setExternalEditorApp] = useState<ExternalEditorApp>(() => loadExternalEditorApp());
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => cloneDefaultWorkerConfigs());
-  const [mcpConfig, setMcpConfig] = useState<McpServerConfig>(() => loadMcpServerConfig());
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
   const [mcpStartupError, setMcpStartupError] = useState("");
   const [boardProjectId, setBoardProjectId] = useState<string | null>(null);
@@ -279,8 +275,6 @@ export function App() {
     const snapshot = buildTrayTaskSnapshot(projects);
     invoke("sync_tray_task_badge", { snapshot }).catch(() => {});
   }, [isTauri, projects]);
-  useEffect(() => { localStorage.setItem(STORAGE_MCP_CONFIG, JSON.stringify(mcpConfig)); }, [mcpConfig]);
-
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 3500);
@@ -380,7 +374,6 @@ export function App() {
   useEffect(() => {
     void refreshMcpStatus();
     if (!isTauri) return;
-    if (mcpConfig.autoStart) void startMcpServer(true);
     void getCurrentWindow().isMaximized().then(setWindowMaximized).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -645,8 +638,8 @@ export function App() {
     setProjects((prev) => prev.map((p) => p.id === projectId ? { ...p, workerKind: kind } : p));
   }
 
-  function createBuiltinMcpStatus(): McpServerStatus {
-    return { running: true, pid: null, command: "Maple MCP（内置）" };
+  function createUnifiedMcpStatus(): McpServerStatus {
+    return { running: true, pid: null, command: "Maple MCP" };
   }
 
   function cloneDefaultWorkerConfigs(): Record<WorkerKind, WorkerConfig> {
@@ -654,13 +647,6 @@ export function App() {
       acc[item.kind] = { ...DEFAULT_WORKER_CONFIGS[item.kind] };
       return acc;
     }, {} as Record<WorkerKind, WorkerConfig>);
-  }
-
-  function applyRecommendedSetup() {
-    setMcpConfig(() => ({ ...DEFAULT_MCP_CONFIG, autoStart: true }));
-    setWorkerConfigs(cloneDefaultWorkerConfigs());
-    setMcpStatus(createBuiltinMcpStatus());
-    setNotice("已应用推荐配置：内置 Maple MCP 与默认 Worker 参数。");
   }
 
   function openWorkerConsole(preferredKind?: WorkerKind, options?: { requireActive?: boolean; projectId?: string | null }) {
@@ -723,28 +709,9 @@ export function App() {
 
   // ── MCP Guard ──
   async function ensureMcpRunning(): Promise<boolean> {
-    if (!mcpConfig.executable.trim()) {
-      setMcpStatus(createBuiltinMcpStatus());
-      return true;
-    }
     if (!isTauri) return true;
-    try {
-      const current = await invoke<McpServerStatus>("mcp_server_status");
-      setMcpStatus(current);
-      if (current.running) return true;
-    } catch {
-      return false;
-    }
-    // Attempt auto-start
-    await startMcpServer(true);
-    // Re-read latest status
-    try {
-      const status = await invoke<McpServerStatus>("mcp_server_status");
-      setMcpStatus(status);
-      return status.running;
-    } catch {
-      return false;
-    }
+    setMcpStatus(createUnifiedMcpStatus());
+    return true;
   }
 
   // ── Worker Execution ──
@@ -906,63 +873,31 @@ export function App() {
 
   // ── MCP Server ──
   async function refreshMcpStatus() {
-    if (!mcpConfig.executable.trim()) {
-      setMcpStatus(createBuiltinMcpStatus());
-      return;
-    }
     if (!isTauri) { setMcpStatus({ running: false, pid: null, command: "" }); return; }
-    try { setMcpStatus(await invoke<McpServerStatus>("mcp_server_status")); }
-    catch (error) { setNotice(`获取 MCP Server 状态失败：${String(error)}`); }
+    setMcpStatus(createUnifiedMcpStatus());
+    setMcpStartupError("");
   }
 
   async function startMcpServer(silent = false) {
     setMcpStartupError("");
-    if (!mcpConfig.executable.trim()) {
-      setMcpStatus(createBuiltinMcpStatus());
-      if (!silent) setNotice("内置 Maple MCP 已就绪。");
-      return;
-    }
     if (!isTauri) {
       const msg = "当前环境无法启动 MCP Server。";
       setMcpStartupError(msg);
       if (!silent) setNotice(msg);
       return;
     }
-    try {
-      const status = await invoke<McpServerStatus>("start_mcp_server", { executable: mcpConfig.executable, args: parseArgs(mcpConfig.args), cwd: mcpConfig.cwd });
-      setMcpStatus(status);
-      if (status.running) {
-        setMcpStartupError("");
-        if (!silent) setNotice(`MCP Server 已启动（PID ${status.pid ?? "?"}）`);
-      } else {
-        const msg = "MCP Server 启动失败，请检查配置。";
-        setMcpStartupError(msg);
-        if (!silent) setNotice(msg);
-      }
-    } catch (error) {
-      const msg = `MCP Server 启动失败：${String(error)}`;
-      setMcpStartupError(msg);
-      if (!silent) setNotice(msg);
-    }
+    setMcpStatus(createUnifiedMcpStatus());
+    if (!silent) setNotice("MCP Server 已就绪。");
   }
 
   async function stopMcpServer(silent = false) {
     setMcpStartupError("");
-    if (!mcpConfig.executable.trim()) {
-      setMcpStatus(createBuiltinMcpStatus());
-      if (!silent) setNotice("当前使用内置 MCP，无需停止。");
-      return;
-    }
     if (!isTauri) {
       if (!silent) setNotice("当前环境无法停止 MCP Server。");
       return;
     }
-    try {
-      setMcpStatus(await invoke<McpServerStatus>("stop_mcp_server"));
-      if (!silent) setNotice("MCP Server 已停止。");
-    } catch (error) {
-      if (!silent) setNotice(`MCP Server 停止失败：${String(error)}`);
-    }
+    setMcpStatus(createUnifiedMcpStatus());
+    if (!silent) setNotice("Maple MCP 为单实例服务，无需停止。");
   }
 
   async function restartMcpServer() {

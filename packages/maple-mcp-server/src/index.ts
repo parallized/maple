@@ -51,7 +51,7 @@ type Project = {
   tagCatalog?: TagCatalog;
 };
 
-const TERMINAL_TASK_STATUSES: TaskStatus[] = ["已完成", "已阻塞", "需要更多信息"];
+const TERMINAL_TASK_STATUSES: TaskStatus[] = ["草稿", "已完成", "已阻塞", "需要更多信息"];
 const TERMINAL_TASK_STATUS_SET = new Set<TaskStatus>(TERMINAL_TASK_STATUSES);
 
 function isTerminalTaskStatus(status: TaskStatus): boolean {
@@ -559,7 +559,7 @@ const SIGNAL_FILE = join(STATE_DIR, "worker-signal.json");
 
 server.tool(
   "finish_worker",
-  "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无草稿/待办/待返工/队列中/进行中任务。",
+  "通知 Maple 当前 Worker 已执行完毕。调用前必须确保项目内无待办/待返工/队列中/进行中任务。",
   {
     project: z.string().describe("项目名称"),
     summary: z.string().optional().describe("执行总结（可选）"),
@@ -584,7 +584,7 @@ server.tool(
           type: "text" as const,
           text: [
             `项目「${target.name}」仍有 ${unresolvedTasks.length} 个任务未收敛，禁止 finish_worker。`,
-            "请先对每条任务调用 submit_task_report，将状态更新为：已完成 / 已阻塞 / 需要更多信息。",
+            "请先对每条任务调用 submit_task_report，将状态更新为：草稿 / 已完成 / 已阻塞 / 需要更多信息。",
             "",
             ...lines
           ].join("\n")

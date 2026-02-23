@@ -148,6 +148,7 @@ fn build_tooltip(snapshot: &TrayTaskSnapshot, status: AggregateStatus) -> String
     )
 }
 
+#[cfg(target_os = "macos")]
 fn format_badge_count(count: u32) -> String {
     if count > 99 {
         "99+".to_string()

@@ -98,7 +98,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
         {/* Top Row: Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4 flex-none">
           <FadeContent delay={100} className="flex min-h-0">
-            <div className="w-full rounded-[16px] bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] p-4 lg:p-5 flex flex-col relative transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] hover:border-[color-mix(in_srgb,var(--color-base-content)_12%,transparent)] group">
+            <div className="w-full rounded-[16px] bg-(--color-base-100) p-4 lg:p-5 flex flex-col relative transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] group">
               <div className="flex items-center gap-2 text-[12px] lg:text-[13px] font-medium text-muted font-sans mb-3">
                 <Icon icon="mingcute:chart-pie-line" className="text-[16px] lg:text-lg opacity-60 group-hover:opacity-100 transition-opacity" />
                 <span>任务分布</span>
@@ -185,7 +185,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
           </FadeContent>
 
           <FadeContent delay={300} className="flex min-h-0">
-            <div className="w-full rounded-[16px] bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] p-4 lg:p-5 flex flex-col relative transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] hover:border-[color-mix(in_srgb,var(--color-base-content)_12%,transparent)] group overflow-hidden">
+            <div className="w-full rounded-[16px] bg-(--color-base-100) p-4 lg:p-5 flex flex-col relative transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] group overflow-hidden">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 text-[12px] lg:text-[13px] font-medium text-muted font-sans">
                   <Icon icon="mingcute:server-line" className="text-[16px] lg:text-lg opacity-60 group-hover:opacity-100 transition-opacity" />
@@ -214,7 +214,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                 <div className="flex items-center gap-2 text-[11px] lg:text-[12px] text-muted opacity-70 font-mono tracking-wide">
                   <span className="px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-base-content)_5%,transparent)]">PID: {mcpStatus.pid ?? "—"}</span>
                   <span className="w-1 h-1 rounded-full bg-current opacity-30" />
-                  <span className="truncate">{mcpStatus.command || "Maple MCP (内置)"}</span>
+                  <span className="truncate">{mcpStatus.command || "Maple MCP"}</span>
                 </div>
               </div>
 
@@ -248,10 +248,10 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
             
             <div className="flex-1 overflow-y-auto pr-1 lg:pr-2 flex flex-col gap-2 min-h-0 pb-2">
               {workerAvailability.map((worker) => (
-                <div key={worker.kind} className="group p-3 lg:p-4 rounded-[12px] lg:rounded-[14px] border border-[color-mix(in_srgb,var(--color-base-content)_4%,transparent)] bg-[color-mix(in_srgb,var(--color-base-content)_1%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-base-content)_3%,transparent)] hover:border-[color-mix(in_srgb,var(--color-base-content)_10%,transparent)] transition-all duration-300 flex flex-col gap-1.5 lg:gap-2 flex-none">
+                <div key={worker.kind} className="group p-3 lg:p-4 rounded-[12px] lg:rounded-[14px] bg-(--color-base-100) hover:bg-(--color-base-200) transition-all duration-300 flex flex-col gap-1.5 lg:gap-2 flex-none">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="relative w-6 h-6 rounded-lg bg-(--color-base-100) border border-[color-mix(in_srgb,var(--color-base-content)_8%,transparent)] flex items-center justify-center flex-none">
+                      <div className="relative w-6 h-6 rounded-lg bg-(--color-base-200) flex items-center justify-center flex-none">
                         <WorkerLogo kind={worker.kind} size={16} />
                         <span
                           className={`absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-(--color-base-100) ${worker.available ? "bg-green-500" : "bg-(--color-base-300)"}`}
@@ -286,11 +286,11 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
               </div>
             </div>
             
-            <div className="flex-1 rounded-[16px] border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] bg-[color-mix(in_srgb,var(--color-base-content)_1%,transparent)] relative flex flex-col transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] hover:border-[color-mix(in_srgb,var(--color-base-content)_12%,transparent)] min-h-0 overflow-hidden">
+            <div className="flex-1 rounded-[16px] bg-(--color-base-100) relative flex flex-col transition-all duration-500 hover:shadow-[0_8px_30px_-4px_color-mix(in_srgb,var(--color-base-content)_4%,transparent)] min-h-0 overflow-hidden">
               <div className="flex-1 overflow-y-auto p-2 lg:p-3 min-h-0">
                 {workerPool.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center gap-3 lg:gap-4 opacity-40 hover:opacity-60 transition-opacity duration-500">
-                    <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-[16px] lg:rounded-[20px] bg-[color-mix(in_srgb,var(--color-base-content)_4%,transparent)] flex items-center justify-center border border-[color-mix(in_srgb,var(--color-base-content)_8%,transparent)]">
+                    <div className="w-12 h-12 lg:w-16 lg:h-16 rounded-[16px] lg:rounded-[20px] bg-(--color-base-200) flex items-center justify-center">
                       <Icon icon="mingcute:sleep-line" className="text-xl lg:text-2xl" />
                     </div>
                     <span className="text-[12px] lg:text-[13px] font-sans tracking-widest uppercase">Idle State</span>
@@ -298,9 +298,9 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                 ) : (
                   <AnimatedList
                     items={workerPool.map((entry) => (
-                      <div key={entry.workerId} className="flex items-center justify-between p-3 lg:p-4 rounded-[12px] lg:rounded-[14px] border border-[color-mix(in_srgb,var(--color-base-content)_4%,transparent)] bg-(--color-base-100) mb-2 hover:border-[color-mix(in_srgb,var(--color-base-content)_15%,transparent)] transition-colors shadow-sm group">
+                      <div key={entry.workerId} className="flex items-center justify-between p-3 lg:p-4 rounded-[12px] lg:rounded-[14px] bg-(--color-base-100) mb-2 transition-colors shadow-sm group">
                         <div className="flex items-center gap-3 lg:gap-4 min-w-0">
-                          <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-lg lg:rounded-xl bg-[color-mix(in_srgb,var(--color-base-content)_3%,transparent)] flex items-center justify-center flex-none border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] group-hover:bg-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)] transition-colors">
+                          <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-lg lg:rounded-xl bg-(--color-base-200) flex items-center justify-center flex-none group-hover:bg-(--color-base-300) transition-colors">
                             {entry.kind ? (
                               <WorkerLogo kind={entry.kind} size={18} className="opacity-90 group-hover:opacity-100 transition-opacity" />
                             ) : (
@@ -314,7 +314,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
                         </div>
                         <div className="flex flex-col items-end gap-1.5 flex-none pl-3 lg:pl-4">
                           <span className="text-[12px] lg:text-[13px] font-medium font-sans text-(--color-base-content) max-w-[100px] lg:max-w-[180px] truncate opacity-90">{entry.projectName}</span>
-                          <span className="text-[9px] lg:text-[10px] text-muted tracking-wide bg-[color-mix(in_srgb,var(--color-base-content)_4%,transparent)] px-2 py-0.5 rounded-md border border-[color-mix(in_srgb,var(--color-base-content)_6%,transparent)]">{formatMode(entry.mode)}</span>
+                          <span className="text-[9px] lg:text-[10px] text-muted tracking-wide bg-(--color-base-200) px-2 py-0.5 rounded-md">{formatMode(entry.mode)}</span>
                         </div>
                       </div>
                     ))}

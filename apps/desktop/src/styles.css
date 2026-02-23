@@ -1156,6 +1156,9 @@ h3 {
   letter-spacing: -0.01em;
   font-family: var(--font-sans);
   padding: 0.65rem 1.25rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .task-detail-panel .text-secondary,
@@ -1250,6 +1253,17 @@ h3 {
   font-size: 13px;
 }
 
+.task-properties,
+.task-details-surface,
+.task-details-cm,
+.task-details-cm .bn-container,
+.task-details-cm .bn-editor,
+.task-details-text,
+.report-content {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .task-details-text p,
 .report-content p {
   margin: 0;
@@ -1298,6 +1312,12 @@ h3 {
   margin-bottom: 0.25rem;
 }
 
+.task-details-text,
+.report-content {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .task-details-text code,
 .report-content code {
   font-family: var(--font-mono);
@@ -1312,7 +1332,10 @@ h3 {
   background: color-mix(in srgb, var(--color-base-200) 50%, transparent);
   padding: 0.75rem;
   border-radius: 8px;
-  overflow-x: auto;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   margin: 0.5rem 0;
   border: 1px solid color-mix(in srgb, var(--color-base-300) 50%, transparent);
 }
@@ -1402,6 +1425,9 @@ h3 {
   background-color: color-mix(in srgb, var(--color-base-200) 75%, transparent);
   color: var(--color-base-content);
   border: 1px solid color-mix(in srgb, var(--color-base-300) 65%, transparent);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 :root:not(.dark) .task-details-cm .bn-editor [data-content-type="codeBlock"],
@@ -1411,6 +1437,11 @@ h3 {
 
 .task-details-cm .bn-editor [data-content-type="codeBlock"] > pre {
   font-family: var(--font-mono);
+  max-width: 100%;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .task-detail-section-title {
@@ -1642,18 +1673,6 @@ h3 {
   }
 }
 
-@keyframes metallic-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    filter: saturate(1.1) brightness(0.96);
-  }
-  50% {
-    transform: scale(1.06);
-    filter: saturate(1.35) brightness(1.24);
-  }
-}
-
 @keyframes metallic-color-shift {
   0%,
   100% {
@@ -1676,6 +1695,18 @@ h3 {
       var(--worker-color, var(--color-primary)) 78%,
       #f4f4f4 22%
     );
+  }
+}
+
+@keyframes metallic-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: saturate(1.1) brightness(0.96);
+  }
+  50% {
+    transform: scale(1.06);
+    filter: saturate(1.35) brightness(1.24);
   }
 }
 
@@ -1750,6 +1781,7 @@ h3 {
   border-radius: 14px;
   box-shadow: 0 24px 56px rgba(0, 0, 0, 0.16);
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 2.5rem;
   pointer-events: auto;
   animation: slide-in-right 0.15s cubic-bezier(0.16, 1, 0.3, 1);

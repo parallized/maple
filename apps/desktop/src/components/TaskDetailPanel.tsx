@@ -171,7 +171,7 @@ export function TaskDetailPanel({
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 300, opacity: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="task-detail-panel flex flex-col h-full min-h-0 pb-6"
+      className="task-detail-panel flex flex-col h-full min-h-0 pb-6 overflow-x-hidden"
     >
       <header className="mb-4 relative">
         <div className="flex items-start gap-4 pr-10">
@@ -280,12 +280,12 @@ export function TaskDetailPanel({
             <Icon icon="mingcute:tag-line" className="text-[15px] opacity-60" />
             标签
           </span>
-          <div className="flex flex-1 items-center gap-1.5 overflow-x-auto scrollbar-none select-none" style={{ maskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black calc(100% - 24px), transparent 100%)' }}>
+          <div className="flex flex-1 items-center gap-1.5 overflow-hidden select-none min-w-0 flex-wrap">
             {task.tags.length === 0 ? <span className="text-muted text-[13px] opacity-40">无标签</span> : null}
             {task.tags.map((tag) => (
               <span
                 key={tag}
-                className="ui-badge ui-badge--sm ui-badge--tag shrink-0 inline-flex items-center gap-1"
+                className="ui-badge ui-badge--sm ui-badge--tag inline-flex items-center gap-1"
                 style={buildTagBadgeStyle(tag, tagCatalog) as CSSProperties}
                 title={tag}
               >
@@ -308,7 +308,7 @@ export function TaskDetailPanel({
             
             <div className="flex-1 min-h-0 self-stretch flex items-end">
               {reports.length > 0 ? (
-                <nav className="flex items-center gap-5 overflow-x-auto scrollbar-none w-full">
+                <nav className="flex items-center gap-5 overflow-hidden w-full min-w-0 flex-wrap">
                   {reports.slice(0, 3).map((report, index) => {
                     const active = activeReportId === report.id;
                     return (
