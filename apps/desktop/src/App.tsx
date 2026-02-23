@@ -69,7 +69,7 @@ export function App() {
 
   // ── Core State ──
   const [view, setView] = useState<ViewKey>("overview");
-  const [projects, setProjects] = useState<Project[]>(() => loadProjects());
+  const [projects, setProjects] = useState<Project[]>(() => isTauri ? normalizeProjects([]) : loadProjects());
   const [stateBootstrapped, setStateBootstrapped] = useState(() => !isTauri);
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => loadUiLanguage());
   const [aiLanguage, setAiLanguage] = useState<AiLanguage>(() => loadAiLanguage());
@@ -175,7 +175,10 @@ export function App() {
 
   // ── Persistence ──
   useEffect(() => { applyTheme(theme); localStorage.setItem(STORAGE_THEME, theme); }, [theme]);
-  useEffect(() => { localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(projects)); }, [projects]);
+  useEffect(() => {
+    if (isTauri) return;
+    localStorage.setItem(STORAGE_PROJECTS, JSON.stringify(projects));
+  }, [isTauri, projects]);
   useEffect(() => { localStorage.setItem(STORAGE_UI_LANGUAGE, uiLanguage); }, [uiLanguage]);
   useEffect(() => { localStorage.setItem(STORAGE_AI_LANGUAGE, aiLanguage); }, [aiLanguage]);
   useEffect(() => { localStorage.setItem(STORAGE_EDITOR_APP, externalEditorApp); }, [externalEditorApp]);

@@ -512,42 +512,18 @@ h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  height: 16px;
+  min-width: 18px;
+  height: 18px;
   padding: 0 4px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-base-100) 88%, var(--btn-bg));
-  color: var(--color-base-content);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--worker-color, var(--color-primary)) 12%, var(--color-base-200));
+  color: var(--worker-color, var(--color-primary));
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1;
   position: relative;
-  isolation: isolate;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-base-content) 10%, transparent);
-}
-
-.topnav-queue-count::before {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  background: conic-gradient(
-    from 0deg,
-    color-mix(in srgb, var(--worker-color, var(--color-primary)) 85%, var(--color-base-content) 15%),
-    transparent 35%,
-    color-mix(in srgb, var(--worker-color, var(--color-primary)) 85%, var(--color-base-content) 15%)
-  );
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
-  opacity: 0.95;
-  pointer-events: none;
-  z-index: -1;
-  transform: rotate(0deg);
-  transform-origin: center;
-}
-
-.topnav-queue-count--spinning::before {
-  animation: topnav-queue-spin 1.15s linear infinite;
+  transition: all 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+  border: 1px solid color-mix(in srgb, var(--worker-color, var(--color-primary)) 20%, transparent);
 }
 
 .topnav-queue-count svg,
@@ -555,14 +531,32 @@ h3 {
   display: block;
 }
 
+.topnav-queue-count--spinning {
+  background: var(--worker-color, var(--color-primary));
+  color: #fff;
+  border: none;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--worker-color, var(--color-primary)) 30%, transparent);
+}
+
+.topnav-tab[style*="#ffffff"] .topnav-queue-count--spinning,
+.topnav-tab[style*="white"] .topnav-queue-count--spinning {
+  color: #000 !important;
+}
+
+.topnav-queue-count--spinning .iconify {
+  animation: topnav-queue-spin 1.2s linear infinite;
+}
+
 .topnav-queue-count--global {
   margin-left: 0.05rem;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
 }
 
 @keyframes topnav-queue-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .topnav-tab-close {

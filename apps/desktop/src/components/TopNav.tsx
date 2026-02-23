@@ -50,7 +50,7 @@ export function TopNav({
   return (
     <nav className="topnav">
       <div className="topnav-brand">
-        <Icon icon="mingcute:maple-leaf-line" className="text-lg" />
+        <Icon icon="mingcute:quill-pen-ai-fill" className="text-lg" />
         <SplitText text="Maple" className="inline" delay={40} />
       </div>
 
