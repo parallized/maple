@@ -68,11 +68,11 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
   return (
     <section className="h-full w-full flex flex-col p-4 md:p-6 lg:p-8 max-w-6xl mx-auto overflow-hidden bg-transparent relative">
       {/* Background Falling Text */}
-      <div className="absolute inset-0 pointer-events-none opacity-[0.03] z-0 overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none opacity-[0.1] z-0 overflow-hidden">
         <FallingText 
-          text="MAPLE AI WORKER AUTOMATION AGENTIC WORKFLOW INTELLIGENCE"
-          fontSize="1.8rem"
-          gravity={0.05}
+          text="MAPLE AI WORKER AUTOMATION AGENTIC WORKFLOW INTELLIGENCE INNOVATION AUTONOMY COGNITIVE TASK FLOW"
+          fontSize="2rem"
+          gravity={0.02}
           friction={0.1}
           restitution={0.6}
         />

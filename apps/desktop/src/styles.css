@@ -307,6 +307,13 @@ h3 {
   padding: 0;
 }
 
+.col-confirm { width: 16px; padding-left: 0; padding-right: 0; }
+.col-taskIcon { width: 24px; padding-left: 0; padding-right: 0; }
+.col-task { padding-left: 4px; }
+.col-tags { width: 120px; }
+.col-date { width: 100px; text-align: right; }
+.col-actions { width: 40px; text-align: right; }
+
 .ui-btn--accent {
   background: var(--color-base-100);
   border: 1px solid color-mix(in srgb, var(--color-base-300) 70%, transparent);
@@ -610,57 +617,41 @@ h3 {
   border-radius: 50%;
 }
 
+.task-confirm-text,
+.task-question-text {
+  display: inline-block;
+  color: #f59e0b;
+  opacity: 0.7;
+  font-weight: 300;
+  cursor: help;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.task-confirm-text:hover,
+.task-question-text:hover {
+  opacity: 1;
+}
+
 .task-confirm-badge,
 .task-question-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
-  color: var(--color-warning);
-  border: 1px solid color-mix(in srgb, var(--color-warning) 20%, transparent);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  margin: 0 auto;
-  cursor: help;
-  position: relative;
-}
-
-.task-confirm-badge:hover,
-.task-question-badge:hover {
-  background: color-mix(in srgb, var(--color-warning) 20%, transparent);
-  border-color: color-mix(in srgb, var(--color-warning) 40%, transparent);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--color-warning) 15%, transparent);
-}
-
-.task-confirm-badge::after,
-.task-question-badge::after,
-.task-confirm-badge::before,
-.task-question-badge::before {
   display: none !important;
 }
 
 .topnav-queue-count--warning {
-  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
-  color: var(--color-warning);
-  border: 1px solid color-mix(in srgb, var(--color-warning) 25%, transparent) !important;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 11px;
-  padding: 0 5px;
-  height: 18px;
-  min-width: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-}
-
-.topnav-queue-count--warning:hover {
-  background: color-mix(in srgb, var(--color-warning) 25%, transparent);
-  transform: translateY(-1px);
+  background: transparent !important;
+  color: #f59e0b !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-weight: 400;
+  font-size: 13px;
+  padding: 0;
+  height: auto;
+  min-width: unset;
+  display: inline-block;
+  margin-left: 1px;
+  opacity: 0.8;
+  vertical-align: middle;
 }
 
 @keyframes warning-pulse {
@@ -1053,18 +1044,17 @@ h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--color-base-200) 40%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-base-300) 30%, transparent);
+  width: 20px;
+  height: 20px;
   color: var(--color-secondary);
   flex-shrink: 0;
+  opacity: 0.8;
+  transition: all 0.2s ease;
 }
 
 .task-row:hover .task-icon-pill {
-  background: color-mix(in srgb, var(--color-base-200) 80%, transparent);
-  border-color: color-mix(in srgb, var(--color-base-300) 60%, transparent);
+  opacity: 1;
+  color: var(--color-base-content);
 }
 
 /* ── Popover ── */

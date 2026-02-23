@@ -20,35 +20,36 @@ export function FallingText({
   gravity = 0.5,
   friction = 0.1,
   restitution = 0.5,
-  colors = ["#94a3b8", "#64748b", "#475569"],
+  colors = ["#f59e0b", "#d97706", "#b45309"], // 使用橙黄色系
 }: FallingTextProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Matter.Engine | null>(null);
-  const renderRef = useRef<Matter.Render | null>(null);
   const runnerRef = useRef<Matter.Runner | null>(null);
   const [words, setWords] = useState<Array<{ text: string; body: Matter.Body; color: string }>>([]);
+  const [, setFrame] = useState(0);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const { Engine, Render, Runner, Bodies, Composite, Mouse, MouseConstraint } = Matter;
+    const { Engine, Runner, Bodies, Composite, Mouse, MouseConstraint } = Matter;
 
     const engine = Engine.create();
     engine.gravity.y = gravity;
     engineRef.current = engine;
 
-    const width = containerRef.current.clientWidth;
-    const height = containerRef.current.clientHeight;
+    // 获取实际尺寸，带兜底
+    const width = containerRef.current.clientWidth || window.innerWidth;
+    const height = containerRef.current.clientHeight || window.innerHeight;
 
     const runner = Runner.create();
     runnerRef.current = runner;
     Runner.run(runner, engine);
 
-    // Boundaries
-    const ground = Bodies.rectangle(width / 2, height + 50, width, 100, { isStatic: true });
-    const leftWall = Bodies.rectangle(-50, height / 2, 100, height, { isStatic: true });
-    const rightWall = Bodies.rectangle(width + 50, height / 2, 100, height, { isStatic: true });
+    // Boundaries - 稍微加宽一点防止边缘切断
+    const thickness = 100;
+    const ground = Bodies.rectangle(width / 2, height + thickness / 2, width * 2, thickness, { isStatic: true });
+    const leftWall = Bodies.rectangle(-thickness / 2, height / 2, thickness, height * 2, { isStatic: true });
+    const rightWall = Bodies.rectangle(width + thickness / 2, height / 2, thickness, height * 2, { isStatic: true });
     Composite.add(engine.world, [ground, leftWall, rightWall]);
 
     // Create words
@@ -56,12 +57,17 @@ export function FallingText({
     const wordBodies: Array<{ text: string; body: Matter.Body; color: string }> = [];
 
     textArray.forEach((word, i) => {
+      // 随机化初始位置，让一部分文字已经在屏幕内，一部分在上方排队
       const x = Math.random() * width;
-      const y = -Math.random() * height;
-      const body = Bodies.rectangle(x, y, word.length * 15, 30, {
+      const y = (Math.random() * height) - height; // 范围从 -height 到 0，确保立即有文字出现
+      
+      // 估计单词宽度进行碰撞检测
+      const wordWidth = word.length * 12 + 15;
+      const body = Bodies.rectangle(x, y, wordWidth, 28, {
         friction,
         restitution,
         label: word,
+        angle: (Math.random() - 0.5) * 0.5,
       });
       const color = colors[Math.floor(Math.random() * colors.length)]!;
       wordBodies.push({ text: word, body, color });
@@ -75,45 +81,47 @@ export function FallingText({
     const mouseConstraint = MouseConstraint.create(engine, {
       mouse: mouse,
       constraint: {
-        stiffness: 0.2,
+        stiffness: 0.1,
         render: { visible: false },
       },
     });
     Composite.add(engine.world, mouseConstraint);
 
     // Update positions
+    let rafId: number;
     const update = () => {
-      setWords((prev) => [...prev]);
-      requestAnimationFrame(update);
+      setFrame((f) => f + 1);
+      rafId = requestAnimationFrame(update);
     };
-    const animId = requestAnimationFrame(update);
+    rafId = requestAnimationFrame(update);
 
     return () => {
-      cancelAnimationFrame(animId);
+      cancelAnimationFrame(rafId);
       Engine.clear(engine);
       if (runnerRef.current) Runner.stop(runnerRef.current);
     };
   }, [text, gravity, friction, restitution, colors]);
 
   return (
-    <div ref={containerRef} className={`absolute inset-0 pointer-events-auto ${className}`} style={{ zIndex: 0 }}>
+    <div ref={containerRef} className={`absolute inset-0 overflow-hidden pointer-events-none ${className}`} style={{ zIndex: 0 }}>
       {words.map((w, i) => {
         const { x, y } = w.body.position;
         const angle = w.body.angle;
         return (
           <div
-            key={i}
+            key={`${w.text}-${i}`}
             style={{
               position: "absolute",
-              left: x,
-              top: y,
-              transform: `translate(-50%, -50%) rotate(${angle}rad)`,
+              left: 0,
+              top: 0,
+              transform: `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%) rotate(${angle}rad)`,
               fontSize,
               fontFamily,
               color: w.color,
               whiteSpace: "nowrap",
               userSelect: "none",
               pointerEvents: "none",
+              willChange: "transform",
             }}
           >
             {w.text}

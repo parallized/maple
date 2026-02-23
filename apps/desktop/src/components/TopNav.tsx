@@ -115,7 +115,7 @@ export function TopNav({
                       title={badgeTitle}
                     >
                       {confirmCount > 0 ? (
-                        <Icon icon="mingcute:warning-fill" className="text-[12px]" />
+                        <Icon icon="mingcute:question-line" className="text-[14px]" />
                       ) : isExecuting ? (
                         <Icon icon="mingcute:loading-line" className="text-[12px]" />
                       ) : (
