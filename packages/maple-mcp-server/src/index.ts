@@ -221,6 +221,61 @@ function ensureTagCatalogForTags(catalog: TagCatalog, tags: string[]): boolean {
   return changed;
 }
 
+function normalizeAndDedupeTags(tags: string[], max = 5): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const rawTag of tags) {
+    const trimmed = rawTag.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function inferTagsFromReport(status: TaskStatus, report: string): string[] {
+  const source = report.toLowerCase();
+  const inferred: string[] = [];
+
+  inferred.push("mcp");
+
+  if (
+    /typecheck|build|cargo check|验证|校验|构建|编译|bundle|msi|wix/.test(source)
+  ) {
+    inferred.push("verify");
+    inferred.push("area:build");
+  }
+  if (/修复|fix|bug|报错|错误|异常|failed|failure/.test(source)) {
+    inferred.push("fix");
+  }
+  if (/标签|tag|tag catalog|tag_catalog/.test(source)) {
+    inferred.push("tag");
+    inferred.push("area:tags");
+  }
+  if (/图标|icon|image|图片/.test(source)) {
+    inferred.push("icon");
+  }
+  if (/调研|research/.test(source)) {
+    inferred.push("research");
+    inferred.push("area:research");
+  }
+  if (/titlebar|窗口|拖拽|ui|界面|样式|按钮|侧边栏/.test(source)) {
+    inferred.push("ui");
+    inferred.push("area:ui");
+  }
+  if (/mcp|submit_task_report|finish_worker|query_project_todos/.test(source)) {
+    inferred.push("area:mcp");
+  }
+
+  if (status === "已阻塞") inferred.push("fix");
+  if (status === "需要更多信息") inferred.push("research");
+
+  return normalizeAndDedupeTags(inferred, 5);
+}
+
 function isValidMingcuteIcon(icon: string): boolean {
   return icon.trim().toLowerCase().startsWith("mingcute:");
 }
@@ -441,7 +496,12 @@ server.tool(
     task.reports.push(newReport);
     task.updatedAt = now;
     if (status) task.status = status;
-    if (tags && tags.length > 0) task.tags = tags.slice(0, 5);
+    const normalizedInputTags = normalizeAndDedupeTags(tags ?? [], 5);
+    if (normalizedInputTags.length > 0) {
+      task.tags = normalizedInputTags;
+    } else if (task.tags.length === 0) {
+      task.tags = inferTagsFromReport(task.status, report);
+    }
     target.tagCatalog ??= {};
     ensureTagCatalogForTags(target.tagCatalog, task.tags);
 

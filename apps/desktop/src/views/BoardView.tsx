@@ -44,7 +44,7 @@ const DEFAULT_COL_WIDTHS: Record<string, number> = {
   task: TASK_TITLE_MAX_WIDTH,
   status: 100,
   lastMention: 100,
-  tags: 0,
+  tags: 168,
   actions: 40
 };
 

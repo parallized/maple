@@ -1,6 +1,5 @@
 import { Icon } from "@iconify/react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { WorkerLogo } from "./WorkerLogo";
 import { SplitText } from "./ReactBits";
 import type { ViewKey } from "../domain";
@@ -21,7 +20,7 @@ type TopNavProps = {
   uiLanguage: UiLanguage;
   onViewChange: (view: ViewKey) => void;
   onProjectSelect: (projectId: string) => void;
-  onReorderProjects: (sourceProjectId: string, targetProjectId: string) => void;
+  onReorderProjects: (projectIds: string[]) => void;
   onCreateProject: () => void;
   onToggleConsole: () => void;
   onMinimize: () => void;
@@ -49,10 +48,10 @@ export function TopNav({
   onClose
 }: TopNavProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
-  const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
+  const projectOrder = projects.map((project) => project.id);
 
   return (
-    <nav className="topnav">
+    <nav className="topnav" data-tauri-drag-region={isTauri ? "true" : undefined}>
       <div className="topnav-brand">
         <Icon icon="mingcute:quill-pen-ai-fill" className="text-lg" />
         <SplitText text="Maple" className="inline" delay={40} />
@@ -73,8 +72,15 @@ export function TopNav({
         <div className="w-px h-4 bg-(--color-base-300) mx-1" />
 
         <div className="topnav-scroll">
-          <AnimatePresence>
-            {projects.map((project, index) => {
+          <Reorder.Group
+            as="div"
+            axis="x"
+            values={projectOrder}
+            onReorder={onReorderProjects}
+            className="flex items-center gap-2"
+          >
+            <AnimatePresence>
+              {projects.map((project, index) => {
               const active = view === "board" && boardProjectId === project.id;
               const confirmCount = project.tasks.filter((t) => t.status === "已完成" && t.needsConfirmation).length;
               const isExecuting = project.tasks.some((t) => t.status === "队列中" || t.status === "进行中");
@@ -92,58 +98,54 @@ export function TopNav({
                       ? t("待办", "Todo")
                       : "";
 
-              return (
-                <motion.button
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0, transition: { delay: index * 0.05 } }}
-                  exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
-                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                  key={project.id}
-                  type="button"
-                  className={`topnav-tab ${active ? "active" : ""}`}
-                  style={{ "--worker-color": workerColor } as React.CSSProperties}
-                  onClick={() => onProjectSelect(project.id)}
-                  draggable
-                  onDragStartCapture={(event) => {
-                    setDraggingProjectId(project.id);
-                  }}
-                  onDragOverCapture={(event) => {
-                    if (!draggingProjectId || draggingProjectId === project.id) return;
-                    event.preventDefault();
-                  }}
-                  onDropCapture={(event) => {
-                    event.preventDefault();
-                    const sourceId = draggingProjectId;
-                    if (!sourceId || sourceId === project.id) return;
-                    onReorderProjects(sourceId, project.id);
-                    setDraggingProjectId(null);
-                  }}
-                  onDragEndCapture={() => setDraggingProjectId(null)}
-                  title={project.directory}
-                >
-                  <div className="flex items-center justify-center">
-                    {project.workerKind ? (
-                      <WorkerLogo kind={project.workerKind} size={15} className="opacity-80" />
-                    ) : (
-                      <Icon icon="mingcute:folder-open-line" className="text-[15px] opacity-70" />
-                    )}
-                  </div>
-                  <span className="truncate max-w-[120px]">{project.name}</span>
-                  {confirmCount > 0 ? (
-                    <span className="topnav-queue-count--warning" title={badgeTitle}>?</span>
-                  ) : isExecuting ? (
-                    <span className="topnav-queue-count topnav-queue-count--spinning" title={badgeTitle}>
-                      <Icon icon="mingcute:loading-line" className="text-[12px]" />
-                    </span>
-                  ) : todoCount > 0 ? (
-                    <span className="topnav-queue-count" title={badgeTitle}>
-                      {todoCount}
-                    </span>
-                  ) : null}
-                </motion.button>
-              );
-            })}
-          </AnimatePresence>
+                return (
+                  <Reorder.Item
+                    key={project.id}
+                    value={project.id}
+                    className="flex"
+                    whileDrag={{
+                      scale: 1.03,
+                      y: -2,
+                      zIndex: 10,
+                      boxShadow: "0 10px 24px rgba(0, 0, 0, 0.16)"
+                    }}
+                  >
+                    <motion.button
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0, transition: { delay: index * 0.05 } }}
+                      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      type="button"
+                      className={`topnav-tab ${active ? "active" : ""}`}
+                      style={{ "--worker-color": workerColor } as React.CSSProperties}
+                      onClick={() => onProjectSelect(project.id)}
+                      title={project.directory}
+                    >
+                      <div className="flex items-center justify-center">
+                        {project.workerKind ? (
+                          <WorkerLogo kind={project.workerKind} size={15} className="opacity-80" />
+                        ) : (
+                          <Icon icon="mingcute:folder-open-line" className="text-[15px] opacity-70" />
+                        )}
+                      </div>
+                      <span className="truncate max-w-[120px]">{project.name}</span>
+                      {confirmCount > 0 ? (
+                        <span className="topnav-queue-count--warning" title={badgeTitle}>?</span>
+                      ) : isExecuting ? (
+                        <span className="topnav-queue-count topnav-queue-count--spinning" title={badgeTitle}>
+                          <Icon icon="mingcute:loading-line" className="text-[12px]" />
+                        </span>
+                      ) : todoCount > 0 ? (
+                        <span className="topnav-queue-count" title={badgeTitle}>
+                          {todoCount}
+                        </span>
+                      ) : null}
+                    </motion.button>
+                  </Reorder.Item>
+                );
+              })}
+            </AnimatePresence>
+          </Reorder.Group>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}

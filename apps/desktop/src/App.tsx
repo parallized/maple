@@ -123,12 +123,34 @@ export function App() {
         }
 
         const tasks = project.tasks.map((task) => {
-          const normalizedTags = normalizeTagsForAiLanguage({
+          const localizedTags = normalizeTagsForAiLanguage({
             tags: task.tags,
             language: effectiveAiLanguage,
             tagCatalog: nextCatalog,
             max: 6
           });
+
+          // Never drop raw tags during language normalization.
+          const normalizedTags: string[] = [];
+          const seen = new Set<string>();
+          for (const tag of localizedTags) {
+            const trimmed = tag.trim();
+            if (!trimmed) continue;
+            const key = trimmed.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            normalizedTags.push(trimmed);
+          }
+          for (const tag of task.tags) {
+            const trimmed = tag.trim();
+            if (!trimmed) continue;
+            const key = trimmed.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            normalizedTags.push(trimmed);
+            if (normalizedTags.length >= 6) break;
+          }
+
           if (areTagListsEqual(task.tags, normalizedTags)) return task;
           projectChanged = true;
           return { ...task, tags: normalizedTags };
@@ -707,19 +729,19 @@ export function App() {
     setSelectedTaskId(null);
   }
 
-  function reorderProjects(sourceProjectId: string, targetProjectId: string) {
-    if (sourceProjectId === targetProjectId) return;
+  function reorderProjects(nextProjectIds: string[]) {
     setProjects((prev) => {
-      const sourceIndex = prev.findIndex((project) => project.id === sourceProjectId);
-      const targetIndex = prev.findIndex((project) => project.id === targetProjectId);
-      if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+      if (nextProjectIds.length !== prev.length) {
         return prev;
       }
-      const next = [...prev];
-      const [moved] = next.splice(sourceIndex, 1);
-      if (!moved) return prev;
-      next.splice(targetIndex, 0, moved);
-      return next;
+      const projectById = new Map(prev.map((project) => [project.id, project]));
+      const reordered: Project[] = [];
+      for (const projectId of nextProjectIds) {
+        const project = projectById.get(projectId);
+        if (!project) return prev;
+        reordered.push(project);
+      }
+      return reordered;
     });
   }
 
@@ -949,10 +971,6 @@ export function App() {
   return (
     <div className="app-root">
       <div className="shell">
-        {isTauri ? (
-          <div className="drag-strip absolute top-0 left-0 right-0 h-[46px] z-20" data-tauri-drag-region />
-        ) : null}
-
         <TopNav
           isTauri={isTauri}
           windowMaximized={windowMaximized}
