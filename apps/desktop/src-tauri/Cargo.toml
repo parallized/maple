@@ -18,6 +18,7 @@ axum = "0.7"
 tokio = { version = "1", features = ["net"] }
 chrono = "0.4"
 base64 = "0.22"
+dirs = "6"
 
 [features]
 default = ["custom-protocol"]

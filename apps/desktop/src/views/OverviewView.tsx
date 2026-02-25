@@ -1,13 +1,16 @@
 import { Icon } from "@iconify/react";
 import { CountUp, CurvedLoop, FadeContent, FallingText, SpotlightCard, SplitText } from "../components/ReactBits";
+import { McpSkillsInstallCard } from "../components/McpSkillsInstallCard";
 import { WorkerLogo } from "../components/WorkerLogo";
 import AnimatedList from "../components/reactbits/AnimatedList";
 import type { McpServerStatus, WorkerKind } from "../domain";
+import type { UiLanguage } from "../lib/constants";
 import { Group } from "@visx/group";
 import { Pie } from "@visx/shape";
 import { motion } from "framer-motion";
 
 type OverviewViewProps = {
+  uiLanguage: UiLanguage;
   metrics: {
     pending: number;
     runningCount: number;
@@ -44,7 +47,7 @@ interface StatusData {
   color: string;
 }
 
-export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPool, onRefreshMcp }: OverviewViewProps) {
+export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailability, workerPool, onRefreshMcp }: OverviewViewProps) {
   const pieData: StatusData[] = [
     { label: "已完成", value: metrics.statusDistribution["已完成"] || 0, color: "var(--color-success)" },
     { label: "进行中", value: metrics.statusDistribution["进行中"] || 0, color: "var(--color-primary)" },
@@ -247,6 +250,7 @@ export function OverviewView({ metrics, mcpStatus, workerAvailability, workerPoo
             </div>
             
             <div className="flex-1 overflow-y-auto pr-1 lg:pr-2 flex flex-col gap-2 min-h-0 pb-2">
+              <McpSkillsInstallCard uiLanguage={uiLanguage} />
               {workerAvailability.map((worker) => (
                 <div key={worker.kind} className="group p-3 lg:p-4 rounded-[12px] lg:rounded-[14px] bg-(--color-base-100) hover:bg-(--color-base-200) transition-all duration-300 flex flex-col gap-1.5 lg:gap-2 flex-none">
                   <div className="flex items-center justify-between">

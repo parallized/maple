@@ -2,6 +2,7 @@
 
 mod mcp_http;
 mod maple_fs;
+mod installer;
 mod maple_protocol;
 mod tray_status;
 
@@ -69,6 +70,16 @@ fn probe_worker(
   cwd: Option<String>,
 ) -> Result<WorkerCommandResult, String> {
   run_command(executable, args, cwd)
+}
+
+#[tauri::command]
+async fn install_mcp_skills(
+  options: Option<installer::InstallMcpSkillsOptions>,
+) -> Result<installer::InstallMcpSkillsReport, String> {
+  let input = options.unwrap_or_default();
+  tauri::async_runtime::spawn_blocking(move || installer::install_mcp_and_skills(input))
+    .await
+    .map_err(|_| "安装线程异常退出".to_string())?
 }
 
 #[tauri::command]
@@ -253,9 +264,8 @@ async fn start_interactive_worker(
     let mut child = match pty_command.spawn() {
       Ok(child) => child,
       Err(pty_error) => {
-        let mut fallback = Command::new(&executable_trimmed);
+        let mut fallback = build_cli_command(&executable_trimmed, &args);
         fallback
-          .args(&args)
           .env("TERM", "xterm-256color")
           .env("COLORTERM", "truecolor")
           .env("FORCE_COLOR", "1")
@@ -493,6 +503,23 @@ fn open_in_editor(path: String, app: Option<String>) -> Result<bool, String> {
   Ok(true)
 }
 
+fn build_cli_command(executable: &str, args: &[String]) -> Command {
+  #[cfg(target_os = "windows")]
+  {
+    let mut command = Command::new("cmd");
+    command.arg("/D").arg("/C").arg(executable);
+    command.args(args);
+    command
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  {
+    let mut command = Command::new(executable);
+    command.args(args);
+    command
+  }
+}
+
 fn run_command(
   executable: String,
   args: Vec<String>,
@@ -503,8 +530,7 @@ fn run_command(
     return Err("worker executable 不能为空".to_string());
   }
 
-  let mut command = Command::new(executable);
-  command.args(&args);
+  let mut command = build_cli_command(executable, &args);
 
   if let Some(dir) = normalize_cwd(cwd) {
     command.current_dir(dir);
@@ -557,8 +583,7 @@ fn run_command_stream(
   let mut child = match pty_command.spawn() {
     Ok(child) => child,
     Err(pty_error) => {
-      let mut fallback = Command::new(&executable);
-      fallback.args(&args);
+      let mut fallback = build_cli_command(&executable, &args);
       fallback
         .env("TERM", "xterm-256color")
         .env("COLORTERM", "truecolor")
@@ -807,6 +832,7 @@ fn main() {
     })
     .invoke_handler(tauri::generate_handler![
       probe_worker,
+      install_mcp_skills,
       run_worker,
       start_interactive_worker,
       send_worker_input,

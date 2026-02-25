@@ -9,6 +9,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "dirs",
  "serde",
  "serde_json",
  "tauri",

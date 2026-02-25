@@ -9,7 +9,6 @@ import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
 import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { relativeTimeZh, getLastMentionTime, getTimeLevel } from "../lib/utils";
-import { resolveImageSrc } from "../lib/maple-assets";
 import { type DetailMode, type Project, type TagCatalog, type Task, type WorkerKind } from "../domain";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -36,8 +35,8 @@ type BoardViewProps = {
 };
 
 const TASK_TITLE_MAX_WIDTH = 340;
-const NEW_TASK_WATERMARK_ICON_ASSET = "maple://asset/f8a2849550a76507ac90f02f616649e0ffae28b096dfa6c0491b0073020e9989.svg";
-const EXECUTE_TASK_WATERMARK_ICON_ASSET = "maple://asset/bbdcbd6960c49ffe5970e2dd57fe2b3359659d54d4999e41309d57583663c096.svg";
+const NEW_TASK_WATERMARK_ICON = "mingcute:plus-fill";
+const EXECUTE_TASK_WATERMARK_ICON = "mingcute:play-fill";
 const DEFAULT_COL_WIDTHS: Record<string, number> = {
   confirm: 20,
   taskIcon: 24,
@@ -48,33 +47,9 @@ const DEFAULT_COL_WIDTHS: Record<string, number> = {
   actions: 40
 };
 
-function SidebarWatermarkAssetIcon({ assetUrl }: { assetUrl: string }) {
-  const [src, setSrc] = useState(assetUrl);
-
-  useEffect(() => {
-    let cancelled = false;
-    setSrc(assetUrl);
-    void resolveImageSrc(assetUrl)
-      .then((resolved) => {
-        if (cancelled || !resolved) return;
-        setSrc(resolved);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [assetUrl]);
-
+function SidebarWatermarkIcon({ icon }: { icon: string }) {
   return (
-    <img
-      src={src}
-      alt=""
-      aria-hidden="true"
-      draggable={false}
-      loading="lazy"
-      className="sidebar-card-watermark-icon--metallic"
-    />
+    <Icon icon={icon} aria-hidden="true" className="sidebar-card-watermark-icon--metallic" />
   );
 }
 
@@ -275,7 +250,7 @@ export function BoardView({
                   <span className="sidebar-card-btn-desc">创建一个新的任务条目</span>
                 </div>
                 <div className="sidebar-card-watermark sidebar-card-watermark--metallic">
-                  <SidebarWatermarkAssetIcon assetUrl={NEW_TASK_WATERMARK_ICON_ASSET} />
+                  <SidebarWatermarkIcon icon={NEW_TASK_WATERMARK_ICON} />
                 </div>
               </TiltedCard>
 
@@ -298,7 +273,7 @@ export function BoardView({
                   </span>
                 </div>
                 <div className="sidebar-card-watermark sidebar-card-watermark--metallic">
-                  <SidebarWatermarkAssetIcon assetUrl={EXECUTE_TASK_WATERMARK_ICON_ASSET} />
+                  <SidebarWatermarkIcon icon={EXECUTE_TASK_WATERMARK_ICON} />
                 </div>
               </TiltedCard>
 

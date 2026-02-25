@@ -1,8 +1,31 @@
 use std::path::PathBuf;
 
+fn read_env_non_empty(key: &str) -> Option<String> {
+  let value = std::env::var(key).ok()?;
+  let trimmed = value.trim().to_string();
+  if trimmed.is_empty() { None } else { Some(trimmed) }
+}
+
+pub fn user_home_dir() -> Result<PathBuf, String> {
+  if let Some(home) = dirs::home_dir() {
+    return Ok(home);
+  }
+  if let Some(home) = read_env_non_empty("HOME") {
+    return Ok(PathBuf::from(home));
+  }
+  if let Some(profile) = read_env_non_empty("USERPROFILE") {
+    return Ok(PathBuf::from(profile));
+  }
+  let drive = read_env_non_empty("HOMEDRIVE");
+  let path = read_env_non_empty("HOMEPATH");
+  if let (Some(drive), Some(path)) = (drive, path) {
+    return Ok(PathBuf::from(format!("{drive}{path}")));
+  }
+  Err("无法获取用户 Home 目录".to_string())
+}
+
 pub fn maple_home_dir() -> Result<PathBuf, String> {
-  let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 目录".to_string())?;
-  Ok(PathBuf::from(home).join(".maple"))
+  Ok(user_home_dir()?.join(".maple"))
 }
 
 pub fn asset_dir() -> Result<PathBuf, String> {

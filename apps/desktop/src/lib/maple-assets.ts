@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 
 import { hasTauriRuntime } from "./utils";
 
@@ -133,9 +133,17 @@ export async function resolveImageSrc(assetUrl: string): Promise<string | null> 
   if (cached) return cached;
 
   if (hasTauriRuntime()) {
-    // In Desktop, `maple://asset/<hash>.<ext>` is backed by a Tauri URI scheme protocol.
-    resolvedSrcCache.set(descriptor.fileName, assetUrl);
-    return assetUrl;
+    // Prefer file URL conversion so WebView can load reliably (img/video/etc).
+    try {
+      const filePath = await invoke<string>("get_asset_file_path", { fileName: descriptor.fileName });
+      const src = convertFileSrc(filePath);
+      resolvedSrcCache.set(descriptor.fileName, src);
+      return src;
+    } catch {
+      // Fallback to `maple://asset/...` scheme protocol (older builds / dev setups).
+      resolvedSrcCache.set(descriptor.fileName, assetUrl);
+      return assetUrl;
+    }
   }
 
   const record = await getAssetFromDb(descriptor.fileName);

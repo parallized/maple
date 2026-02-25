@@ -7,7 +7,8 @@
     "dev": "pnpm --filter @maple/desktop dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "build:msi": "pnpm --filter @maple/desktop tauri:build:msi"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

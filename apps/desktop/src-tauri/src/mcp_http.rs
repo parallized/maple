@@ -14,6 +14,8 @@ use std::sync::Arc;
 use std::collections::BTreeMap;
 use tauri::Emitter;
 
+use crate::maple_fs;
+
 const MCP_PORT: u16 = 45819;
 
 pub struct McpHttpState {
@@ -106,8 +108,7 @@ struct Project {
 // ── State File ──
 
 fn state_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    PathBuf::from(home).join(".maple")
+    maple_fs::maple_home_dir().unwrap_or_else(|_| std::env::temp_dir().join(".maple"))
 }
 
 fn read_state() -> Vec<Project> {

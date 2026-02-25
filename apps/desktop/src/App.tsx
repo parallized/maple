@@ -1007,6 +1007,7 @@ export function App() {
                   className="flex-1 overflow-hidden flex flex-col min-h-0"
                 >
                   <OverviewView
+                    uiLanguage={uiLanguage}
                     metrics={metrics}
                     mcpStatus={mcpStatus}
                     workerAvailability={workerAvailability}

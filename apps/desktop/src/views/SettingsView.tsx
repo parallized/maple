@@ -1,5 +1,6 @@
 import { Icon } from "@iconify/react";
 import { FadeContent } from "../components/ReactBits";
+import { McpSkillsInstallCard } from "../components/McpSkillsInstallCard";
 import { WorkerLogo } from "../components/WorkerLogo";
 import { WORKER_KINDS } from "../lib/constants";
 import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage } from "../lib/constants";
@@ -201,6 +202,11 @@ export function SettingsView({
             <Icon icon="mingcute:ai-line" />
             {t("Worker 接入", "Workers")}
           </h3>
+
+          <div className="mt-3">
+            <McpSkillsInstallCard uiLanguage={uiLanguage} defaultOpen />
+          </div>
+
           <div className="overflow-x-auto mt-3">
             <table className="ui-table">
               <thead>
