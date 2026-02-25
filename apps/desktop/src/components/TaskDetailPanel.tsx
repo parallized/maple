@@ -1,16 +1,16 @@
-import { motion, AnimatePresence } from "framer-motion";
 import { Icon } from "@iconify/react";
-import type { TagCatalog, Task, TaskReport } from "../domain";
-import { relativeTimeZh, getTimeLevel } from "../lib/utils";
-import { renderTaskMarkdown } from "../lib/task-markdown";
-import { buildTagBadgeStyle } from "../lib/tag-style";
-import { formatTagLabel } from "../lib/tag-label";
-import type { UiLanguage } from "../lib/constants";
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import type { TagCatalog, Task } from "../domain";
+import type { UiLanguage } from "../lib/constants";
+import { formatTagLabel } from "../lib/tag-label";
+import { buildTagBadgeStyle } from "../lib/tag-style";
+import { resolveTagIconMeta } from "../lib/task-icons";
+import { renderTaskMarkdown } from "../lib/task-markdown";
+import { getTimeLevel, relativeTimeZh } from "../lib/utils";
 import { InlineTaskInput } from "./InlineTaskInput";
 import { TaskDetailsEditor } from "./TaskDetailsEditor";
 import { WorkerLogo } from "./WorkerLogo";
-import { resolveTagIconMeta } from "../lib/task-icons";
 
 type TaskDetailPanelProps = {
   task: Task;
@@ -171,7 +171,7 @@ export function TaskDetailPanel({
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 300, opacity: 0 }}
       transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="task-detail-panel flex flex-col h-full min-h-0 pb-6 overflow-x-hidden"
+      className="task-detail-panel flex flex-col h-full min-h-0 overflow-x-hidden"
     >
       <header className="mb-4 relative">
         <div className="flex items-start gap-4 pr-10">

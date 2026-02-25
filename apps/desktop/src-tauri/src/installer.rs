@@ -3,6 +3,7 @@ use serde_json::json;
 use std::fs;
 use std::path::{Path};
 use std::process::Command;
+use std::sync::Arc;
 
 use crate::maple_fs;
 
@@ -15,6 +16,7 @@ pub struct InstallMcpSkillsOptions {
   pub claude: bool,
   pub iflow: bool,
   pub windsurf: bool,
+  pub install_id: Option<String>,
 }
 
 impl Default for InstallMcpSkillsOptions {
@@ -24,7 +26,101 @@ impl Default for InstallMcpSkillsOptions {
       claude: true,
       iflow: true,
       windsurf: true,
+      install_id: None,
     }
+  }
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallTaskEvent {
+  pub kind: String,
+  pub install_id: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub target_id: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub stream: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub line: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub state: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub target: Option<InstallTargetResult>,
+}
+
+impl InstallTaskEvent {
+  fn log(install_id: &str, target_id: Option<&str>, stream: &str, line: String) -> Self {
+    Self {
+      kind: "log".to_string(),
+      install_id: install_id.to_string(),
+      target_id: target_id.map(|value| value.to_string()),
+      stream: Some(stream.to_string()),
+      line: Some(line),
+      state: None,
+      target: None,
+    }
+  }
+
+  fn target_state(install_id: &str, target_id: &str, state: &str) -> Self {
+    Self {
+      kind: "target_state".to_string(),
+      install_id: install_id.to_string(),
+      target_id: Some(target_id.to_string()),
+      stream: None,
+      line: None,
+      state: Some(state.to_string()),
+      target: None,
+    }
+  }
+
+  fn target_result(install_id: &str, target: InstallTargetResult) -> Self {
+    Self {
+      kind: "target_result".to_string(),
+      install_id: install_id.to_string(),
+      target_id: Some(target.id.clone()),
+      stream: None,
+      line: None,
+      state: None,
+      target: Some(target),
+    }
+  }
+}
+
+#[derive(Clone)]
+struct InstallEventEmitter {
+  install_id: String,
+  emit: Option<Arc<dyn Fn(InstallTaskEvent) + Send + Sync>>,
+}
+
+impl InstallEventEmitter {
+  fn emit(&self, event: InstallTaskEvent) {
+    let Some(cb) = &self.emit else { return };
+    cb(event);
+  }
+
+  fn log(&self, target_id: Option<&str>, stream: &str, line: impl Into<String>) {
+    let text = line.into();
+    if text.trim().is_empty() {
+      return;
+    }
+    self.emit(InstallTaskEvent::log(&self.install_id, target_id, stream, text));
+  }
+
+  fn log_command(&self, target_id: &str, executable: &str, args: &[String]) {
+    let mut cmd = executable.to_string();
+    if !args.is_empty() {
+      cmd.push(' ');
+      cmd.push_str(&args.join(" "));
+    }
+    self.log(Some(target_id), "info", format!("$ {cmd}\n"));
+  }
+
+  fn target_state(&self, target_id: &str, state: &str) {
+    self.emit(InstallTaskEvent::target_state(&self.install_id, target_id, state));
+  }
+
+  fn target_result(&self, target: InstallTargetResult) {
+    self.emit(InstallTaskEvent::target_result(&self.install_id, target));
   }
 }
 
@@ -182,6 +278,8 @@ Maple execution skill:
 }
 
 fn run_registration_commands(
+  emitter: &InstallEventEmitter,
+  target_id: &str,
   executable: &str,
   remove_args: Vec<String>,
   add_args: Vec<String>,
@@ -189,17 +287,21 @@ fn run_registration_commands(
   let mut stdout = String::new();
   let mut stderr = String::new();
 
+  emitter.log_command(target_id, executable, &remove_args);
   let remove_out = run_cli(executable, &remove_args, None);
   match remove_out {
     Ok(out) => {
       if is_windows_cli_not_found(&out) {
+        emitter.log(Some(target_id), "stderr", format!("未检测到 CLI：{executable}\n"));
         return (Some(false), false, out.stdout, out.stderr, None);
       }
       if !out.stdout.is_empty() {
+        emitter.log(Some(target_id), "stdout", format!("{}\n", out.stdout.trim_end()));
         stdout.push_str(&out.stdout);
         stdout.push('\n');
       }
       if !out.stderr.is_empty() {
+        emitter.log(Some(target_id), "stderr", format!("{}\n", out.stderr.trim_end()));
         stderr.push_str(&out.stderr);
         stderr.push('\n');
       }
@@ -212,44 +314,59 @@ fn run_registration_commands(
         || lower.contains("os error 2")
         || error.contains("系统找不到")
       {
+        emitter.log(Some(target_id), "stderr", format!("{error}\n"));
         return (Some(false), false, "".to_string(), error, None);
       }
+      emitter.log(Some(target_id), "stderr", format!("{error}\n"));
       return (Some(true), false, stdout, stderr, Some(error));
     }
   }
 
+  emitter.log_command(target_id, executable, &add_args);
   let add_out = run_cli(executable, &add_args, None);
   match add_out {
     Ok(out) => {
       if is_windows_cli_not_found(&out) {
+        emitter.log(Some(target_id), "stderr", format!("未检测到 CLI：{executable}\n"));
         return (Some(false), false, out.stdout, out.stderr, None);
       }
       if !out.stdout.is_empty() {
+        emitter.log(Some(target_id), "stdout", format!("{}\n", out.stdout.trim_end()));
         stdout.push_str(&out.stdout);
         stdout.push('\n');
       }
       if !out.stderr.is_empty() {
+        emitter.log(Some(target_id), "stderr", format!("{}\n", out.stderr.trim_end()));
         stderr.push_str(&out.stderr);
         stderr.push('\n');
       }
       if out.success {
+        emitter.log(Some(target_id), "info", "MCP 注册成功。\n".to_string());
         (Some(true), true, stdout.trim().to_string(), stderr.trim().to_string(), None)
       } else {
         let detail = format!("MCP 注册失败（exit: {}）", out.code.map(|c| c.to_string()).unwrap_or_else(|| "?".into()));
+        emitter.log(Some(target_id), "stderr", format!("{detail}\n"));
         (Some(true), false, stdout.trim().to_string(), stderr.trim().to_string(), Some(detail))
       }
     }
-    Err(error) => (Some(true), false, stdout.trim().to_string(), stderr.trim().to_string(), Some(error)),
+    Err(error) => {
+      emitter.log(Some(target_id), "stderr", format!("{error}\n"));
+      (Some(true), false, stdout.trim().to_string(), stderr.trim().to_string(), Some(error))
+    },
   }
 }
 
-fn install_codex(home: &Path) -> InstallTargetResult {
+fn install_codex(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetResult {
   let mut written_files = Vec::new();
   let mut stdout = String::new();
   let mut stderr = String::new();
 
+  emitter.target_state("codex", "running");
   let skill_path = home.join(".codex").join("skills").join("maple").join("SKILL.md");
+  emitter.log(Some("codex"), "info", format!("写入 {}\n", pretty_path(&skill_path)));
   if let Err(error) = write_text_file(&skill_path, codex_skill_md()) {
+    emitter.target_state("codex", "error");
+    emitter.log(Some("codex"), "stderr", format!("{error}\n"));
     return InstallTargetResult {
       id: "codex".to_string(),
       success: false,
@@ -264,6 +381,8 @@ fn install_codex(home: &Path) -> InstallTargetResult {
   written_files.push(pretty_path(&skill_path));
 
   let (cli_found, registered, out, err, reg_error) = run_registration_commands(
+    emitter,
+    "codex",
     "codex",
     vec!["mcp".into(), "remove".into(), "maple".into()],
     vec![
@@ -278,6 +397,7 @@ fn install_codex(home: &Path) -> InstallTargetResult {
   stderr = err;
 
   if cli_found == Some(false) {
+    emitter.target_state("codex", "success");
     return InstallTargetResult {
       id: "codex".to_string(),
       success: true,
@@ -290,7 +410,7 @@ fn install_codex(home: &Path) -> InstallTargetResult {
     };
   }
 
-  InstallTargetResult {
+  let result = InstallTargetResult {
     id: "codex".to_string(),
     success: registered && reg_error.is_none(),
     skipped: false,
@@ -299,16 +419,22 @@ fn install_codex(home: &Path) -> InstallTargetResult {
     stdout,
     stderr,
     error: reg_error,
-  }
+  };
+  emitter.target_state("codex", if result.success && result.error.is_none() { "success" } else { "error" });
+  result
 }
 
-fn install_claude(home: &Path) -> InstallTargetResult {
+fn install_claude(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetResult {
   let mut written_files = Vec::new();
   let mut stdout = String::new();
   let mut stderr = String::new();
 
+  emitter.target_state("claude", "running");
   let command_path = home.join(".claude").join("commands").join("maple.md");
+  emitter.log(Some("claude"), "info", format!("写入 {}\n", pretty_path(&command_path)));
   if let Err(error) = write_text_file(&command_path, claude_command_md()) {
+    emitter.target_state("claude", "error");
+    emitter.log(Some("claude"), "stderr", format!("{error}\n"));
     return InstallTargetResult {
       id: "claude".to_string(),
       success: false,
@@ -323,6 +449,8 @@ fn install_claude(home: &Path) -> InstallTargetResult {
   written_files.push(pretty_path(&command_path));
 
   let (cli_found, registered, out, err, reg_error) = run_registration_commands(
+    emitter,
+    "claude",
     "claude",
     vec!["mcp".into(), "remove".into(), "maple".into(), "--scope".into(), "user".into()],
     vec![
@@ -340,6 +468,7 @@ fn install_claude(home: &Path) -> InstallTargetResult {
   stderr = err;
 
   if cli_found == Some(false) {
+    emitter.target_state("claude", "success");
     return InstallTargetResult {
       id: "claude".to_string(),
       success: true,
@@ -352,7 +481,7 @@ fn install_claude(home: &Path) -> InstallTargetResult {
     };
   }
 
-  InstallTargetResult {
+  let result = InstallTargetResult {
     id: "claude".to_string(),
     success: registered && reg_error.is_none(),
     skipped: false,
@@ -361,14 +490,20 @@ fn install_claude(home: &Path) -> InstallTargetResult {
     stdout,
     stderr,
     error: reg_error,
-  }
+  };
+  emitter.target_state("claude", if result.success && result.error.is_none() { "success" } else { "error" });
+  result
 }
 
-fn install_iflow(home: &Path) -> InstallTargetResult {
+fn install_iflow(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetResult {
   let mut written_files = Vec::new();
 
+  emitter.target_state("iflow", "running");
   let workflow_path = home.join(".iflow").join("workflows").join("maple.md");
+  emitter.log(Some("iflow"), "info", format!("写入 {}\n", pretty_path(&workflow_path)));
   if let Err(error) = write_text_file(&workflow_path, iflow_workflow_md()) {
+    emitter.target_state("iflow", "error");
+    emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
     return InstallTargetResult {
       id: "iflow".to_string(),
       success: false,
@@ -383,7 +518,10 @@ fn install_iflow(home: &Path) -> InstallTargetResult {
   written_files.push(pretty_path(&workflow_path));
 
   let skill_path = home.join(".iflow").join("skills").join("maple").join("SKILL.md");
+  emitter.log(Some("iflow"), "info", format!("写入 {}\n", pretty_path(&skill_path)));
   if let Err(error) = write_text_file(&skill_path, iflow_skill_md()) {
+    emitter.target_state("iflow", "error");
+    emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
     return InstallTargetResult {
       id: "iflow".to_string(),
       success: false,
@@ -409,7 +547,10 @@ description: "Project-local maple skill index."
 
 Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
 "#;
+    emitter.log(Some("iflow"), "info", format!("写入 {}\n", pretty_path(&skill_index_path)));
     if let Err(error) = write_text_file(&skill_index_path, index_md) {
+      emitter.target_state("iflow", "error");
+      emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
       return InstallTargetResult {
         id: "iflow".to_string(),
         success: false,
@@ -425,6 +566,8 @@ Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
   }
 
   let (cli_found, registered, stdout, stderr, reg_error) = run_registration_commands(
+    emitter,
+    "iflow",
     "iflow",
     vec!["mcp".into(), "remove".into(), "maple".into()],
     vec![
@@ -440,6 +583,7 @@ Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
   );
 
   if cli_found == Some(false) {
+    emitter.target_state("iflow", "success");
     return InstallTargetResult {
       id: "iflow".to_string(),
       success: true,
@@ -452,7 +596,7 @@ Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
     };
   }
 
-  InstallTargetResult {
+  let result = InstallTargetResult {
     id: "iflow".to_string(),
     success: registered && reg_error.is_none(),
     skipped: false,
@@ -461,12 +605,15 @@ Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
     stdout,
     stderr,
     error: reg_error,
-  }
+  };
+  emitter.target_state("iflow", if result.success && result.error.is_none() { "success" } else { "error" });
+  result
 }
 
-fn install_windsurf(home: &Path) -> InstallTargetResult {
+fn install_windsurf(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetResult {
   let mut written_files = Vec::new();
 
+  emitter.target_state("windsurf", "running");
   let config_path = home
     .join(".codeium")
     .join("windsurf")
@@ -498,7 +645,10 @@ fn install_windsurf(home: &Path) -> InstallTargetResult {
     .insert("maple".to_string(), json!({ "url": MAPLE_MCP_URL }));
 
   let json_text = serde_json::to_string_pretty(&root).unwrap_or_else(|_| "{\n}\n".to_string());
+  emitter.log(Some("windsurf"), "info", format!("写入 {}\n", pretty_path(&config_path)));
   if let Err(error) = write_text_file(&config_path, &(json_text + "\n")) {
+    emitter.target_state("windsurf", "error");
+    emitter.log(Some("windsurf"), "stderr", format!("{error}\n"));
     return InstallTargetResult {
       id: "windsurf".to_string(),
       success: false,
@@ -512,7 +662,7 @@ fn install_windsurf(home: &Path) -> InstallTargetResult {
   }
   written_files.push(pretty_path(&config_path));
 
-  InstallTargetResult {
+  let result = InstallTargetResult {
     id: "windsurf".to_string(),
     success: true,
     skipped: false,
@@ -521,28 +671,66 @@ fn install_windsurf(home: &Path) -> InstallTargetResult {
     stdout: String::new(),
     stderr: String::new(),
     error: None,
-  }
+  };
+  emitter.target_state("windsurf", "success");
+  result
 }
 
 pub fn install_mcp_and_skills(options: InstallMcpSkillsOptions) -> Result<InstallMcpSkillsReport, String> {
+  install_mcp_and_skills_with_events(options, None)
+}
+
+pub fn install_mcp_and_skills_with_events(
+  options: InstallMcpSkillsOptions,
+  emit: Option<Arc<dyn Fn(InstallTaskEvent) + Send + Sync>>,
+) -> Result<InstallMcpSkillsReport, String> {
   let home = maple_fs::user_home_dir()?;
   let mut targets = Vec::new();
+  let install_id = options
+    .install_id
+    .as_deref()
+    .unwrap_or("")
+    .trim()
+    .to_string();
+  let resolved_install_id = if !install_id.is_empty() {
+    install_id
+  } else {
+    let ts = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .unwrap_or_default()
+      .as_millis();
+    format!("install-{ts}")
+  };
+  let emitter = InstallEventEmitter {
+    install_id: resolved_install_id.clone(),
+    emit,
+  };
 
   if options.codex {
-    targets.push(install_codex(&home));
+    let result = install_codex(&home, &emitter);
+    emitter.target_result(result.clone());
+    targets.push(result);
   }
   if options.claude {
-    targets.push(install_claude(&home));
+    let result = install_claude(&home, &emitter);
+    emitter.target_result(result.clone());
+    targets.push(result);
   }
   if options.iflow {
-    targets.push(install_iflow(&home));
+    let result = install_iflow(&home, &emitter);
+    emitter.target_result(result.clone());
+    targets.push(result);
   }
   if options.windsurf {
-    targets.push(install_windsurf(&home));
+    let result = install_windsurf(&home, &emitter);
+    emitter.target_result(result.clone());
+    targets.push(result);
   }
 
-  Ok(InstallMcpSkillsReport {
+  let report = InstallMcpSkillsReport {
     mcp_url: MAPLE_MCP_URL.to_string(),
     targets,
-  })
+  };
+
+  Ok(report)
 }

@@ -74,10 +74,15 @@ fn probe_worker(
 
 #[tauri::command]
 async fn install_mcp_skills(
+  window: tauri::Window,
   options: Option<installer::InstallMcpSkillsOptions>,
 ) -> Result<installer::InstallMcpSkillsReport, String> {
   let input = options.unwrap_or_default();
-  tauri::async_runtime::spawn_blocking(move || installer::install_mcp_and_skills(input))
+  let install_window = window.clone();
+  let emitter = std::sync::Arc::new(move |event: installer::InstallTaskEvent| {
+    let _ = install_window.emit("maple://install-task-event", event);
+  });
+  tauri::async_runtime::spawn_blocking(move || installer::install_mcp_and_skills_with_events(input, Some(emitter)))
     .await
     .map_err(|_| "安装线程异常退出".to_string())?
 }

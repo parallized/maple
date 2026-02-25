@@ -457,6 +457,8 @@ h3 {
   border: 1px solid var(--color-base-300);
   background: var(--color-base-100);
   box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22);
+  display: flex;
+  flex-direction: column;
 }
 
 .ui-modal-panel--console {
@@ -464,7 +466,15 @@ h3 {
 }
 
 .ui-modal-body {
-  padding: 16px;
+  padding: 24px 8px 24px 32px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.ui-modal-body > * {
+  padding-right: 24px;
 }
 
 .task-table {
@@ -1791,9 +1801,13 @@ h3 {
   box-shadow: 0 24px 56px rgba(0, 0, 0, 0.16);
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 2.5rem;
+  padding: 2.5rem 8px 2.5rem 2.5rem;
   pointer-events: auto;
   animation: slide-in-right 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.detail-drawer > *:not(.detail-sidebar-close) {
+  padding-right: calc(2.5rem - 8px);
 }
 
 .detail-sidebar-close {

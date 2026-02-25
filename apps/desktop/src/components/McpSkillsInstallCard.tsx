@@ -1,28 +1,19 @@
 import { Icon } from "@iconify/react";
-import { useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import type { UiLanguage } from "../lib/constants";
 import { hasTauriRuntime } from "../lib/utils";
+import { INSTALL_TARGETS, type InstallTargetId, formatInstallTargetIcon, formatInstallTargetLabel } from "../lib/install-targets";
+import { InstallTaskWindow, type InstallTargetResult, type InstallTargetState } from "./InstallTaskWindow";
 
 type InstallPlatform = "windows" | "macos" | "linux";
-type InstallTargetId = "codex" | "claude" | "iflow" | "windsurf";
 
 type McpSkillsInstallCardProps = {
   uiLanguage: UiLanguage;
   defaultOpen?: boolean;
   className?: string;
-};
-
-type InstallTargetResult = {
-  id: InstallTargetId;
-  success: boolean;
-  skipped: boolean;
-  cliFound: boolean | null;
-  writtenFiles: string[];
-  stdout: string;
-  stderr: string;
-  error: string | null;
 };
 
 type InstallMcpSkillsReport = {
@@ -71,18 +62,13 @@ function formatPlatformLabel(platform: InstallPlatform): string {
   return "Linux";
 }
 
-function formatTargetLabel(target: InstallTargetId): string {
-  if (target === "codex") return "Codex";
-  if (target === "claude") return "Claude";
-  if (target === "iflow") return "iFlow";
-  return "Windsurf";
-}
+type InstallTaskEvent =
+  | { kind: "log"; installId: string; targetId?: string | null; stream?: string | null; line?: string | null }
+  | { kind: "target_state"; installId: string; targetId?: string | null; state?: string | null }
+  | { kind: "target_result"; installId: string; targetId?: string | null; target?: InstallTargetResult | null };
 
-function formatTargetIcon(target: InstallTargetId): string {
-  if (target === "codex") return "mingcute:code-line";
-  if (target === "claude") return "mingcute:chat-1-line";
-  if (target === "iflow") return "mingcute:flash-line";
-  return "mingcute:wind-line";
+function isInstallTargetId(value: string): value is InstallTargetId {
+  return INSTALL_TARGETS.includes(value as InstallTargetId);
 }
 
 export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, className }: McpSkillsInstallCardProps) {
@@ -92,6 +78,18 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
   const [platform, setPlatform] = useState<InstallPlatform>(() => detectPlatform());
   const [copied, setCopied] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [installWindowOpen, setInstallWindowOpen] = useState(false);
+  const [installWindowTargets, setInstallWindowTargets] = useState<InstallTargetId[]>([]);
+  const [installId, setInstallId] = useState("");
+  const installIdRef = useRef("");
+  const [installLog, setInstallLog] = useState("");
+  const [installTargetStates, setInstallTargetStates] = useState<Record<InstallTargetId, InstallTargetState>>(() => ({
+    codex: "idle",
+    claude: "idle",
+    iflow: "idle",
+    windsurf: "idle"
+  }));
+  const [installTargetResults, setInstallTargetResults] = useState<Partial<Record<InstallTargetId, InstallTargetResult>>>({});
   const [targets, setTargets] = useState<Record<InstallTargetId, boolean>>(() => ({
     codex: true,
     claude: true,
@@ -100,6 +98,55 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
   }));
   const [report, setReport] = useState<InstallMcpSkillsReport | null>(null);
   const [installError, setInstallError] = useState("");
+
+  useEffect(() => {
+    installIdRef.current = installId;
+  }, [installId]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    void listen<InstallTaskEvent>("maple://install-task-event", (event) => {
+      const payload = event.payload;
+      if (!payload) return;
+      if (!payload.installId || payload.installId !== installIdRef.current) return;
+
+      if (payload.kind === "log") {
+        const line = payload.line ?? "";
+        if (!line) return;
+        setInstallLog((prev) => `${prev}${line}`);
+        return;
+      }
+
+      const rawTargetId = (payload.targetId ?? "").trim();
+      if (!rawTargetId || !isInstallTargetId(rawTargetId)) return;
+
+      if (payload.kind === "target_state") {
+        const state = (payload.state ?? "").trim();
+        if (state !== "running" && state !== "success" && state !== "error") return;
+        setInstallTargetStates((prev) => ({ ...prev, [rawTargetId]: state }));
+        return;
+      }
+
+      if (payload.kind === "target_result") {
+        const target = payload.target ?? null;
+        if (!target) return;
+        setInstallTargetResults((prev) => ({ ...prev, [rawTargetId]: target }));
+        return;
+      }
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        cleanup = unlisten;
+      }
+    });
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [isTauri]);
 
   const commandByPlatform = useMemo<Record<InstallPlatform, string>>(
     () => ({
@@ -173,46 +220,71 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                     className={`ui-btn ui-btn--xs gap-1 ${targets[id] ? "ui-btn--outline" : "ui-btn--ghost"}`}
                     onClick={() => setTargets((prev) => ({ ...prev, [id]: !prev[id] }))}
                     aria-pressed={targets[id]}
-                    title={formatTargetLabel(id)}
+                    title={formatInstallTargetLabel(id)}
                   >
-                    <Icon icon={formatTargetIcon(id)} className="text-[14px]" />
-                    {formatTargetLabel(id)}
+                    <Icon icon={formatInstallTargetIcon(id)} className="text-[14px]" />
+                    {formatInstallTargetLabel(id)}
                   </button>
                 ))}
               </div>
 
               <div className="flex items-center justify-between gap-2">
                 <p className="m-0 text-[11px] text-muted font-sans opacity-80">
-                  {t(
-                    "将写入全局配置目录（如 ~/.codex、~/.claude、~/.iflow、~/.codeium）。",
-                    "Writes to global config directories (e.g. ~/.codex, ~/.claude, ~/.iflow, ~/.codeium)."
-                  )}
-                </p>
-                <button
-                  type="button"
-                  className={`ui-btn ui-btn--sm ui-btn--accent gap-1 ${installing ? "opacity-80" : ""}`}
-                  disabled={installing || selectedTargets.length === 0}
-                  onClick={async () => {
-                    setInstallError("");
-                    setReport(null);
-                    setInstalling(true);
-                    try {
-                      const next = await invoke<InstallMcpSkillsReport>("install_mcp_skills", {
-                        options: {
-                          codex: targets.codex,
-                          claude: targets.claude,
-                          iflow: targets.iflow,
-                          windsurf: targets.windsurf
-                        }
-                      });
-                      setReport(next);
-                    } catch (error) {
-                      setInstallError(String(error));
-                    } finally {
-                      setInstalling(false);
-                    }
-                  }}
-                >
+                {t(
+                  "将写入全局配置目录（如 ~/.codex、~/.claude、~/.iflow、~/.codeium）。",
+                  "Writes to global config directories (e.g. ~/.codex, ~/.claude, ~/.iflow, ~/.codeium)."
+                )}
+              </p>
+              <button
+                type="button"
+                className={`ui-btn ui-btn--sm ui-btn--accent gap-1 ${installing ? "opacity-80" : ""}`}
+                disabled={installing || selectedTargets.length === 0}
+                onClick={async () => {
+                  const nextInstallId = `install-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+                  installIdRef.current = nextInstallId;
+                  setInstallId(nextInstallId);
+                  setInstallError("");
+                  setReport(null);
+                  setInstallLog("");
+                  setInstallTargetResults({});
+                  setInstallTargetStates({
+                    codex: "idle",
+                    claude: "idle",
+                    iflow: "idle",
+                    windsurf: "idle"
+                  });
+                  setInstallWindowTargets(selectedTargets);
+                  setInstallWindowOpen(true);
+                  setInstalling(true);
+                  try {
+                    const next = await invoke<InstallMcpSkillsReport>("install_mcp_skills", {
+                      options: {
+                        codex: targets.codex,
+                        claude: targets.claude,
+                        iflow: targets.iflow,
+                        windsurf: targets.windsurf,
+                        installId: nextInstallId
+                      }
+                    });
+                    setReport(next);
+                    setInstallTargetResults(next.targets.reduce((acc, item) => {
+                      acc[item.id] = item;
+                      return acc;
+                    }, {} as Partial<Record<InstallTargetId, InstallTargetResult>>));
+                    setInstallTargetStates((prev) => {
+                      const nextStates = { ...prev };
+                      for (const item of next.targets) {
+                        nextStates[item.id] = item.success && !item.error ? "success" : "error";
+                      }
+                      return nextStates;
+                    });
+                  } catch (error) {
+                    setInstallError(String(error));
+                  } finally {
+                    setInstalling(false);
+                  }
+                }}
+              >
                   <Icon icon={installing ? "mingcute:loading-3-line" : "mingcute:download-2-line"} className="text-[16px]" />
                   {installing ? t("安装中…", "Installing…") : t("一键安装", "Install")}
                 </button>
@@ -237,7 +309,7 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                   const ok = Boolean(target.success) && !target.error;
                   const icon = ok ? "mingcute:check-line" : "mingcute:close-line";
                   const iconColor = ok ? "var(--color-success)" : "var(--color-error)";
-                  const title = formatTargetLabel(target.id);
+                  const title = formatInstallTargetLabel(target.id);
                   const subtitle =
                     target.cliFound === false
                       ? t("未检测到 CLI，已写入配置文件", "CLI not found; files written")
@@ -285,6 +357,20 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                 })}
               </div>
             ) : null}
+
+            <InstallTaskWindow
+              open={installWindowOpen}
+              uiLanguage={uiLanguage}
+              title={t("安装 MCP & Skills", "Install MCP & Skills")}
+              subtitle={installing ? t("正在写入配置并注册 MCP…", "Writing config and registering MCP…") : `MCP: ${mcpUrl}`}
+              installing={installing}
+              targets={installWindowTargets}
+              targetStates={installTargetStates}
+              results={installTargetResults}
+              log={installLog}
+              error={installError}
+              onClose={() => setInstallWindowOpen(false)}
+            />
           </>
         ) : (
           <>
@@ -304,17 +390,17 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
 
               <button
                 type="button"
-                className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${copied ? "opacity-80" : ""}`}
-                onClick={async () => {
-                  const ok = await copyToClipboard(command);
-                  setCopied(ok);
-                  window.setTimeout(() => setCopied(false), 1600);
-                }}
-              >
-                <Icon icon={copied ? "mingcute:check-line" : "mingcute:copy-2-line"} className="text-[14px]" />
-                {copied ? t("已复制", "Copied") : t("复制命令", "Copy")}
-              </button>
-            </div>
+                  className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${copied ? "opacity-80" : ""}`}
+                  onClick={async () => {
+                    const ok = await copyToClipboard(command);
+                    setCopied(ok);
+                    window.setTimeout(() => setCopied(false), 1600);
+                  }}
+                >
+                  <Icon icon={copied ? "mingcute:check-line" : "mingcute:copy-2-line"} className="text-[14px]" />
+                  {copied ? t("已复制", "Copied") : t("复制命令", "Copy")}
+                </button>
+              </div>
 
             <pre className="m-0 text-[11px] leading-relaxed font-mono text-(--color-base-content) bg-[color-mix(in_srgb,var(--color-base-200)_55%,transparent)] border border-[color-mix(in_srgb,var(--color-base-300)_55%,transparent)] rounded-[10px] px-3 py-2.5 whitespace-pre-wrap break-words">
               {command}
