@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react";
 import { useEffect, useMemo, useRef } from "react";
 
+import { copyTextToClipboard } from "../lib/clipboard";
 import type { UiLanguage } from "../lib/constants";
 import type { InstallTargetId } from "../lib/install-targets";
 import { formatInstallTargetIcon, formatInstallTargetLabel } from "../lib/install-targets";
@@ -32,33 +33,29 @@ type InstallTaskWindowProps = {
   onClose: () => void;
 };
 
-async function copyToClipboard(text: string): Promise<boolean> {
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      // fall through
-    }
-  }
-  return false;
-}
-
-function stateIcon(state: InstallTargetState, installing: boolean): { icon: string; color: string; label: string } {
+function stateIcon(
+  state: InstallTargetState,
+  installing: boolean,
+  t: (zh: string, en: string) => string
+): { icon: string; color: string; label: string } {
   if (state === "running") {
     return {
       icon: "mingcute:loading-3-line",
       color: "var(--color-primary)",
-      label: installing ? "进行中" : "处理中"
+      label: installing ? t("进行中", "Running") : t("处理中", "Processing"),
     };
   }
   if (state === "success") {
-    return { icon: "mingcute:check-line", color: "var(--color-success)", label: "已完成" };
+    return { icon: "mingcute:check-line", color: "var(--color-success)", label: t("已完成", "Done") };
   }
   if (state === "error") {
-    return { icon: "mingcute:close-line", color: "var(--color-error)", label: "失败" };
+    return { icon: "mingcute:close-line", color: "var(--color-error)", label: t("失败", "Failed") };
   }
-  return { icon: "mingcute:time-line", color: "color-mix(in srgb, var(--color-secondary) 55%, transparent)", label: "等待" };
+  return {
+    icon: "mingcute:time-line",
+    color: "color-mix(in srgb, var(--color-secondary) 55%, transparent)",
+    label: t("等待", "Waiting"),
+  };
 }
 
 export function InstallTaskWindow({
@@ -124,9 +121,9 @@ export function InstallTaskWindow({
               type="button"
               className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn"
               onClick={onClose}
-              aria-label={t("关闭", "Close")}
+              aria-label={installing ? t("隐藏", "Hide") : t("关闭", "Close")}
             >
-              <Icon icon="mingcute:close-line" />
+              <Icon icon={installing ? "mingcute:minus-line" : "mingcute:close-line"} />
             </button>
           </div>
         </div>
@@ -140,7 +137,7 @@ export function InstallTaskWindow({
             <div className="worker-console-pool-list" role="list">
               {targets.map((id) => {
                 const state = targetStates[id] ?? "idle";
-                const meta = stateIcon(state, installing);
+                const meta = stateIcon(state, installing, t);
                 const result = results[id];
                 const subtitleText =
                   result?.cliFound === false
@@ -184,7 +181,7 @@ export function InstallTaskWindow({
                 type="button"
                 className="ui-btn ui-btn--xs ui-btn--outline gap-1"
                 onClick={async () => {
-                  const ok = await copyToClipboard(log);
+                  const ok = await copyTextToClipboard(log);
                   if (!ok) return;
                 }}
                 disabled={!log.trim()}

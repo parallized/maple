@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
+import { copyTextToClipboard } from "../lib/clipboard";
 import type { UiLanguage } from "../lib/constants";
 import { hasTauriRuntime } from "../lib/utils";
 import { INSTALL_TARGETS, type InstallTargetId, formatInstallTargetIcon, formatInstallTargetLabel } from "../lib/install-targets";
@@ -29,33 +30,6 @@ function detectPlatform(): InstallPlatform {
   return "linux";
 }
 
-async function copyToClipboard(text: string): Promise<boolean> {
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      // fall through
-    }
-  }
-
-  try {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "true");
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    textarea.style.pointerEvents = "none";
-    document.body.appendChild(textarea);
-    textarea.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(textarea);
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
 function formatPlatformLabel(platform: InstallPlatform): string {
   if (platform === "windows") return "Windows";
   if (platform === "macos") return "macOS";
@@ -69,6 +43,30 @@ type InstallTaskEvent =
 
 function isInstallTargetId(value: string): value is InstallTargetId {
   return INSTALL_TARGETS.includes(value as InstallTargetId);
+}
+
+function formatInstallLogLine(payload: Extract<InstallTaskEvent, { kind: "log" }>): string {
+  const raw = payload.line ?? "";
+  if (!raw) return "";
+
+  const targetId = (payload.targetId ?? "").trim();
+  const stream = (payload.stream ?? "").trim();
+  const tags: string[] = [];
+
+  if (targetId) {
+    tags.push(isInstallTargetId(targetId) ? formatInstallTargetLabel(targetId) : targetId);
+  }
+  if (stream) {
+    tags.push(stream);
+  }
+
+  if (tags.length === 0) return raw;
+  const prefix = `[${tags.join("][")}] `;
+  const normalized = raw.replace(/\r\n/g, "\n");
+  return normalized
+    .split("\n")
+    .map((line) => (line.trim().length === 0 ? line : `${prefix}${line}`))
+    .join("\n");
 }
 
 export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, className }: McpSkillsInstallCardProps) {
@@ -113,7 +111,7 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
       if (!payload.installId || payload.installId !== installIdRef.current) return;
 
       if (payload.kind === "log") {
-        const line = payload.line ?? "";
+        const line = formatInstallLogLine(payload);
         if (!line) return;
         setInstallLog((prev) => `${prev}${line}`);
         return;
@@ -160,6 +158,8 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
   const command = commandByPlatform[platform];
   const mcpUrl = report?.mcpUrl ?? "http://localhost:45819/mcp";
   const selectedTargets = Object.entries(targets).filter(([, enabled]) => enabled).map(([id]) => id as InstallTargetId);
+  const canReopenInstallWindow = !installWindowOpen && (installing || installLog.trim().length > 0 || Boolean(installError));
+  const reopenInstallWindowLabel = installing ? t("查看进度", "View progress") : t("查看日志", "View log");
 
   return (
     <details
@@ -200,13 +200,13 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                 </div>
                 <button
                   type="button"
-                  className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${copied ? "opacity-80" : ""}`}
-                  onClick={async () => {
-                    const ok = await copyToClipboard(mcpUrl);
-                    setCopied(ok);
-                    window.setTimeout(() => setCopied(false), 1600);
-                  }}
-                >
+                    className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${copied ? "opacity-80" : ""}`}
+                    onClick={async () => {
+                      const ok = await copyTextToClipboard(mcpUrl);
+                      setCopied(ok);
+                      window.setTimeout(() => setCopied(false), 1600);
+                    }}
+                  >
                   <Icon icon={copied ? "mingcute:check-line" : "mingcute:copy-2-line"} className="text-[14px]" />
                   {copied ? t("已复制", "Copied") : t("复制", "Copy")}
                 </button>
@@ -230,64 +230,76 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
 
               <div className="flex items-center justify-between gap-2">
                 <p className="m-0 text-[11px] text-muted font-sans opacity-80">
-                {t(
-                  "将写入全局配置目录（如 ~/.codex、~/.claude、~/.iflow、~/.codeium）。",
-                  "Writes to global config directories (e.g. ~/.codex, ~/.claude, ~/.iflow, ~/.codeium)."
-                )}
-              </p>
-              <button
-                type="button"
-                className={`ui-btn ui-btn--sm ui-btn--accent gap-1 ${installing ? "opacity-80" : ""}`}
-                disabled={installing || selectedTargets.length === 0}
-                onClick={async () => {
-                  const nextInstallId = `install-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-                  installIdRef.current = nextInstallId;
-                  setInstallId(nextInstallId);
-                  setInstallError("");
-                  setReport(null);
-                  setInstallLog("");
-                  setInstallTargetResults({});
-                  setInstallTargetStates({
-                    codex: "idle",
-                    claude: "idle",
-                    iflow: "idle",
-                    windsurf: "idle"
-                  });
-                  setInstallWindowTargets(selectedTargets);
-                  setInstallWindowOpen(true);
-                  setInstalling(true);
-                  try {
-                    const next = await invoke<InstallMcpSkillsReport>("install_mcp_skills", {
-                      options: {
-                        codex: targets.codex,
-                        claude: targets.claude,
-                        iflow: targets.iflow,
-                        windsurf: targets.windsurf,
-                        installId: nextInstallId
+                  {t(
+                    "将写入全局配置目录（如 ~/.codex、~/.claude、~/.iflow、~/.codeium）。",
+                    "Writes to global config directories (e.g. ~/.codex, ~/.claude, ~/.iflow, ~/.codeium)."
+                  )}
+                </p>
+                <div className="flex items-center gap-2 flex-none">
+                  {canReopenInstallWindow ? (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--sm ui-btn--outline gap-1"
+                      onClick={() => setInstallWindowOpen(true)}
+                    >
+                      <Icon icon="mingcute:terminal-box-line" className="text-[16px]" />
+                      {reopenInstallWindowLabel}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={`ui-btn ui-btn--sm ui-btn--accent gap-1 ${installing ? "opacity-80" : ""}`}
+                    disabled={installing || selectedTargets.length === 0}
+                    onClick={async () => {
+                      const nextInstallId = `install-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+                      installIdRef.current = nextInstallId;
+                      setInstallId(nextInstallId);
+                      setInstallError("");
+                      setReport(null);
+                      setInstallLog("");
+                      setInstallTargetResults({});
+                      setInstallTargetStates({
+                        codex: "idle",
+                        claude: "idle",
+                        iflow: "idle",
+                        windsurf: "idle"
+                      });
+                      setInstallWindowTargets(selectedTargets);
+                      setInstallWindowOpen(true);
+                      setInstalling(true);
+                      try {
+                        const next = await invoke<InstallMcpSkillsReport>("install_mcp_skills", {
+                          options: {
+                            codex: targets.codex,
+                            claude: targets.claude,
+                            iflow: targets.iflow,
+                            windsurf: targets.windsurf,
+                            installId: nextInstallId
+                          }
+                        });
+                        setReport(next);
+                        setInstallTargetResults(next.targets.reduce((acc, item) => {
+                          acc[item.id] = item;
+                          return acc;
+                        }, {} as Partial<Record<InstallTargetId, InstallTargetResult>>));
+                        setInstallTargetStates((prev) => {
+                          const nextStates = { ...prev };
+                          for (const item of next.targets) {
+                            nextStates[item.id] = item.success && !item.error ? "success" : "error";
+                          }
+                          return nextStates;
+                        });
+                      } catch (error) {
+                        setInstallError(String(error));
+                      } finally {
+                        setInstalling(false);
                       }
-                    });
-                    setReport(next);
-                    setInstallTargetResults(next.targets.reduce((acc, item) => {
-                      acc[item.id] = item;
-                      return acc;
-                    }, {} as Partial<Record<InstallTargetId, InstallTargetResult>>));
-                    setInstallTargetStates((prev) => {
-                      const nextStates = { ...prev };
-                      for (const item of next.targets) {
-                        nextStates[item.id] = item.success && !item.error ? "success" : "error";
-                      }
-                      return nextStates;
-                    });
-                  } catch (error) {
-                    setInstallError(String(error));
-                  } finally {
-                    setInstalling(false);
-                  }
-                }}
-              >
-                  <Icon icon={installing ? "mingcute:loading-3-line" : "mingcute:download-2-line"} className="text-[16px]" />
-                  {installing ? t("安装中…", "Installing…") : t("一键安装", "Install")}
-                </button>
+                    }}
+                  >
+                    <Icon icon={installing ? "mingcute:loading-3-line" : "mingcute:download-2-line"} className="text-[16px]" />
+                    {installing ? t("安装中…", "Installing…") : t("一键安装", "Install")}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -390,13 +402,13 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
 
               <button
                 type="button"
-                  className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${copied ? "opacity-80" : ""}`}
-                  onClick={async () => {
-                    const ok = await copyToClipboard(command);
-                    setCopied(ok);
-                    window.setTimeout(() => setCopied(false), 1600);
-                  }}
-                >
+                    className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${copied ? "opacity-80" : ""}`}
+                    onClick={async () => {
+                      const ok = await copyTextToClipboard(command);
+                      setCopied(ok);
+                      window.setTimeout(() => setCopied(false), 1600);
+                    }}
+                  >
                   <Icon icon={copied ? "mingcute:check-line" : "mingcute:copy-2-line"} className="text-[14px]" />
                   {copied ? t("已复制", "Copied") : t("复制命令", "Copy")}
                 </button>
