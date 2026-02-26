@@ -5,11 +5,13 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { copyTextToClipboard } from "../lib/clipboard";
 import type { UiLanguage } from "../lib/constants";
+import type { WorkerCommandResult } from "../domain";
 import { hasTauriRuntime } from "../lib/utils";
 import { INSTALL_TARGETS, type InstallTargetId, formatInstallTargetIcon, formatInstallTargetLabel } from "../lib/install-targets";
 import { InstallTaskWindow, type InstallTargetResult, type InstallTargetState } from "./InstallTaskWindow";
 
 type InstallPlatform = "windows" | "macos" | "linux";
+type TargetRuntime = "native" | "wsl";
 
 type McpSkillsInstallCardProps = {
   uiLanguage: UiLanguage;
@@ -72,14 +74,18 @@ function formatInstallLogLine(payload: Extract<InstallTaskEvent, { kind: "log" }
 export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, className }: McpSkillsInstallCardProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const isTauri = hasTauriRuntime();
+  const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
   const [open, setOpen] = useState(defaultOpen);
   const [platform, setPlatform] = useState<InstallPlatform>(() => detectPlatform());
   const [copied, setCopied] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [probing, setProbing] = useState(false);
+  const [probeError, setProbeError] = useState("");
   const [installWindowOpen, setInstallWindowOpen] = useState(false);
   const [installWindowTargets, setInstallWindowTargets] = useState<InstallTargetId[]>([]);
   const [installId, setInstallId] = useState("");
   const installIdRef = useRef("");
+  const targetsEditedRef = useRef(false);
   const [installLog, setInstallLog] = useState("");
   const [installTargetStates, setInstallTargetStates] = useState<Record<InstallTargetId, InstallTargetState>>(() => ({
     codex: "idle",
@@ -89,11 +95,14 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
   }));
   const [installTargetResults, setInstallTargetResults] = useState<Partial<Record<InstallTargetId, InstallTargetResult>>>({});
   const [targets, setTargets] = useState<Record<InstallTargetId, boolean>>(() => ({
-    codex: true,
-    claude: true,
-    iflow: true,
-    windsurf: true
+    codex: false,
+    claude: false,
+    iflow: false,
+    windsurf: false
   }));
+  const [targetProbeById, setTargetProbeById] = useState<
+    Partial<Record<InstallTargetId, { native: boolean; wsl: boolean; preferredRuntime: TargetRuntime | null }>>
+  >({});
   const [report, setReport] = useState<InstallMcpSkillsReport | null>(null);
   const [installError, setInstallError] = useState("");
 
@@ -146,6 +155,102 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
     };
   }, [isTauri]);
 
+  async function probeCliNative(executable: string): Promise<boolean> {
+    if (!isTauri) return false;
+    const trimmed = executable.trim();
+    if (!trimmed) return false;
+
+    if (isWindows) {
+      try {
+        const result = await invoke<WorkerCommandResult>("probe_worker", { executable: "where", args: [trimmed], cwd: "" });
+        return Boolean(result.success);
+      } catch (error) {
+        console.warn("Native probe failed:", error);
+        return false;
+      }
+    }
+
+    try {
+      const script = `command -v ${trimmed} >/dev/null 2>&1`;
+      const result = await invoke<WorkerCommandResult>("probe_worker", { executable: "sh", args: ["-lc", script], cwd: "" });
+      return Boolean(result.success);
+    } catch (error) {
+      console.warn("Native probe failed:", error);
+      return false;
+    }
+  }
+
+  async function probeCliWsl(executable: string): Promise<boolean> {
+    if (!isTauri) return false;
+    if (!isWindows) return false;
+    const trimmed = executable.trim();
+    if (!trimmed) return false;
+    try {
+      const script = `command -v ${trimmed} >/dev/null 2>&1`;
+      const result = await invoke<WorkerCommandResult>("probe_worker", { executable: "wsl", args: ["-e", "sh", "-lc", script], cwd: "" });
+      return Boolean(result.success);
+    } catch (error) {
+      console.warn("WSL probe failed:", error);
+      return false;
+    }
+  }
+
+  async function probeTargets() {
+    if (!isTauri) return;
+
+    setProbing(true);
+    setProbeError("");
+
+    try {
+      const ids: InstallTargetId[] = ["codex", "claude", "iflow"];
+      const entries = await Promise.all(
+        ids.map(async (id) => {
+          const native = await probeCliNative(id);
+          const wsl = native ? false : await probeCliWsl(id);
+          const preferredRuntime: TargetRuntime | null = native ? "native" : wsl ? "wsl" : null;
+          return [id, { native, wsl, preferredRuntime }] as const;
+        })
+      );
+
+      const nextProbe: Partial<Record<InstallTargetId, { native: boolean; wsl: boolean; preferredRuntime: TargetRuntime | null }>> = {};
+      for (const [id, probe] of entries) {
+        nextProbe[id] = probe;
+      }
+      setTargetProbeById(nextProbe);
+
+      const codexAvailable = Boolean(nextProbe.codex?.preferredRuntime);
+      const claudeAvailable = Boolean(nextProbe.claude?.preferredRuntime);
+      const iflowAvailable = Boolean(nextProbe.iflow?.preferredRuntime);
+
+      setTargets((prev) => {
+        if (targetsEditedRef.current) {
+          return {
+            ...prev,
+            codex: prev.codex && codexAvailable,
+            claude: prev.claude && claudeAvailable,
+            iflow: prev.iflow && iflowAvailable,
+          };
+        }
+
+        return {
+          ...prev,
+          codex: codexAvailable,
+          claude: claudeAvailable,
+          iflow: iflowAvailable,
+        };
+      });
+    } catch (error) {
+      setProbeError(String(error));
+    } finally {
+      setProbing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!isTauri) return;
+    void probeTargets();
+  }, [isTauri]);
+
   const commandByPlatform = useMemo<Record<InstallPlatform, string>>(
     () => ({
       windows: "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\maple-install.ps1",
@@ -158,8 +263,41 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
   const command = commandByPlatform[platform];
   const mcpUrl = report?.mcpUrl ?? "http://localhost:45819/mcp";
   const selectedTargets = Object.entries(targets).filter(([, enabled]) => enabled).map(([id]) => id as InstallTargetId);
+
+  const installTargetHintLabels = selectedTargets.map((id) => {
+    const base = formatInstallTargetLabel(id);
+    const preferred = targetProbeById[id]?.preferredRuntime ?? null;
+    if (preferred === "wsl") return `WSL:${base}`;
+    return base;
+  });
+
+  const installHint =
+    installTargetHintLabels.length > 0
+      ? t(`将安装：${installTargetHintLabels.join("、")}`, `Will install: ${installTargetHintLabels.join(", ")}`)
+      : "";
+
+  const detectedLabels = (["codex", "claude", "iflow"] as const)
+    .map((id) => {
+      const preferred = targetProbeById[id]?.preferredRuntime ?? null;
+      if (!preferred) return null;
+      const label = formatInstallTargetLabel(id);
+      return preferred === "wsl" ? `WSL · ${label}` : label;
+    })
+    .filter(Boolean) as string[];
+
+  const detectedSummary =
+    probing
+      ? t("正在检测环境…", "Detecting environment…")
+      : detectedLabels.length > 0
+        ? t(`已检测到：${detectedLabels.join("、")}`, `Detected: ${detectedLabels.join(", ")}`)
+        : t("未检测到可用的 CLI。安装后可以回到这里一键接入。", "No CLI detected. Install the CLI first, then come back to connect.");
+
   const canReopenInstallWindow = !installWindowOpen && (installing || installLog.trim().length > 0 || Boolean(installError));
   const reopenInstallWindowLabel = installing ? t("查看进度", "View progress") : t("查看日志", "View log");
+  const installButtonLabel =
+    selectedTargets.length > 0
+      ? t(`安装 ${installTargetHintLabels.join(" · ")}`, `Install ${installTargetHintLabels.join(" · ")}`)
+      : t("未检测到可安装目标", "No targets detected");
 
   return (
     <details
@@ -200,39 +338,82 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                 </div>
                 <button
                   type="button"
-                    className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${copied ? "opacity-80" : ""}`}
-                    onClick={async () => {
-                      const ok = await copyTextToClipboard(mcpUrl);
-                      setCopied(ok);
-                      window.setTimeout(() => setCopied(false), 1600);
-                    }}
-                  >
+                  className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${copied ? "opacity-80" : ""}`}
+                  onClick={async () => {
+                    const ok = await copyTextToClipboard(mcpUrl);
+                    setCopied(ok);
+                    window.setTimeout(() => setCopied(false), 1600);
+                  }}
+                >
                   <Icon icon={copied ? "mingcute:check-line" : "mingcute:copy-2-line"} className="text-[14px]" />
                   {copied ? t("已复制", "Copied") : t("复制", "Copy")}
                 </button>
               </div>
 
-              <div className="flex flex-wrap gap-1.5">
-                {(["codex", "claude", "iflow", "windsurf"] as const).map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={`ui-btn ui-btn--xs gap-1 ${targets[id] ? "ui-btn--outline" : "ui-btn--ghost"}`}
-                    onClick={() => setTargets((prev) => ({ ...prev, [id]: !prev[id] }))}
-                    aria-pressed={targets[id]}
-                    title={formatInstallTargetLabel(id)}
-                  >
-                    <Icon icon={formatInstallTargetIcon(id)} className="text-[14px]" />
-                    {formatInstallTargetLabel(id)}
-                  </button>
-                ))}
+              <div className="flex items-center justify-between gap-2">
+                <p className="m-0 text-[11px] text-muted font-sans opacity-80 truncate">
+                  {detectedSummary}
+                </p>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--xs ui-btn--ghost gap-1 flex-none"
+                  onClick={() => void probeTargets()}
+                  disabled={probing || installing}
+                  title={t("重新检测", "Re-detect")}
+                >
+                  <Icon icon={probing ? "mingcute:loading-3-line" : "mingcute:refresh-2-line"} className="text-[14px]" />
+                  <span className="text-[11px]">{t("检测", "Detect")}</span>
+                </button>
               </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {(["codex", "claude", "iflow", "windsurf"] as const).map((id) => {
+                  const preferred = targetProbeById[id]?.preferredRuntime ?? null;
+                  const enabledByProbe = id === "windsurf" ? true : Boolean(preferred);
+                  const displayLabel =
+                    preferred === "wsl"
+                      ? `WSL · ${formatInstallTargetLabel(id)}`
+                      : formatInstallTargetLabel(id);
+                  const disabled = installing || (!enabledByProbe && id !== "windsurf");
+                  const disabledNote = !enabledByProbe && id !== "windsurf" ? t("未检测到 CLI", "CLI not detected") : "";
+
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      disabled={disabled}
+                      className={`ui-btn ui-btn--xs gap-1 ${targets[id] ? "ui-btn--outline" : "ui-btn--ghost"} ${disabled ? "opacity-45 cursor-not-allowed" : ""}`}
+                      onClick={() => {
+                        targetsEditedRef.current = true;
+                        setTargets((prev) => ({ ...prev, [id]: !prev[id] }));
+                      }}
+                      aria-pressed={targets[id]}
+                      title={disabledNote ? `${displayLabel} · ${disabledNote}` : displayLabel}
+                    >
+                      <Icon icon={formatInstallTargetIcon(id)} className="text-[14px]" />
+                      {displayLabel}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {probeError ? (
+                <div className="rounded-[10px] border border-[color-mix(in_srgb,var(--color-error)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-error)_6%,transparent)] px-3 py-2">
+                  <div className="flex items-center gap-2 text-[11px] font-sans text-(--color-base-content) opacity-85">
+                    <Icon icon="mingcute:warning-line" className="text-[14px]" />
+                    <span className="truncate">{t("环境检测失败", "Detection failed")}</span>
+                  </div>
+                  <div className="mt-1 text-[10px] font-mono text-(--color-base-content) opacity-75 whitespace-pre-wrap break-words">
+                    {probeError}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="flex items-center justify-between gap-2">
                 <p className="m-0 text-[11px] text-muted font-sans opacity-80">
                   {t(
-                    "将写入全局配置目录（如 ~/.codex、~/.claude、~/.iflow、~/.codeium）。",
-                    "Writes to global config directories (e.g. ~/.codex, ~/.claude, ~/.iflow, ~/.codeium)."
+                    "将写入全局配置目录（~/.codex、~/.claude、~/.iflow、~/.codeium）。Windows 上如果 CLI 只在 WSL 中检测到，会写入 WSL 的 ~/ 并在 WSL 内注册 MCP。",
+                    "Writes to global config directories (~/.codex, ~/.claude, ~/.iflow, ~/.codeium). On Windows, if a CLI is detected only in WSL, files are written to WSL ~/ and MCP is registered inside WSL."
                   )}
                 </p>
                 <div className="flex items-center gap-2 flex-none">
@@ -297,10 +478,16 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                     }}
                   >
                     <Icon icon={installing ? "mingcute:loading-3-line" : "mingcute:download-2-line"} className="text-[16px]" />
-                    {installing ? t("安装中…", "Installing…") : t("一键安装", "Install")}
+                    {installing ? t("安装中…", "Installing…") : installButtonLabel}
                   </button>
                 </div>
               </div>
+
+              {installHint ? (
+                <p className="m-0 text-[10px] text-muted font-sans opacity-70">
+                  {installHint}
+                </p>
+              ) : null}
             </div>
 
             {installError ? (
@@ -322,12 +509,19 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                   const icon = ok ? "mingcute:check-line" : "mingcute:close-line";
                   const iconColor = ok ? "var(--color-success)" : "var(--color-error)";
                   const title = formatInstallTargetLabel(target.id);
+                  const scopeLabel =
+                    target.runtime === "wsl"
+                      ? "WSL"
+                      : target.runtime === "native"
+                        ? t("本机", "Local")
+                        : "";
                   const subtitle =
-                    target.cliFound === false
-                      ? t("未检测到 CLI，已写入配置文件", "CLI not found; files written")
+                    target.skipped
+                      ? t("未检测到 CLI，已跳过", "CLI not found; skipped")
                       : ok
                         ? t("已完成", "Done")
                         : t("未完成", "Not finished");
+                  const subtitleText = scopeLabel ? `${scopeLabel} · ${subtitle}` : subtitle;
 
                   return (
                     <details
@@ -339,7 +533,7 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                           <Icon icon={icon} className="text-[16px] flex-none" style={{ color: iconColor }} />
                           <div className="min-w-0">
                             <div className="text-[12px] font-sans font-semibold text-(--color-base-content) truncate">{title}</div>
-                            <div className="text-[11px] text-muted font-sans opacity-80 truncate">{subtitle}</div>
+                            <div className="text-[11px] text-muted font-sans opacity-80 truncate">{subtitleText}</div>
                           </div>
                         </div>
                         <Icon icon="mingcute:down-line" className="text-[16px] text-muted opacity-70 flex-none" />
@@ -402,17 +596,17 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
 
               <button
                 type="button"
-                    className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${copied ? "opacity-80" : ""}`}
-                    onClick={async () => {
-                      const ok = await copyTextToClipboard(command);
-                      setCopied(ok);
-                      window.setTimeout(() => setCopied(false), 1600);
-                    }}
-                  >
-                  <Icon icon={copied ? "mingcute:check-line" : "mingcute:copy-2-line"} className="text-[14px]" />
-                  {copied ? t("已复制", "Copied") : t("复制命令", "Copy")}
-                </button>
-              </div>
+                className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${copied ? "opacity-80" : ""}`}
+                onClick={async () => {
+                  const ok = await copyTextToClipboard(command);
+                  setCopied(ok);
+                  window.setTimeout(() => setCopied(false), 1600);
+                }}
+              >
+                <Icon icon={copied ? "mingcute:check-line" : "mingcute:copy-2-line"} className="text-[14px]" />
+                {copied ? t("已复制", "Copied") : t("复制命令", "Copy")}
+              </button>
+            </div>
 
             <pre className="m-0 text-[11px] leading-relaxed font-mono text-(--color-base-content) bg-[color-mix(in_srgb,var(--color-base-200)_55%,transparent)] border border-[color-mix(in_srgb,var(--color-base-300)_55%,transparent)] rounded-[10px] px-3 py-2.5 whitespace-pre-wrap break-words">
               {command}

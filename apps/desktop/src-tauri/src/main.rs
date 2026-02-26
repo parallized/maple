@@ -511,6 +511,14 @@ fn open_in_editor(path: String, app: Option<String>) -> Result<bool, String> {
 fn build_cli_command(executable: &str, args: &[String]) -> Command {
   #[cfg(target_os = "windows")]
   {
+    let trimmed = executable.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower == "wsl" || lower.ends_with("\\wsl.exe") || lower.ends_with("/wsl.exe") {
+      let mut command = Command::new(trimmed);
+      command.args(args);
+      return command;
+    }
+
     let mut command = Command::new("cmd");
     command.arg("/D").arg("/C").arg(executable);
     command.args(args);

@@ -38,6 +38,7 @@ import {
   createTaskReport,
   normalizeProjects
 } from "./lib/utils";
+import { windowsPathToWslMntPath } from "./lib/wsl-path";
 import { collectTokenUsage } from "./lib/token-usage";
 import { generatePrStyleTags } from "./lib/pr-tags";
 import { buildVersionTag, mergeTaskTags } from "./lib/task-tags";
@@ -72,8 +73,11 @@ function areTagListsEqual(a: string[], b: string[]): boolean {
   return true;
 }
 
+type WorkerRuntime = "unknown" | "native" | "wsl" | "missing";
+
 export function App() {
   const isTauri = hasTauriRuntime();
+  const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
 
   // ── Core State ──
   const [view, setView] = useState<ViewKey>("overview");
@@ -83,6 +87,11 @@ export function App() {
   const [aiLanguage, setAiLanguage] = useState<AiLanguage>(() => loadAiLanguage());
   const [externalEditorApp, setExternalEditorApp] = useState<ExternalEditorApp>(() => loadExternalEditorApp());
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => cloneDefaultWorkerConfigs());
+  const [workerRuntimeByKind, setWorkerRuntimeByKind] = useState<Record<WorkerKind, WorkerRuntime>>(() => ({
+    claude: "unknown",
+    codex: "unknown",
+    iflow: "unknown",
+  }));
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
   const [mcpStartupError, setMcpStartupError] = useState("");
   const [boardProjectId, setBoardProjectId] = useState<string | null>(null);
@@ -397,6 +406,22 @@ export function App() {
     void refreshMcpStatus();
     if (!isTauri) return;
     void getCurrentWindow().isMaximized().then(setWindowMaximized).catch(() => undefined);
+
+    let disposed = false;
+    let resizeUnlisten: (() => void) | undefined;
+    void getCurrentWindow().onResized(async () => {
+      if (disposed) return;
+      try {
+        const maximized = await getCurrentWindow().isMaximized();
+        setWindowMaximized(maximized);
+      } catch { /* ignore */ }
+    }).then((unlisten) => {
+      if (disposed) { unlisten(); } else { resizeUnlisten = unlisten; }
+    });
+    return () => {
+      disposed = true;
+      resizeUnlisten?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -581,10 +606,14 @@ export function App() {
   ): { args: string[]; prompt: string } {
     const kind = parseWorkerId(workerId).kind;
     const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
+    const directoryForPrompt =
+      kind && workerRuntimeByKind[kind] === "wsl"
+        ? windowsPathToWslMntPath(project.directory) ?? project.directory
+        : project.directory;
     const prompt = [
       createWorkerExecutionPrompt({
         projectName: project.name,
-        directory: project.directory,
+        directory: directoryForPrompt,
         taskTitle: task.title
       }),
       effectiveAiLanguage === "en"
@@ -592,6 +621,83 @@ export function App() {
         : "你必须仅使用中文输出 `mcp_decision.tags`，禁止英文或中英混写标签，不允许任何兜底。"
     ].join("\n\n");
     return { args, prompt };
+  }
+
+  function isLikelyWindowsCliNotFound(result: WorkerCommandResult): boolean {
+    if (result.code === 9009) return true;
+    const message = `${result.stderr}\n${result.stdout}`.toLowerCase();
+    return message.includes("not recognized")
+      || message.includes("系统找不到")
+      || message.includes("找不到")
+      || message.includes("no such file")
+      || message.includes("not found");
+  }
+
+  function isLikelyWslCliNotFound(result: WorkerCommandResult): boolean {
+    if (result.code === 9009) return true; // wsl.exe not found
+    if (result.code === 127) return true;
+    const message = `${result.stderr}\n${result.stdout}`.toLowerCase();
+    return message.includes("command not found") || message.includes("not found");
+  }
+
+  async function resolveWorkerRuntime(kind: WorkerKind, config: WorkerConfig): Promise<WorkerRuntime> {
+    const existing = workerRuntimeByKind[kind];
+    if (existing !== "unknown") return existing;
+    if (!isTauri) return "missing";
+
+    const probeArgs = (() => {
+      const parsed = parseArgs(config.probeArgs);
+      return parsed.length > 0 ? parsed : ["--version"];
+    })();
+
+    try {
+      const nativeProbe = await invoke<WorkerCommandResult>("probe_worker", { executable: config.executable, args: probeArgs, cwd: "" });
+      if (nativeProbe.success || !isLikelyWindowsCliNotFound(nativeProbe) || !isWindows) {
+        setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "native" }));
+        return "native";
+      }
+    } catch (error) {
+      if (!isWindows) {
+        setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "native" }));
+        return "native";
+      }
+      const message = String(error).toLowerCase();
+      const notFound =
+        message.includes("not found")
+        || message.includes("系统找不到")
+        || message.includes("找不到")
+        || message.includes("os error 2");
+      if (!notFound) {
+        setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "native" }));
+        return "native";
+      }
+    }
+
+    if (!isWindows) {
+      setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "missing" }));
+      return "missing";
+    }
+
+    try {
+      const wslProbeArgs = ["-e", config.executable, ...probeArgs];
+      const wslProbe = await invoke<WorkerCommandResult>("probe_worker", { executable: "wsl", args: wslProbeArgs, cwd: "" });
+      if (wslProbe.success || !isLikelyWslCliNotFound(wslProbe)) {
+        setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "wsl" }));
+        return "wsl";
+      }
+    } catch (error) {
+      console.warn("WSL probe failed:", error);
+    }
+
+    setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "missing" }));
+    return "missing";
+  }
+
+  function buildWslRunArgs(cliExecutable: string, cliArgs: string[], windowsCwd: string): string[] | null {
+    const wslCwd = windowsPathToWslMntPath(windowsCwd);
+    if (!wslCwd) return null;
+    const command = `cd ${quoteShellArg(wslCwd)} && exec ${[cliExecutable, ...cliArgs].map(quoteShellArg).join(" ")}`;
+    return ["-e", "sh", "-lc", command];
   }
 
   // ── Task CRUD ──
@@ -754,6 +860,7 @@ export function App() {
 
   // ── Worker Execution ──
   async function runWorkerCommand(
+    runtime: WorkerRuntime,
     workerId: string,
     config: WorkerConfig,
     task: Task,
@@ -762,6 +869,21 @@ export function App() {
   ): Promise<WorkerCommandResult> {
     if (!isTauri) return { success: false, code: null, stdout: "", stderr: "当前环境无法执行 Worker CLI。" };
     const runPayload = payload ?? buildWorkerRunPayload(workerId, config, task, project);
+    if (runtime === "wsl") {
+      if (!isWindows) return { success: false, code: null, stdout: "", stderr: "当前平台不支持 WSL 执行。" };
+      const wslArgs = buildWslRunArgs(config.executable, runPayload.args, project.directory);
+      if (!wslArgs) {
+        return { success: false, code: null, stdout: "", stderr: `无法将项目目录转换为 WSL 路径：${project.directory}` };
+      }
+      return invoke<WorkerCommandResult>("run_worker", {
+        workerId,
+        taskTitle: task.title,
+        executable: "wsl",
+        args: wslArgs,
+        prompt: runPayload.prompt,
+        cwd: project.directory
+      });
+    }
     return invoke<WorkerCommandResult>("run_worker", {
       workerId,
       taskTitle: task.title,
@@ -784,15 +906,35 @@ export function App() {
     try {
       const result = await invoke<WorkerCommandResult>("probe_worker", { executable: config.executable, args, cwd: "" });
       const workerId = buildWorkerId(kind);
-      appendWorkerLog(workerId, `\n$ ${config.executable} ${args.join(" ")}\n`);
+      appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, args)}\n`);
       if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
       if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
       if (result.success) {
+        setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "native" }));
         appendWorkerLog(workerId, "[提示] 验证通过：仅表示 CLI 可执行，未校验 MCP 挂载是否成功。\n");
+        setNotice(`${label} CLI 可用（native，未校验 MCP 挂载）`);
+        return;
       }
-      setNotice(result.success ? `${label} CLI 可用（未校验 MCP 挂载）` : `${label} 不可用（exit: ${result.code ?? "?"}）`);
+
+      if (isWindows && isLikelyWindowsCliNotFound(result)) {
+        const wslProbeArgs = ["-e", config.executable, ...args];
+        const wslResult = await invoke<WorkerCommandResult>("probe_worker", { executable: "wsl", args: wslProbeArgs, cwd: "" });
+        appendWorkerLog(workerId, `\n$ ${formatCommandForLog("wsl", wslProbeArgs)}\n`);
+        if (wslResult.stdout.trim()) appendWorkerLog(workerId, `${wslResult.stdout.trim()}\n`);
+        if (wslResult.stderr.trim()) appendWorkerLog(workerId, `${wslResult.stderr.trim()}\n`);
+        if (wslResult.success) {
+          setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "wsl" }));
+          appendWorkerLog(workerId, "[提示] 验证通过：仅表示 CLI 可执行（WSL），未校验 MCP 挂载是否成功。\n");
+          setNotice(`${label} CLI 可用（WSL，未校验 MCP 挂载）`);
+          return;
+        }
+      }
+
+      setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "missing" }));
+      setNotice(`${label} 不可用（exit: ${result.code ?? "?"}）`);
     } catch (error) {
       appendWorkerLog(buildWorkerId(kind), `\n${label} 探测失败：${String(error)}\n`);
+      setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "missing" }));
       setNotice(`${label} 探测失败。`);
     }
   }
@@ -809,6 +951,17 @@ export function App() {
     // Gate on MCP
     const mcpOk = await ensureMcpRunning();
     if (!mcpOk) { setNotice("MCP Server 未运行，无法执行任务。请先在设置中启动 MCP。"); return; }
+
+    const runtime = await resolveWorkerRuntime(kind, config);
+    if (runtime === "missing") {
+      setNotice(`${label} CLI 未检测到，请先安装或配置（Windows/WSL）。`);
+      return;
+    }
+    if (runtime === "wsl" && !windowsPathToWslMntPath(project.directory)) {
+      setNotice(`项目目录无法转换为 WSL 路径，请使用 Windows 盘符目录：${project.directory}`);
+      return;
+    }
+
     const pendingTasks = project.tasks.filter((t) => t.status === "待办" || t.status === "待返工");
     if (pendingTasks.length === 0) { setNotice("目前没有更多待办"); return; }
     setProjects((prev) => {
@@ -843,9 +996,12 @@ export function App() {
         }
         try {
           const payload = buildWorkerRunPayload(workerId, config, task, project);
-          appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, payload.args)}\n`);
+          const wslArgs = runtime === "wsl" ? buildWslRunArgs(config.executable, payload.args, project.directory) : null;
+          const commandExecutable = runtime === "wsl" ? "wsl" : config.executable;
+          const commandArgs = runtime === "wsl" ? (wslArgs ?? ["-e", config.executable, ...payload.args]) : payload.args;
+          appendWorkerLog(workerId, `\n$ ${formatCommandForLog(commandExecutable, commandArgs)}\n`);
           const beforeLen = workerLogsRef.current[workerId]?.length ?? 0;
-          const result = await runWorkerCommand(workerId, config, task, project, payload);
+          const result = await runWorkerCommand(runtime, workerId, config, task, project, payload);
           const afterLen = workerLogsRef.current[workerId]?.length ?? 0;
           if (!isTauri || afterLen === beforeLen) {
             if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
@@ -969,7 +1125,7 @@ export function App() {
 
   // ── Render ──
   return (
-    <div className="app-root">
+    <div className={`app-root${windowMaximized ? " maximized" : ""}`}>
       <div className="shell">
         <TopNav
           isTauri={isTauri}

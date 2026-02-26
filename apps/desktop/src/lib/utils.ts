@@ -2,6 +2,7 @@ import type { Project, Task, TaskReport, TaskStatus } from "../domain";
 import type { ThemeMode } from "./constants";
 import { WORKER_KINDS } from "./constants";
 import { normalizeTagCatalog } from "./tag-catalog";
+import { isWslMntPath, wslMntPathToWindowsPath } from "./wsl-path";
 
 export function bumpPatch(version: string): string {
   const [major, minor, patch] = version.split(".").map((part) => Number(part));
@@ -51,7 +52,13 @@ export function normalizeProjects(projects: Project[]): Project[] {
   const now = new Date().toISOString();
   return projects
     .map((project) => {
-      const directory = (project.directory ?? "").trim();
+      let directory = (project.directory ?? "").trim();
+      if (typeof navigator !== "undefined") {
+        const ua = navigator.userAgent.toLowerCase();
+        if (ua.includes("windows") && isWslMntPath(directory)) {
+          directory = wslMntPathToWindowsPath(directory) ?? directory;
+        }
+      }
       let workerKind = project.workerKind;
       if (!workerKind && (project as Record<string, unknown>).workerId) {
         const legacyId = (project as Record<string, unknown>)

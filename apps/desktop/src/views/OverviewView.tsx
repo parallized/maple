@@ -1,6 +1,7 @@
 import { Icon } from "@iconify/react";
 import { CountUp, CurvedLoop, FadeContent, FallingText, SpotlightCard, SplitText } from "../components/ReactBits";
 import { McpSkillsInstallCard } from "../components/McpSkillsInstallCard";
+import { CliInstallCard } from "../components/CliInstallCard";
 import { WorkerLogo } from "../components/WorkerLogo";
 import AnimatedList from "../components/reactbits/AnimatedList";
 import type { McpServerStatus, WorkerKind } from "../domain";
@@ -48,9 +49,10 @@ interface StatusData {
 }
 
 export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailability, workerPool, onRefreshMcp }: OverviewViewProps) {
+  const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const pieData: StatusData[] = [
     { label: "已完成", value: metrics.statusDistribution["已完成"] || 0, color: "var(--color-success)" },
-    { label: "进行中", value: metrics.statusDistribution["进行中"] || 0, color: "var(--color-primary)" },
+    { label: "进行中", value: metrics.statusDistribution["进行中"] || 0, color: "var(--color-info)" },
     {
       label: "待处理",
       value:
@@ -252,23 +254,34 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
             <div className="flex-1 overflow-y-auto pr-1 lg:pr-2 flex flex-col gap-2 min-h-0 pb-2">
               <McpSkillsInstallCard uiLanguage={uiLanguage} />
               {workerAvailability.map((worker) => (
-                <div key={worker.kind} className="group p-3 lg:p-4 rounded-[12px] lg:rounded-[14px] bg-(--color-base-100) hover:bg-(--color-base-200) transition-all duration-300 flex flex-col gap-1.5 lg:gap-2 flex-none">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="relative w-6 h-6 rounded-lg bg-(--color-base-200) flex items-center justify-center flex-none">
-                        <WorkerLogo kind={worker.kind} size={16} />
-                        <span
-                          className={`absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-(--color-base-100) ${worker.available ? "bg-green-500" : "bg-(--color-base-300)"}`}
-                          aria-label={worker.available ? "可用" : "未配置"}
-                        />
+                <div key={worker.kind} className="group rounded-[12px] lg:rounded-[14px] bg-(--color-base-100) hover:bg-(--color-base-200) transition-all duration-300 flex flex-col flex-none overflow-hidden">
+                  <div className="p-3 lg:p-4 flex flex-col gap-1.5 lg:gap-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-6 h-6 rounded-lg bg-(--color-base-200) flex items-center justify-center flex-none">
+                          <WorkerLogo kind={worker.kind} size={16} />
+                          <span
+                            className={`absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-(--color-base-100) ${worker.available ? "bg-green-500" : "bg-(--color-base-300)"}`}
+                            aria-label={worker.available ? "可用" : "未配置"}
+                          />
+                        </div>
+                        <span className="font-medium text-[13px] lg:text-[14px] font-sans text-(--color-base-content) truncate">{worker.label}</span>
                       </div>
-                      <span className="font-medium text-[13px] lg:text-[14px] font-sans text-(--color-base-content) truncate">{worker.label}</span>
+                    </div>
+                    <div className="text-[10px] lg:text-[11px] text-muted font-mono opacity-60 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 pl-3 lg:pl-4">
+                      <Icon icon="mingcute:terminal-box-line" className="text-[12px] lg:text-[13px] flex-none" />
+                      <span className="truncate">{worker.executable || t("未检测到", "Not detected")}</span>
                     </div>
                   </div>
-                  <div className="text-[10px] lg:text-[11px] text-muted font-mono opacity-60 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 pl-3 lg:pl-4">
-                    <Icon icon="mingcute:terminal-box-line" className="text-[12px] lg:text-[13px] flex-none" />
-                    <span className="truncate">{worker.executable || "未配置"}</span>
-                  </div>
+                  {!worker.available ? (
+                    <div className="px-3 lg:px-4 pb-3 lg:pb-4">
+                      <CliInstallCard
+                        workerKind={worker.kind}
+                        workerLabel={worker.label}
+                        uiLanguage={uiLanguage}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>

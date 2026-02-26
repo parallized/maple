@@ -1,3 +1,5 @@
+use base64::engine::general_purpose;
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::fs;
@@ -128,6 +130,8 @@ impl InstallEventEmitter {
 #[serde(rename_all = "camelCase")]
 pub struct InstallTargetResult {
   pub id: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub runtime: Option<String>,
   pub success: bool,
   pub skipped: bool,
   pub cli_found: Option<bool>,
@@ -155,6 +159,14 @@ struct CliOutput {
 fn build_cli_command(executable: &str, args: &[String]) -> Command {
   #[cfg(target_os = "windows")]
   {
+    let trimmed = executable.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower == "wsl" || lower.ends_with("\\wsl.exe") || lower.ends_with("/wsl.exe") {
+      let mut command = Command::new(trimmed);
+      command.args(args);
+      return command;
+    }
+
     let mut command = Command::new("cmd");
     command.arg("/D").arg("/C").arg(executable);
     command.args(args);
@@ -195,6 +207,151 @@ fn is_windows_cli_not_found(output: &CliOutput) -> bool {
     let _ = output;
     false
   }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InstallRuntime {
+  Native,
+  Wsl,
+}
+
+impl InstallRuntime {
+  fn as_str(self) -> &'static str {
+    match self {
+      InstallRuntime::Native => "native",
+      InstallRuntime::Wsl => "wsl",
+    }
+  }
+}
+
+fn sh_quote(value: &str) -> String {
+  if value.is_empty() {
+    return "''".to_string();
+  }
+  format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn detect_cli_native(executable: &str) -> bool {
+  let trimmed = executable.trim();
+  if trimmed.is_empty() {
+    return false;
+  }
+
+  #[cfg(target_os = "windows")]
+  {
+    if trimmed.contains('\\') || trimmed.contains('/') {
+      if Path::new(trimmed).exists() {
+        return true;
+      }
+    }
+    let args = vec![trimmed.to_string()];
+    return run_cli("where", &args, None).map(|out| out.success).unwrap_or(false);
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  {
+    let script = format!("command -v {} >/dev/null 2>&1", sh_quote(trimmed));
+    let args = vec!["-lc".to_string(), script];
+    return run_cli("sh", &args, None).map(|out| out.success).unwrap_or(false);
+  }
+}
+
+fn detect_cli_wsl(executable: &str) -> bool {
+  #[cfg(target_os = "windows")]
+  {
+    let trimmed = executable.trim();
+    if trimmed.is_empty() {
+      return false;
+    }
+    let script = format!("command -v {} >/dev/null 2>&1", sh_quote(trimmed));
+    let args = vec!["-e".to_string(), "sh".to_string(), "-lc".to_string(), script];
+    return run_cli("wsl", &args, None).map(|out| out.success).unwrap_or(false);
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  {
+    let _ = executable;
+    false
+  }
+}
+
+fn resolve_install_runtime(executable: &str) -> Option<InstallRuntime> {
+  if detect_cli_native(executable) {
+    Some(InstallRuntime::Native)
+  } else if detect_cli_wsl(executable) {
+    Some(InstallRuntime::Wsl)
+  } else {
+    None
+  }
+}
+
+fn normalize_home_relative_path(path: &str) -> Result<String, String> {
+  let trimmed = path.trim();
+  if trimmed.is_empty() {
+    return Err("无效路径（为空）".to_string());
+  }
+  Ok(trimmed
+    .trim_start_matches("~/")
+    .trim_start_matches('/')
+    .to_string())
+}
+
+fn wsl_write_home_file(
+  emitter: &InstallEventEmitter,
+  target_id: &str,
+  path: &str,
+  content: &str,
+) -> Result<String, String> {
+  let rel = normalize_home_relative_path(path)?;
+  let parent = rel
+    .rsplit_once('/')
+    .map(|(dir, _)| dir)
+    .unwrap_or("");
+
+  let encoded = general_purpose::STANDARD.encode(content.as_bytes());
+  let script = if parent.is_empty() {
+    format!(
+      "set -e; printf '%s' '{}' | base64 -d > \"$HOME/{}\"",
+      encoded, rel
+    )
+  } else {
+    format!(
+      "set -e; mkdir -p \"$HOME/{}\"; printf '%s' '{}' | base64 -d > \"$HOME/{}\"",
+      parent, encoded, rel
+    )
+  };
+
+  let args = vec![
+    "-e".to_string(),
+    "sh".to_string(),
+    "-lc".to_string(),
+    script,
+  ];
+
+  let pretty = format!("wsl:~/{rel}");
+  emitter.log(Some(target_id), "info", format!("写入 {pretty}\n"));
+  match run_cli("wsl", &args, None) {
+    Ok(out) => {
+      if out.success {
+        Ok(pretty)
+      } else {
+        Err(format!(
+          "WSL 写入失败（exit: {}）\n{}\n{}",
+          out.code.map(|c| c.to_string()).unwrap_or_else(|| "?".into()),
+          out.stdout,
+          out.stderr
+        ))
+      }
+    }
+    Err(error) => Err(error),
+  }
+}
+
+fn wsl_home_file_exists(path: &str) -> Result<bool, String> {
+  let rel = normalize_home_relative_path(path)?;
+  let script = format!("test -f \"$HOME/{rel}\"");
+  let args = vec!["-e".to_string(), "sh".to_string(), "-lc".to_string(), script];
+  Ok(run_cli("wsl", &args, None).map(|out| out.success).unwrap_or(false))
 }
 
 fn ensure_parent_dir(path: &Path) -> Result<(), String> {
@@ -362,30 +519,118 @@ fn install_codex(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetRes
   let mut stderr = String::new();
 
   emitter.target_state("codex", "running");
-  let skill_path = home.join(".codex").join("skills").join("maple").join("SKILL.md");
-  emitter.log(Some("codex"), "info", format!("写入 {}\n", pretty_path(&skill_path)));
-  if let Err(error) = write_text_file(&skill_path, codex_skill_md()) {
-    emitter.target_state("codex", "error");
-    emitter.log(Some("codex"), "stderr", format!("{error}\n"));
-    return InstallTargetResult {
+  let runtime = match resolve_install_runtime("codex") {
+    Some(runtime) => runtime,
+    None => {
+      emitter.log(Some("codex"), "stderr", "未检测到 CLI：codex，已跳过。\n".to_string());
+      emitter.target_state("codex", "success");
+      return InstallTargetResult {
+        id: "codex".to_string(),
+        runtime: None,
+        success: true,
+        skipped: true,
+        cli_found: Some(false),
+        written_files,
+        stdout,
+        stderr,
+        error: None,
+      };
+    }
+  };
+
+  if runtime == InstallRuntime::Native {
+    let skill_path = home.join(".codex").join("skills").join("maple").join("SKILL.md");
+    emitter.log(Some("codex"), "info", format!("写入 {}\n", pretty_path(&skill_path)));
+    if let Err(error) = write_text_file(&skill_path, codex_skill_md()) {
+      emitter.target_state("codex", "error");
+      emitter.log(Some("codex"), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: "codex".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+    written_files.push(pretty_path(&skill_path));
+
+    let (cli_found, registered, out, err, reg_error) = run_registration_commands(
+      emitter,
+      "codex",
+      "codex",
+      vec!["mcp".into(), "remove".into(), "maple".into()],
+      vec![
+        "mcp".into(),
+        "add".into(),
+        "maple".into(),
+        "--url".into(),
+        MAPLE_MCP_URL.into(),
+      ],
+    );
+    stdout = out;
+    stderr = err;
+
+    if cli_found == Some(false) {
+      emitter.target_state("codex", "error");
+      return InstallTargetResult {
+        id: "codex".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found,
+        written_files,
+        stdout,
+        stderr,
+        error: Some("未检测到 CLI：codex".to_string()),
+      };
+    }
+
+    let result = InstallTargetResult {
       id: "codex".to_string(),
-      success: false,
+      runtime: Some(runtime.as_str().to_string()),
+      success: registered && reg_error.is_none(),
       skipped: false,
-      cli_found: None,
+      cli_found,
       written_files,
       stdout,
       stderr,
-      error: Some(error),
+      error: reg_error,
     };
+    emitter.target_state("codex", if result.success && result.error.is_none() { "success" } else { "error" });
+    return result;
   }
-  written_files.push(pretty_path(&skill_path));
+
+  match wsl_write_home_file(emitter, "codex", ".codex/skills/maple/SKILL.md", codex_skill_md()) {
+    Ok(path) => written_files.push(path),
+    Err(error) => {
+      emitter.target_state("codex", "error");
+      emitter.log(Some("codex"), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: "codex".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+  }
 
   let (cli_found, registered, out, err, reg_error) = run_registration_commands(
     emitter,
     "codex",
-    "codex",
-    vec!["mcp".into(), "remove".into(), "maple".into()],
+    "wsl",
+    vec!["-e".into(), "codex".into(), "mcp".into(), "remove".into(), "maple".into()],
     vec![
+      "-e".into(),
+      "codex".into(),
       "mcp".into(),
       "add".into(),
       "maple".into(),
@@ -397,21 +642,23 @@ fn install_codex(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetRes
   stderr = err;
 
   if cli_found == Some(false) {
-    emitter.target_state("codex", "success");
+    emitter.target_state("codex", "error");
     return InstallTargetResult {
       id: "codex".to_string(),
-      success: true,
+      runtime: Some(runtime.as_str().to_string()),
+      success: false,
       skipped: false,
       cli_found,
       written_files,
       stdout,
       stderr,
-      error: None,
+      error: Some("未检测到 CLI：wsl/codex".to_string()),
     };
   }
 
   let result = InstallTargetResult {
     id: "codex".to_string(),
+    runtime: Some(runtime.as_str().to_string()),
     success: registered && reg_error.is_none(),
     skipped: false,
     cli_found,
@@ -430,30 +677,129 @@ fn install_claude(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetRe
   let mut stderr = String::new();
 
   emitter.target_state("claude", "running");
-  let command_path = home.join(".claude").join("commands").join("maple.md");
-  emitter.log(Some("claude"), "info", format!("写入 {}\n", pretty_path(&command_path)));
-  if let Err(error) = write_text_file(&command_path, claude_command_md()) {
-    emitter.target_state("claude", "error");
-    emitter.log(Some("claude"), "stderr", format!("{error}\n"));
-    return InstallTargetResult {
+  let runtime = match resolve_install_runtime("claude") {
+    Some(runtime) => runtime,
+    None => {
+      emitter.log(Some("claude"), "stderr", "未检测到 CLI：claude，已跳过。\n".to_string());
+      emitter.target_state("claude", "success");
+      return InstallTargetResult {
+        id: "claude".to_string(),
+        runtime: None,
+        success: true,
+        skipped: true,
+        cli_found: Some(false),
+        written_files,
+        stdout,
+        stderr,
+        error: None,
+      };
+    }
+  };
+
+  if runtime == InstallRuntime::Native {
+    let command_path = home.join(".claude").join("commands").join("maple.md");
+    emitter.log(Some("claude"), "info", format!("写入 {}\n", pretty_path(&command_path)));
+    if let Err(error) = write_text_file(&command_path, claude_command_md()) {
+      emitter.target_state("claude", "error");
+      emitter.log(Some("claude"), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: "claude".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+    written_files.push(pretty_path(&command_path));
+
+    let (cli_found, registered, out, err, reg_error) = run_registration_commands(
+      emitter,
+      "claude",
+      "claude",
+      vec!["mcp".into(), "remove".into(), "maple".into(), "--scope".into(), "user".into()],
+      vec![
+        "mcp".into(),
+        "add".into(),
+        "--scope".into(),
+        "user".into(),
+        "--transport".into(),
+        "http".into(),
+        "maple".into(),
+        MAPLE_MCP_URL.into(),
+      ],
+    );
+    stdout = out;
+    stderr = err;
+
+    if cli_found == Some(false) {
+      emitter.target_state("claude", "error");
+      return InstallTargetResult {
+        id: "claude".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found,
+        written_files,
+        stdout,
+        stderr,
+        error: Some("未检测到 CLI：claude".to_string()),
+      };
+    }
+
+    let result = InstallTargetResult {
       id: "claude".to_string(),
-      success: false,
+      runtime: Some(runtime.as_str().to_string()),
+      success: registered && reg_error.is_none(),
       skipped: false,
-      cli_found: None,
+      cli_found,
       written_files,
       stdout,
       stderr,
-      error: Some(error),
+      error: reg_error,
     };
+    emitter.target_state("claude", if result.success && result.error.is_none() { "success" } else { "error" });
+    return result;
   }
-  written_files.push(pretty_path(&command_path));
+
+  match wsl_write_home_file(emitter, "claude", ".claude/commands/maple.md", claude_command_md()) {
+    Ok(path) => written_files.push(path),
+    Err(error) => {
+      emitter.target_state("claude", "error");
+      emitter.log(Some("claude"), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: "claude".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+  }
 
   let (cli_found, registered, out, err, reg_error) = run_registration_commands(
     emitter,
     "claude",
-    "claude",
-    vec!["mcp".into(), "remove".into(), "maple".into(), "--scope".into(), "user".into()],
+    "wsl",
     vec![
+      "-e".into(),
+      "claude".into(),
+      "mcp".into(),
+      "remove".into(),
+      "maple".into(),
+      "--scope".into(),
+      "user".into(),
+    ],
+    vec![
+      "-e".into(),
+      "claude".into(),
       "mcp".into(),
       "add".into(),
       "--scope".into(),
@@ -468,21 +814,23 @@ fn install_claude(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetRe
   stderr = err;
 
   if cli_found == Some(false) {
-    emitter.target_state("claude", "success");
+    emitter.target_state("claude", "error");
     return InstallTargetResult {
       id: "claude".to_string(),
-      success: true,
+      runtime: Some(runtime.as_str().to_string()),
+      success: false,
       skipped: false,
       cli_found,
       written_files,
       stdout,
       stderr,
-      error: None,
+      error: Some("未检测到 CLI：wsl/claude".to_string()),
     };
   }
 
   let result = InstallTargetResult {
     id: "claude".to_string(),
+    runtime: Some(runtime.as_str().to_string()),
     success: registered && reg_error.is_none(),
     skipped: false,
     cli_found,
@@ -497,48 +845,30 @@ fn install_claude(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetRe
 
 fn install_iflow(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetResult {
   let mut written_files = Vec::new();
+  let mut stdout = String::new();
+  let mut stderr = String::new();
 
   emitter.target_state("iflow", "running");
-  let workflow_path = home.join(".iflow").join("workflows").join("maple.md");
-  emitter.log(Some("iflow"), "info", format!("写入 {}\n", pretty_path(&workflow_path)));
-  if let Err(error) = write_text_file(&workflow_path, iflow_workflow_md()) {
-    emitter.target_state("iflow", "error");
-    emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
-    return InstallTargetResult {
-      id: "iflow".to_string(),
-      success: false,
-      skipped: false,
-      cli_found: None,
-      written_files,
-      stdout: String::new(),
-      stderr: String::new(),
-      error: Some(error),
-    };
-  }
-  written_files.push(pretty_path(&workflow_path));
+  let runtime = match resolve_install_runtime("iflow") {
+    Some(runtime) => runtime,
+    None => {
+      emitter.log(Some("iflow"), "stderr", "未检测到 CLI：iflow，已跳过。\n".to_string());
+      emitter.target_state("iflow", "success");
+      return InstallTargetResult {
+        id: "iflow".to_string(),
+        runtime: None,
+        success: true,
+        skipped: true,
+        cli_found: Some(false),
+        written_files,
+        stdout,
+        stderr,
+        error: None,
+      };
+    }
+  };
 
-  let skill_path = home.join(".iflow").join("skills").join("maple").join("SKILL.md");
-  emitter.log(Some("iflow"), "info", format!("写入 {}\n", pretty_path(&skill_path)));
-  if let Err(error) = write_text_file(&skill_path, iflow_skill_md()) {
-    emitter.target_state("iflow", "error");
-    emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
-    return InstallTargetResult {
-      id: "iflow".to_string(),
-      success: false,
-      skipped: false,
-      cli_found: None,
-      written_files,
-      stdout: String::new(),
-      stderr: String::new(),
-      error: Some(error),
-    };
-  }
-  written_files.push(pretty_path(&skill_path));
-
-  // Only create the skills index if it doesn't exist to avoid overwriting user content.
-  let skill_index_path = home.join(".iflow").join("skills").join("SKILL.md");
-  if !skill_index_path.exists() {
-    let index_md = r#"---
+  let index_md = r#"---
 name: maple
 description: "Project-local maple skill index."
 ---
@@ -547,30 +877,186 @@ description: "Project-local maple skill index."
 
 Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
 "#;
-    emitter.log(Some("iflow"), "info", format!("写入 {}\n", pretty_path(&skill_index_path)));
-    if let Err(error) = write_text_file(&skill_index_path, index_md) {
+
+  if runtime == InstallRuntime::Native {
+    let workflow_path = home.join(".iflow").join("workflows").join("maple.md");
+    emitter.log(Some("iflow"), "info", format!("写入 {}\n", pretty_path(&workflow_path)));
+    if let Err(error) = write_text_file(&workflow_path, iflow_workflow_md()) {
       emitter.target_state("iflow", "error");
       emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
       return InstallTargetResult {
         id: "iflow".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
         success: false,
         skipped: false,
-        cli_found: None,
+        cli_found: Some(true),
         written_files,
-        stdout: String::new(),
-        stderr: String::new(),
+        stdout,
+        stderr,
         error: Some(error),
       };
     }
-    written_files.push(pretty_path(&skill_index_path));
+    written_files.push(pretty_path(&workflow_path));
+
+    let skill_path = home.join(".iflow").join("skills").join("maple").join("SKILL.md");
+    emitter.log(Some("iflow"), "info", format!("写入 {}\n", pretty_path(&skill_path)));
+    if let Err(error) = write_text_file(&skill_path, iflow_skill_md()) {
+      emitter.target_state("iflow", "error");
+      emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: "iflow".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+    written_files.push(pretty_path(&skill_path));
+
+    // Only create the skills index if it doesn't exist to avoid overwriting user content.
+    let skill_index_path = home.join(".iflow").join("skills").join("SKILL.md");
+    if !skill_index_path.exists() {
+      emitter.log(Some("iflow"), "info", format!("写入 {}\n", pretty_path(&skill_index_path)));
+      if let Err(error) = write_text_file(&skill_index_path, index_md) {
+        emitter.target_state("iflow", "error");
+        emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
+        return InstallTargetResult {
+          id: "iflow".to_string(),
+          runtime: Some(runtime.as_str().to_string()),
+          success: false,
+          skipped: false,
+          cli_found: Some(true),
+          written_files,
+          stdout,
+          stderr,
+          error: Some(error),
+        };
+      }
+      written_files.push(pretty_path(&skill_index_path));
+    }
+
+    let (cli_found, registered, out, err, reg_error) = run_registration_commands(
+      emitter,
+      "iflow",
+      "iflow",
+      vec!["mcp".into(), "remove".into(), "maple".into()],
+      vec![
+        "mcp".into(),
+        "add".into(),
+        "--scope".into(),
+        "user".into(),
+        "--transport".into(),
+        "http".into(),
+        "maple".into(),
+        MAPLE_MCP_URL.into(),
+      ],
+    );
+    stdout = out;
+    stderr = err;
+
+    if cli_found == Some(false) {
+      emitter.target_state("iflow", "error");
+      return InstallTargetResult {
+        id: "iflow".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found,
+        written_files,
+        stdout,
+        stderr,
+        error: Some("未检测到 CLI：iflow".to_string()),
+      };
+    }
+
+    let result = InstallTargetResult {
+      id: "iflow".to_string(),
+      runtime: Some(runtime.as_str().to_string()),
+      success: registered && reg_error.is_none(),
+      skipped: false,
+      cli_found,
+      written_files,
+      stdout,
+      stderr,
+      error: reg_error,
+    };
+    emitter.target_state("iflow", if result.success && result.error.is_none() { "success" } else { "error" });
+    return result;
   }
 
-  let (cli_found, registered, stdout, stderr, reg_error) = run_registration_commands(
+  match wsl_write_home_file(emitter, "iflow", ".iflow/workflows/maple.md", iflow_workflow_md()) {
+    Ok(path) => written_files.push(path),
+    Err(error) => {
+      emitter.target_state("iflow", "error");
+      emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: "iflow".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+  }
+
+  match wsl_write_home_file(emitter, "iflow", ".iflow/skills/maple/SKILL.md", iflow_skill_md()) {
+    Ok(path) => written_files.push(path),
+    Err(error) => {
+      emitter.target_state("iflow", "error");
+      emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: "iflow".to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+  }
+
+  // Only create the skills index if it doesn't exist to avoid overwriting user content.
+  let index_exists = wsl_home_file_exists(".iflow/skills/SKILL.md").unwrap_or(true);
+  if !index_exists {
+    match wsl_write_home_file(emitter, "iflow", ".iflow/skills/SKILL.md", index_md) {
+      Ok(path) => written_files.push(path),
+      Err(error) => {
+        emitter.target_state("iflow", "error");
+        emitter.log(Some("iflow"), "stderr", format!("{error}\n"));
+        return InstallTargetResult {
+          id: "iflow".to_string(),
+          runtime: Some(runtime.as_str().to_string()),
+          success: false,
+          skipped: false,
+          cli_found: Some(true),
+          written_files,
+          stdout,
+          stderr,
+          error: Some(error),
+        };
+      }
+    }
+  }
+
+  let (cli_found, registered, out, err, reg_error) = run_registration_commands(
     emitter,
     "iflow",
-    "iflow",
-    vec!["mcp".into(), "remove".into(), "maple".into()],
+    "wsl",
+    vec!["-e".into(), "iflow".into(), "mcp".into(), "remove".into(), "maple".into()],
     vec![
+      "-e".into(),
+      "iflow".into(),
       "mcp".into(),
       "add".into(),
       "--scope".into(),
@@ -581,23 +1067,27 @@ Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
       MAPLE_MCP_URL.into(),
     ],
   );
+  stdout = out;
+  stderr = err;
 
   if cli_found == Some(false) {
-    emitter.target_state("iflow", "success");
+    emitter.target_state("iflow", "error");
     return InstallTargetResult {
       id: "iflow".to_string(),
-      success: true,
+      runtime: Some(runtime.as_str().to_string()),
+      success: false,
       skipped: false,
       cli_found,
       written_files,
       stdout,
       stderr,
-      error: None,
+      error: Some("未检测到 CLI：wsl/iflow".to_string()),
     };
   }
 
   let result = InstallTargetResult {
     id: "iflow".to_string(),
+    runtime: Some(runtime.as_str().to_string()),
     success: registered && reg_error.is_none(),
     skipped: false,
     cli_found,
@@ -651,6 +1141,7 @@ fn install_windsurf(home: &Path, emitter: &InstallEventEmitter) -> InstallTarget
     emitter.log(Some("windsurf"), "stderr", format!("{error}\n"));
     return InstallTargetResult {
       id: "windsurf".to_string(),
+      runtime: Some("native".to_string()),
       success: false,
       skipped: false,
       cli_found: None,
@@ -664,6 +1155,7 @@ fn install_windsurf(home: &Path, emitter: &InstallEventEmitter) -> InstallTarget
 
   let result = InstallTargetResult {
     id: "windsurf".to_string(),
+    runtime: Some("native".to_string()),
     success: true,
     skipped: false,
     cli_found: None,

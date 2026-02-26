@@ -130,14 +130,123 @@ fn write_state(projects: &[Project]) {
     }
 }
 
-fn find_project_index(projects: &[Project], name: &str) -> Option<usize> {
-    let kw = name.trim().to_lowercase();
-    if kw.is_empty() {
+fn strip_trailing_separators(value: &str) -> &str {
+    value.trim_end_matches(|ch| ch == '/' || ch == '\\')
+}
+
+fn is_path_like(value: &str) -> bool {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed.starts_with('/') {
+        return true;
+    }
+    if trimmed.contains('\\') || trimmed.contains('/') {
+        return true;
+    }
+    let bytes = trimmed.as_bytes();
+    bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic()
+}
+
+fn normalize_windows_drive_path_for_compare(value: &str) -> Option<String> {
+    let trimmed = strip_trailing_separators(value.trim());
+    let bytes = trimmed.as_bytes();
+    if bytes.len() < 2 {
         return None;
     }
+    let drive = bytes[0] as char;
+    if !drive.is_ascii_alphabetic() || bytes[1] != b':' {
+        return None;
+    }
+    let mut rest = trimmed[2..].replace('/', "\\");
+    while rest.contains("\\\\") {
+        rest = rest.replace("\\\\", "\\");
+    }
+    rest = rest.trim_end_matches('\\').to_string();
+    if rest.is_empty() {
+        return Some(format!("{}:", drive.to_ascii_lowercase()).to_lowercase());
+    }
+    if !rest.starts_with('\\') {
+        rest = format!("\\{rest}");
+    }
+    Some(format!("{}:{}", drive.to_ascii_lowercase(), rest).to_lowercase())
+}
+
+fn normalize_wsl_mnt_path_for_compare(value: &str) -> Option<String> {
+    let trimmed = strip_trailing_separators(value.trim());
+    let normalized = trimmed.replace('\\', "/");
+    let rest = normalized
+        .strip_prefix("/mnt/")
+        .or_else(|| normalized.strip_prefix("mnt/"))?;
+
+    let mut parts = rest.splitn(2, '/');
+    let drive = parts.next()?.trim();
+    if drive.len() != 1 {
+        return None;
+    }
+    let drive_char = drive.chars().next()?.to_ascii_lowercase();
+    if !drive_char.is_ascii_alphabetic() {
+        return None;
+    }
+    let tail = parts
+        .next()
+        .unwrap_or("")
+        .trim()
+        .trim_start_matches('/')
+        .trim();
+    if tail.is_empty() {
+        return Some(format!("{drive_char}:").to_lowercase());
+    }
+
+    let mut windows_tail = tail.replace('/', "\\");
+    while windows_tail.contains("\\\\") {
+        windows_tail = windows_tail.replace("\\\\", "\\");
+    }
+    windows_tail = windows_tail.trim_end_matches('\\').to_string();
+    Some(format!("{drive_char}:\\{windows_tail}").to_lowercase())
+}
+
+fn normalize_directory_key(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(normalized) = normalize_wsl_mnt_path_for_compare(trimmed) {
+        return Some(normalized);
+    }
+    if let Some(normalized) = normalize_windows_drive_path_for_compare(trimmed) {
+        return Some(normalized);
+    }
+
+    let normalized = strip_trailing_separators(trimmed).replace('\\', "/");
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized.to_lowercase())
+    }
+}
+
+fn find_project_index(projects: &[Project], name: &str) -> Option<usize> {
+    let raw_kw = name.trim();
+    let kw = raw_kw.to_lowercase();
+    if raw_kw.is_empty() {
+        return None;
+    }
+
     projects
         .iter()
-        .position(|p| p.name.to_lowercase() == kw)
+        .position(|p| p.name.trim().to_lowercase() == kw)
+        .or_else(|| {
+            if !is_path_like(raw_kw) {
+                return None;
+            }
+            let query_key = normalize_directory_key(raw_kw)?;
+            projects.iter().position(|p| {
+                let dir_key = normalize_directory_key(&p.directory);
+                dir_key.as_deref() == Some(query_key.as_str())
+            })
+        })
         .or_else(|| projects.iter().position(|p| p.name.to_lowercase().contains(&kw)))
 }
 

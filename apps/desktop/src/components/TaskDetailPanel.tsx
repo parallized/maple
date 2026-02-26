@@ -86,9 +86,10 @@ function parseTaskReport(content: string): ParsedTaskReport | null {
 function reportBadgeClass(status: string): string {
   if (status.includes("已完成")) return "ui-badge--success";
   if (status.includes("已阻塞")) return "ui-badge--error";
-  if (status.includes("进行中")) return "ui-badge--solid";
+  if (status.includes("进行中")) return "ui-badge--info";
   if (status.includes("需要更多信息")) return "ui-badge--warning";
-  if (status.includes("草稿") || status.includes("队列中") || status.includes("待办") || status.includes("待返工")) return "ui-badge--neutral";
+  if (status.includes("草稿")) return "ui-badge--draft";
+  if (status.includes("队列中") || status.includes("待办") || status.includes("待返工")) return "ui-badge--neutral";
   return "";
 }
 

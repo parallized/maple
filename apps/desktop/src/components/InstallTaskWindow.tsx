@@ -10,6 +10,7 @@ export type InstallTargetState = "idle" | "running" | "success" | "error";
 
 export type InstallTargetResult = {
   id: InstallTargetId;
+  runtime?: "native" | "wsl" | null;
   success: boolean;
   skipped: boolean;
   cliFound: boolean | null;
@@ -139,16 +140,27 @@ export function InstallTaskWindow({
                 const state = targetStates[id] ?? "idle";
                 const meta = stateIcon(state, installing, t);
                 const result = results[id];
-                const subtitleText =
-                  result?.cliFound === false
-                    ? t("未检测到 CLI，已写入配置", "CLI not found; config written")
-                    : state === "running"
-                      ? t("正在处理…", "Running…")
-                      : state === "success"
-                        ? t("已完成", "Done")
-                        : state === "error"
-                          ? (result?.error ?? t("出现错误", "Error"))
-                          : t("等待开始", "Waiting");
+                const scopeLabel =
+                  result?.runtime === "wsl"
+                    ? "WSL"
+                    : result?.runtime === "native"
+                      ? t("本机", "Local")
+                      : "";
+
+                const baseSubtitleText =
+                  result?.skipped
+                    ? t("未检测到 CLI，已跳过", "CLI not found; skipped")
+                    : result?.cliFound === false
+                      ? t("未检测到 CLI", "CLI not found")
+                      : state === "running"
+                        ? t("正在处理…", "Running…")
+                        : state === "success"
+                          ? t("已完成", "Done")
+                          : state === "error"
+                            ? (result?.error ?? t("出现错误", "Error"))
+                            : t("等待开始", "Waiting");
+
+                const subtitleText = scopeLabel ? `${scopeLabel} · ${baseSubtitleText}` : baseSubtitleText;
 
                 return (
                   <div

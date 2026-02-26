@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__maple__query_project_todos",
+      "mcp__maple__query_recent_context",
+      "mcp__maple__query_task_details",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "mcp__maple__submit_task_report",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "mcp__maple__finish_worker"
+    ]
+  }
+}

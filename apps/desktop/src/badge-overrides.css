@@ -1,0 +1,25 @@
+:root {
+  --color-info: #2f6fb3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --color-info: #6cb6ff;
+  }
+}
+
+:root.dark {
+  --color-info: #6cb6ff;
+}
+
+.ui-badge.ui-badge--info {
+  background: color-mix(in srgb, var(--color-info) 18%, transparent);
+  color: var(--color-info);
+  font-weight: 500;
+}
+
+.ui-badge.ui-badge--draft {
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  color: color-mix(in srgb, var(--color-warning) 85%, var(--color-base-content));
+  font-weight: 600;
+}

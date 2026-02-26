@@ -7,6 +7,8 @@ import "@fontsource/maple-mono/700.css";
 import "font-smiley-sans/style.css";
 import { App } from "./App";
 import "./styles.css";
+import "./radius-overrides.css";
+import "./badge-overrides.css";
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

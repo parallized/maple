@@ -16,9 +16,38 @@ function isLowerHex(value: string): boolean {
 
 export function parseMapleAssetUrl(url: string): MapleAssetDescriptor | null {
   const trimmed = url.trim();
-  if (!trimmed.startsWith(MAPLE_ASSET_URL_PREFIX)) return null;
-  const fileName = trimmed.slice(MAPLE_ASSET_URL_PREFIX.length).trim();
+  if (!trimmed) return null;
+
+  let fileName = "";
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "maple:") return null;
+
+    // maple://asset/<filename>
+    if (parsed.host === "asset") {
+      fileName = parsed.pathname.replace(/^\/+/, "");
+    }
+
+    // maple://localhost/asset/<filename> (Windows WebView2 may normalise this way)
+    if (parsed.host === "localhost" && parsed.pathname.startsWith("/asset/")) {
+      fileName = parsed.pathname.slice("/asset/".length);
+    }
+
+    // maple:///asset/<filename> (triple-slash, empty authority)
+    if (!parsed.host && parsed.pathname.startsWith("/asset/")) {
+      fileName = parsed.pathname.slice("/asset/".length);
+    }
+  } catch {
+    if (trimmed.startsWith(MAPLE_ASSET_URL_PREFIX)) {
+      fileName = trimmed.slice(MAPLE_ASSET_URL_PREFIX.length).trim();
+    } else {
+      return null;
+    }
+  }
+
+  fileName = fileName.trim().replace(/\/+$/, "");
   if (!/^[a-f0-9]{64}\.[a-z0-9]{1,8}$/.test(fileName)) return null;
+
   const [hash, ext] = fileName.split(".", 2);
   if (!hash || !ext) return null;
   return { fileName, hash, ext };
@@ -125,6 +154,16 @@ export async function saveImageAsset(file: File): Promise<string> {
 
 const resolvedSrcCache = new Map<string, string>();
 
+function mimeFromExt(ext: string): string {
+  const normalized = ext.trim().toLowerCase();
+  if (normalized === "png") return "image/png";
+  if (normalized === "jpg" || normalized === "jpeg") return "image/jpeg";
+  if (normalized === "webp") return "image/webp";
+  if (normalized === "gif") return "image/gif";
+  if (normalized === "svg") return "image/svg+xml";
+  return "application/octet-stream";
+}
+
 export async function resolveImageSrc(assetUrl: string): Promise<string | null> {
   const descriptor = parseMapleAssetUrl(assetUrl);
   if (!descriptor) return null;
@@ -133,17 +172,26 @@ export async function resolveImageSrc(assetUrl: string): Promise<string | null> 
   if (cached) return cached;
 
   if (hasTauriRuntime()) {
-    // Prefer file URL conversion so WebView can load reliably (img/video/etc).
+    // Strategy 1: Read as base64 data URI (works on all platforms, avoids protocol / asset-scope issues).
+    try {
+      const base64 = await invoke<string>("read_asset_file_base64", { fileName: descriptor.fileName });
+      const mime = mimeFromExt(descriptor.ext);
+      const src = `data:${mime};base64,${base64}`;
+      resolvedSrcCache.set(descriptor.fileName, src);
+      return src;
+    } catch { /* continue to next strategy */ }
+
+    // Strategy 2: convertFileSrc (more efficient if available).
     try {
       const filePath = await invoke<string>("get_asset_file_path", { fileName: descriptor.fileName });
       const src = convertFileSrc(filePath);
       resolvedSrcCache.set(descriptor.fileName, src);
       return src;
-    } catch {
-      // Fallback to `maple://asset/...` scheme protocol (older builds / dev setups).
-      resolvedSrcCache.set(descriptor.fileName, assetUrl);
-      return assetUrl;
-    }
+    } catch { /* continue to next strategy */ }
+
+    // Strategy 3: Fall back to maple:// custom protocol.
+    resolvedSrcCache.set(descriptor.fileName, assetUrl);
+    return assetUrl;
   }
 
   const record = await getAssetFromDb(descriptor.fileName);

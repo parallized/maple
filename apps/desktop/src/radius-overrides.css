@@ -1,0 +1,40 @@
+:root {
+  --radius-window: 12px;
+  --radius-surface: 12px;
+  --radius-card: 10px;
+}
+
+html,
+body {
+  border-radius: var(--radius-window);
+}
+
+html:has(.app-root.maximized),
+html:has(.app-root.maximized) body {
+  border-radius: 0;
+}
+
+.app-root {
+  border-radius: var(--radius-window);
+}
+
+.app-root.maximized {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.app-root.maximized .shell {
+  border-radius: 0;
+}
+
+.ui-card,
+.ui-alert {
+  border-radius: var(--radius-card);
+}
+
+.ui-modal-panel,
+.detail-drawer,
+.toast,
+.board-layout {
+  border-radius: var(--radius-surface);
+}
