@@ -1,9 +1,9 @@
 import { Icon } from "@iconify/react";
-import { useState } from "react";
 import { FadeContent } from "../components/ReactBits";
-import { McpSkillsInstallCard } from "../components/McpSkillsInstallCard";
+import { WorkerConfigCard, type WorkerProbe } from "../components/WorkerConfigCard";
 import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage } from "../lib/constants";
-import type { DetailMode, McpServerStatus } from "../domain";
+import type { DetailMode, McpServerStatus, WorkerKind } from "../domain";
+import type { InstallTargetId } from "../lib/install-targets";
 
 type SettingsViewProps = {
   mcpStatus: McpServerStatus;
@@ -13,12 +13,20 @@ type SettingsViewProps = {
   uiLanguage: UiLanguage;
   aiLanguage: AiLanguage;
   externalEditorApp: ExternalEditorApp;
+  workerAvailability: Array<{
+    kind: WorkerKind;
+    label: string;
+    executable: string;
+    available: boolean;
+  }>;
+  installProbes: Partial<Record<InstallTargetId, WorkerProbe>>;
   onRestartMcpServer: () => void;
   onThemeChange: (mode: ThemeMode) => void;
   onUiLanguageChange: (language: UiLanguage) => void;
   onAiLanguageChange: (language: AiLanguage) => void;
   onExternalEditorAppChange: (app: ExternalEditorApp) => void;
   onDetailModeChange: (mode: DetailMode) => void;
+  onRefreshProbes: () => void;
 };
 
 export function SettingsView({
@@ -29,15 +37,20 @@ export function SettingsView({
   uiLanguage,
   aiLanguage,
   externalEditorApp,
+  workerAvailability,
+  installProbes,
   onRestartMcpServer,
   onThemeChange,
   onUiLanguageChange,
   onAiLanguageChange,
   onExternalEditorAppChange,
-  onDetailModeChange
+  onDetailModeChange,
+  onRefreshProbes
 }: SettingsViewProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
-  const [workerProbeToken, setWorkerProbeToken] = useState(0);
+
+  const installedWorkers = workerAvailability.filter((w) => w.available);
+  const uninstalledWorkers = workerAvailability.filter((w) => !w.available);
 
   return (
     <FadeContent duration={300}>
@@ -206,7 +219,7 @@ export function SettingsView({
             <button
               type="button"
               className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
-              onClick={() => setWorkerProbeToken((prev) => prev + 1)}
+              onClick={onRefreshProbes}
               aria-label={t("刷新检测", "Refresh detection")}
               title={t("刷新检测", "Refresh detection")}
             >
@@ -214,9 +227,58 @@ export function SettingsView({
             </button>
           </div>
 
-          <div className="mt-3">
-            <McpSkillsInstallCard uiLanguage={uiLanguage} defaultOpen probeToken={workerProbeToken} showDetectButton={false} />
+          {/* Installed workers */}
+          <div className="mt-3 flex flex-col gap-3">
+            {installedWorkers.map((worker) => {
+              const nativeProbe = installProbes[worker.kind as InstallTargetId];
+              const wslProbe = installProbes[`wsl:${worker.kind}` as InstallTargetId];
+              return (
+                <WorkerConfigCard
+                  key={worker.kind}
+                  kind={worker.kind}
+                  label={worker.label}
+                  executable={worker.executable}
+                  available={worker.available}
+                  nativeProbe={nativeProbe}
+                  wslProbe={wslProbe}
+                  uiLanguage={uiLanguage}
+                  variant="settings"
+                />
+              );
+            })}
           </div>
+
+          {/* Divider + Uninstalled workers */}
+          {uninstalledWorkers.length > 0 ? (
+            <>
+              <div className="flex items-center gap-3 mt-4 mb-3">
+                <div className="flex-1 h-px bg-[color-mix(in_srgb,var(--color-base-content)_8%,transparent)]" />
+                <span className="text-[11px] text-muted font-sans opacity-60">
+                  {t("未安装", "Not Installed")}
+                </span>
+                <div className="flex-1 h-px bg-[color-mix(in_srgb,var(--color-base-content)_8%,transparent)]" />
+              </div>
+              <div className="flex flex-col gap-3">
+                {uninstalledWorkers.map((worker) => {
+                  const nativeProbe = installProbes[worker.kind as InstallTargetId];
+                  const wslProbe = installProbes[`wsl:${worker.kind}` as InstallTargetId];
+                  return (
+                    <WorkerConfigCard
+                      key={worker.kind}
+                      kind={worker.kind}
+                      label={worker.label}
+                      executable={worker.executable}
+                      available={worker.available}
+                      nativeProbe={nativeProbe}
+                      wslProbe={wslProbe}
+                      uiLanguage={uiLanguage}
+                      variant="settings"
+                    />
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
 
           <p className="text-xs text-muted mt-3 m-0">
             {t(

@@ -65,6 +65,8 @@ import type {
   WorkerKind,
   WorkerLogEvent,
 } from "./domain";
+import type { WorkerProbe } from "./components/WorkerConfigCard";
+import type { InstallTargetId } from "./lib/install-targets";
 
 function areTagListsEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
@@ -93,6 +95,8 @@ export function App() {
     codex: "unknown",
     iflow: "unknown",
   }));
+  const [installProbes, setInstallProbes] = useState<Partial<Record<InstallTargetId, WorkerProbe>>>({});
+  const [installProbeToken, setInstallProbeToken] = useState(0);
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
   const [mcpStartupError, setMcpStartupError] = useState("");
   const [boardProjectId, setBoardProjectId] = useState<string | null>(null);
@@ -218,6 +222,25 @@ export function App() {
       }),
     [workerConfigs]
   );
+
+  // ── Install target probing ──
+  async function probeInstallTargets() {
+    if (!isTauri) return;
+    try {
+      const probes = await invoke<WorkerProbe[]>("probe_install_targets");
+      const byId: Partial<Record<InstallTargetId, WorkerProbe>> = {};
+      for (const probe of probes) {
+        byId[probe.id] = probe;
+      }
+      setInstallProbes(byId);
+    } catch {
+      // silently ignore
+    }
+  }
+
+  useEffect(() => {
+    void probeInstallTargets();
+  }, [isTauri, installProbeToken]);
 
   type WorkerPoolMode = "task";
   type WorkerPoolEntry = { workerId: string; workerLabel: string; projectName: string; mode: WorkerPoolMode; kind: WorkerKind | null };
@@ -1124,6 +1147,7 @@ export function App() {
                     metrics={metrics}
                     mcpStatus={mcpStatus}
                     workerAvailability={workerAvailability}
+                    installProbes={installProbes}
                     workerPool={workerPool}
                     onRefreshMcp={() => void refreshMcpStatus()}
                   />
@@ -1179,12 +1203,15 @@ export function App() {
                     uiLanguage={uiLanguage}
                     aiLanguage={aiLanguage}
                     externalEditorApp={externalEditorApp}
+                    workerAvailability={workerAvailability}
+                    installProbes={installProbes}
                     onRestartMcpServer={() => void restartMcpServer()}
                     onThemeChange={setThemeState}
                     onUiLanguageChange={setUiLanguage}
                     onAiLanguageChange={setAiLanguage}
                     onExternalEditorAppChange={setExternalEditorApp}
                     onDetailModeChange={setDetailMode}
+                    onRefreshProbes={() => setInstallProbeToken((n) => n + 1)}
                   />
                 </motion.div>
               ) : null}
