@@ -280,12 +280,14 @@ fn detect_cli_wsl(executable: &str) -> bool {
       return false;
     }
     // Use "command -v" and verify the result isn't a Windows binary accessible via /mnt/ or .exe
-    // WSL by default shares Windows PATH, so we must exclude those results
+    // WSL by default shares Windows PATH, so we must exclude those results.
+    // Use "bash -lic" instead of "sh -lc" so that ~/.bashrc is sourced — nvm and
+    // other version managers are typically configured there, not in ~/.profile.
     let script = format!(
       "p=$(command -v {} 2>/dev/null) && [ -n \"$p\" ] && case \"$p\" in /mnt/*) false;; *.exe) false;; *) true;; esac",
       sh_quote(trimmed)
     );
-    let args = vec!["-e".to_string(), "sh".to_string(), "-lc".to_string(), script];
+    let args = vec!["-e".to_string(), "bash".to_string(), "-lic".to_string(), script];
     return run_cli("wsl", &args, None).map(|out| out.success).unwrap_or(false);
   }
 

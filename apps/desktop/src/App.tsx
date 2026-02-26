@@ -623,6 +623,13 @@ export function App() {
     return parts.map(quoteShellArg).join(" ");
   }
 
+  // Prompt flag markers — the prompt arg is inserted right after this flag.
+  const PROMPT_FLAG_BY_KIND: Record<WorkerKind, string> = {
+    claude: "--print",
+    codex: "e",
+    iflow: "-p",
+  };
+
   function buildWorkerRunPayload(
     workerId: string,
     config: WorkerConfig,
@@ -635,7 +642,7 @@ export function App() {
       kind && workerRuntimeByKind[kind] === "wsl"
         ? windowsPathToWslMntPath(project.directory) ?? project.directory
         : project.directory;
-    const prompt = [
+    const promptText = [
       createWorkerExecutionPrompt({
         projectName: project.name,
         directory: directoryForPrompt,
@@ -645,7 +652,21 @@ export function App() {
         ? "You must output `mcp_decision.tags` in English only. No Chinese tags and no mixed-language fallback."
         : "你必须仅使用中文输出 `mcp_decision.tags`，禁止英文或中英混写标签，不允许任何兜底。"
     ].join("\n\n");
-    return { args, prompt };
+
+    // Insert prompt into CLI args after the prompt flag (e.g. --print, e, -p).
+    // If the flag isn't found, fall back to stdin piping (backward compat).
+    if (kind) {
+      const flag = PROMPT_FLAG_BY_KIND[kind];
+      if (flag) {
+        const flagIndex = args.indexOf(flag);
+        if (flagIndex >= 0) {
+          args.splice(flagIndex + 1, 0, promptText);
+          return { args, prompt: "" };
+        }
+      }
+    }
+
+    return { args, prompt: promptText };
   }
 
   function isLikelyWindowsCliNotFound(result: WorkerCommandResult): boolean {
@@ -704,7 +725,9 @@ export function App() {
     }
 
     try {
-      const wslProbeArgs = ["-e", config.executable, ...probeArgs];
+      // Use "bash -lic" to source ~/.bashrc so that nvm-managed binaries are on PATH.
+      const probeCommand = [config.executable, ...probeArgs].map(quoteShellArg).join(" ");
+      const wslProbeArgs = ["-e", "bash", "-lic", probeCommand];
       const wslProbe = await invoke<WorkerCommandResult>("probe_worker", { executable: "wsl", args: wslProbeArgs, cwd: "" });
       if (wslProbe.success || !isLikelyWslCliNotFound(wslProbe)) {
         setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "wsl" }));
@@ -721,8 +744,10 @@ export function App() {
   function buildWslRunArgs(cliExecutable: string, cliArgs: string[], windowsCwd: string): string[] | null {
     const wslCwd = windowsPathToWslMntPath(windowsCwd);
     if (!wslCwd) return null;
+    // Use "bash -lic" instead of "sh -lc" so that ~/.bashrc is sourced
+    // (nvm and other version managers are configured there, not ~/.profile).
     const command = `cd ${quoteShellArg(wslCwd)} && exec ${[cliExecutable, ...cliArgs].map(quoteShellArg).join(" ")}`;
-    return ["-e", "sh", "-lc", command];
+    return ["-e", "bash", "-lic", command];
   }
 
   // ── Task CRUD ──
