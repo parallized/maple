@@ -5,13 +5,18 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { copyTextToClipboard } from "../lib/clipboard";
 import type { UiLanguage } from "../lib/constants";
-import type { WorkerCommandResult } from "../domain";
 import { hasTauriRuntime } from "../lib/utils";
 import { INSTALL_TARGETS, type InstallTargetId, formatInstallTargetIcon, formatInstallTargetLabel } from "../lib/install-targets";
 import { InstallTaskWindow, type InstallTargetResult, type InstallTargetState } from "./InstallTaskWindow";
 
 type InstallPlatform = "windows" | "macos" | "linux";
-type TargetRuntime = "native" | "wsl";
+
+type InstallTargetProbe = {
+  id: InstallTargetId;
+  runtime: "native" | "wsl";
+  cliFound: boolean;
+  installed: boolean;
+};
 
 type McpSkillsInstallCardProps = {
   uiLanguage: UiLanguage;
@@ -87,22 +92,14 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
   const installIdRef = useRef("");
   const targetsEditedRef = useRef(false);
   const [installLog, setInstallLog] = useState("");
-  const [installTargetStates, setInstallTargetStates] = useState<Record<InstallTargetId, InstallTargetState>>(() => ({
-    codex: "idle",
-    claude: "idle",
-    iflow: "idle",
-    windsurf: "idle"
-  }));
+  const [installTargetStates, setInstallTargetStates] = useState<Record<InstallTargetId, InstallTargetState>>(
+    () => Object.fromEntries(INSTALL_TARGETS.map((id) => [id, "idle"])) as Record<InstallTargetId, InstallTargetState>
+  );
   const [installTargetResults, setInstallTargetResults] = useState<Partial<Record<InstallTargetId, InstallTargetResult>>>({});
-  const [targets, setTargets] = useState<Record<InstallTargetId, boolean>>(() => ({
-    codex: false,
-    claude: false,
-    iflow: false,
-    windsurf: false
-  }));
-  const [targetProbeById, setTargetProbeById] = useState<
-    Partial<Record<InstallTargetId, { native: boolean; wsl: boolean; preferredRuntime: TargetRuntime | null }>>
-  >({});
+  const [targets, setTargets] = useState<Record<InstallTargetId, boolean>>(
+    () => Object.fromEntries(INSTALL_TARGETS.map((id) => [id, id === "windsurf"])) as Record<InstallTargetId, boolean>
+  );
+  const [probeById, setProbeById] = useState<Partial<Record<InstallTargetId, InstallTargetProbe>>>({});
   const [report, setReport] = useState<InstallMcpSkillsReport | null>(null);
   const [installError, setInstallError] = useState("");
 
@@ -155,46 +152,6 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
     };
   }, [isTauri]);
 
-  async function probeCliNative(executable: string): Promise<boolean> {
-    if (!isTauri) return false;
-    const trimmed = executable.trim();
-    if (!trimmed) return false;
-
-    if (isWindows) {
-      try {
-        const result = await invoke<WorkerCommandResult>("probe_worker", { executable: "where", args: [trimmed], cwd: "" });
-        return Boolean(result.success);
-      } catch (error) {
-        console.warn("Native probe failed:", error);
-        return false;
-      }
-    }
-
-    try {
-      const script = `command -v ${trimmed} >/dev/null 2>&1`;
-      const result = await invoke<WorkerCommandResult>("probe_worker", { executable: "sh", args: ["-lc", script], cwd: "" });
-      return Boolean(result.success);
-    } catch (error) {
-      console.warn("Native probe failed:", error);
-      return false;
-    }
-  }
-
-  async function probeCliWsl(executable: string): Promise<boolean> {
-    if (!isTauri) return false;
-    if (!isWindows) return false;
-    const trimmed = executable.trim();
-    if (!trimmed) return false;
-    try {
-      const script = `command -v ${trimmed} >/dev/null 2>&1`;
-      const result = await invoke<WorkerCommandResult>("probe_worker", { executable: "wsl", args: ["-e", "sh", "-lc", script], cwd: "" });
-      return Boolean(result.success);
-    } catch (error) {
-      console.warn("WSL probe failed:", error);
-      return false;
-    }
-  }
-
   async function probeTargets() {
     if (!isTauri) return;
 
@@ -202,42 +159,33 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
     setProbeError("");
 
     try {
-      const ids: InstallTargetId[] = ["codex", "claude", "iflow"];
-      const entries = await Promise.all(
-        ids.map(async (id) => {
-          const native = await probeCliNative(id);
-          const wsl = native ? false : await probeCliWsl(id);
-          const preferredRuntime: TargetRuntime | null = native ? "native" : wsl ? "wsl" : null;
-          return [id, { native, wsl, preferredRuntime }] as const;
-        })
-      );
-
-      const nextProbe: Partial<Record<InstallTargetId, { native: boolean; wsl: boolean; preferredRuntime: TargetRuntime | null }>> = {};
-      for (const [id, probe] of entries) {
-        nextProbe[id] = probe;
+      const probes = await invoke<InstallTargetProbe[]>("probe_install_targets");
+      const nextProbeById: Partial<Record<InstallTargetId, InstallTargetProbe>> = {};
+      for (const probe of probes) {
+        nextProbeById[probe.id] = probe;
       }
-      setTargetProbeById(nextProbe);
-
-      const codexAvailable = Boolean(nextProbe.codex?.preferredRuntime);
-      const claudeAvailable = Boolean(nextProbe.claude?.preferredRuntime);
-      const iflowAvailable = Boolean(nextProbe.iflow?.preferredRuntime);
+      setProbeById(nextProbeById);
 
       setTargets((prev) => {
-        if (targetsEditedRef.current) {
-          return {
-            ...prev,
-            codex: prev.codex && codexAvailable,
-            claude: prev.claude && claudeAvailable,
-            iflow: prev.iflow && iflowAvailable,
-          };
+        const next = { ...prev };
+        for (const probe of probes) {
+          const selectable = Boolean(probe.cliFound);
+          if (targetsEditedRef.current) {
+            next[probe.id] = Boolean(prev[probe.id]) && selectable;
+          } else {
+            next[probe.id] = selectable && !probe.installed;
+          }
         }
 
-        return {
-          ...prev,
-          codex: codexAvailable,
-          claude: claudeAvailable,
-          iflow: iflowAvailable,
-        };
+        if (!isWindows) {
+          next["wsl:codex"] = false;
+          next["wsl:claude"] = false;
+          next["wsl:iflow"] = false;
+        }
+
+        // Do not override Windsurf selection based on probing.
+        next.windsurf = prev.windsurf;
+        return next;
       });
     } catch (error) {
       setProbeError(String(error));
@@ -264,40 +212,31 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
   const mcpUrl = report?.mcpUrl ?? "http://localhost:45819/mcp";
   const selectedTargets = Object.entries(targets).filter(([, enabled]) => enabled).map(([id]) => id as InstallTargetId);
 
-  const installTargetHintLabels = selectedTargets.map((id) => {
-    const base = formatInstallTargetLabel(id);
-    const preferred = targetProbeById[id]?.preferredRuntime ?? null;
-    if (preferred === "wsl") return `WSL:${base}`;
-    return base;
-  });
+  const installTargetHintLabels = selectedTargets.map((id) => formatInstallTargetLabel(id));
 
   const installHint =
     installTargetHintLabels.length > 0
       ? t(`将安装：${installTargetHintLabels.join("、")}`, `Will install: ${installTargetHintLabels.join(", ")}`)
       : "";
 
-  const detectedLabels = (["codex", "claude", "iflow"] as const)
-    .map((id) => {
-      const preferred = targetProbeById[id]?.preferredRuntime ?? null;
-      if (!preferred) return null;
-      const label = formatInstallTargetLabel(id);
-      return preferred === "wsl" ? `WSL · ${label}` : label;
-    })
-    .filter(Boolean) as string[];
+  const probeIds: InstallTargetId[] = isWindows
+    ? ["codex", "claude", "iflow", "wsl:codex", "wsl:claude", "wsl:iflow"]
+    : ["codex", "claude", "iflow"];
+  const detectedLabels = probeIds.filter((id) => Boolean(probeById[id]?.cliFound)).map((id) => formatInstallTargetLabel(id));
 
   const detectedSummary =
     probing
       ? t("正在检测环境…", "Detecting environment…")
       : detectedLabels.length > 0
         ? t(`已检测到：${detectedLabels.join("、")}`, `Detected: ${detectedLabels.join(", ")}`)
-        : t("未检测到可用的 CLI。安装后可以回到这里一键接入。", "No CLI detected. Install the CLI first, then come back to connect.");
+        : t("未检测到可用的 CLI。先安装 CLI，再回到这里一键接入。", "No CLI detected. Install the CLI first, then come back to connect.");
 
   const canReopenInstallWindow = !installWindowOpen && (installing || installLog.trim().length > 0 || Boolean(installError));
   const reopenInstallWindowLabel = installing ? t("查看进度", "View progress") : t("查看日志", "View log");
   const installButtonLabel =
     selectedTargets.length > 0
       ? t(`安装 ${installTargetHintLabels.join(" · ")}`, `Install ${installTargetHintLabels.join(" · ")}`)
-      : t("未检测到可安装目标", "No targets detected");
+      : t("请选择目标", "Select targets");
 
   return (
     <details
@@ -367,15 +306,19 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
               </div>
 
               <div className="flex flex-wrap gap-1.5">
-                {(["codex", "claude", "iflow", "windsurf"] as const).map((id) => {
-                  const preferred = targetProbeById[id]?.preferredRuntime ?? null;
-                  const enabledByProbe = id === "windsurf" ? true : Boolean(preferred);
-                  const displayLabel =
-                    preferred === "wsl"
-                      ? `WSL · ${formatInstallTargetLabel(id)}`
-                      : formatInstallTargetLabel(id);
-                  const disabled = installing || (!enabledByProbe && id !== "windsurf");
-                  const disabledNote = !enabledByProbe && id !== "windsurf" ? t("未检测到 CLI", "CLI not detected") : "";
+                {(isWindows
+                  ? (["codex", "claude", "iflow", "wsl:codex", "wsl:claude", "wsl:iflow", "windsurf"] as const)
+                  : (["codex", "claude", "iflow", "windsurf"] as const)
+                ).map((id) => {
+                  const probe = probeById[id];
+                  const selectable = id === "windsurf" ? true : Boolean(probe?.cliFound);
+                  const installed = id === "windsurf" ? false : Boolean(probe?.installed);
+                  const disabled = installing || !selectable;
+                  const label = formatInstallTargetLabel(id);
+                  const notes: string[] = [];
+                  if (installed) notes.push(t("已安装", "Installed"));
+                  if (!selectable && id !== "windsurf") notes.push(t("未检测到 CLI", "CLI not detected"));
+                  const title = notes.length > 0 ? `${label} · ${notes.join(" · ")}` : label;
 
                   return (
                     <button
@@ -388,10 +331,11 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                         setTargets((prev) => ({ ...prev, [id]: !prev[id] }));
                       }}
                       aria-pressed={targets[id]}
-                      title={disabledNote ? `${displayLabel} · ${disabledNote}` : displayLabel}
+                      title={title}
                     >
                       <Icon icon={formatInstallTargetIcon(id)} className="text-[14px]" />
-                      {displayLabel}
+                      {label}
+                      {installed ? <Icon icon="mingcute:check-line" className="text-[12px] opacity-60" /> : null}
                     </button>
                   );
                 })}
@@ -412,8 +356,8 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
               <div className="flex items-center justify-between gap-2">
                 <p className="m-0 text-[11px] text-muted font-sans opacity-80">
                   {t(
-                    "将写入全局配置目录（~/.codex、~/.claude、~/.iflow、~/.codeium）。Windows 上如果 CLI 只在 WSL 中检测到，会写入 WSL 的 ~/ 并在 WSL 内注册 MCP。",
-                    "Writes to global config directories (~/.codex, ~/.claude, ~/.iflow, ~/.codeium). On Windows, if a CLI is detected only in WSL, files are written to WSL ~/ and MCP is registered inside WSL."
+                    "将写入全局配置目录（~/.codex、~/.claude、~/.iflow、~/.codeium）。Windows 上支持分别配置本机与 WSL：会写入对应的 home 目录，并在对应环境内注册 MCP。",
+                    "Writes to global config directories (~/.codex, ~/.claude, ~/.iflow, ~/.codeium). On Windows, Maple can configure both Local and WSL: it writes to the corresponding home directory and registers MCP in that runtime."
                   )}
                 </p>
                 <div className="flex items-center gap-2 flex-none">
@@ -439,12 +383,9 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                       setReport(null);
                       setInstallLog("");
                       setInstallTargetResults({});
-                      setInstallTargetStates({
-                        codex: "idle",
-                        claude: "idle",
-                        iflow: "idle",
-                        windsurf: "idle"
-                      });
+                      setInstallTargetStates(
+                        Object.fromEntries(INSTALL_TARGETS.map((id) => [id, "idle"])) as Record<InstallTargetId, InstallTargetState>
+                      );
                       setInstallWindowTargets(selectedTargets);
                       setInstallWindowOpen(true);
                       setInstalling(true);
@@ -454,6 +395,9 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                             codex: targets.codex,
                             claude: targets.claude,
                             iflow: targets.iflow,
+                            wslCodex: targets["wsl:codex"],
+                            wslClaude: targets["wsl:claude"],
+                            wslIflow: targets["wsl:iflow"],
                             windsurf: targets.windsurf,
                             installId: nextInstallId
                           }
@@ -509,12 +453,15 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                   const icon = ok ? "mingcute:check-line" : "mingcute:close-line";
                   const iconColor = ok ? "var(--color-success)" : "var(--color-error)";
                   const title = formatInstallTargetLabel(target.id);
+                  const showScopeLabel = !target.id.startsWith("wsl:");
                   const scopeLabel =
-                    target.runtime === "wsl"
-                      ? "WSL"
-                      : target.runtime === "native"
-                        ? t("本机", "Local")
-                        : "";
+                    showScopeLabel
+                      ? target.runtime === "wsl"
+                        ? "WSL"
+                        : target.runtime === "native"
+                          ? t("本机", "Local")
+                          : ""
+                      : "";
                   const subtitle =
                     target.skipped
                       ? t("未检测到 CLI，已跳过", "CLI not found; skipped")

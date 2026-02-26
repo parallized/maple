@@ -140,12 +140,15 @@ export function InstallTaskWindow({
                 const state = targetStates[id] ?? "idle";
                 const meta = stateIcon(state, installing, t);
                 const result = results[id];
+                const showScopeLabel = !id.startsWith("wsl:");
                 const scopeLabel =
-                  result?.runtime === "wsl"
-                    ? "WSL"
-                    : result?.runtime === "native"
-                      ? t("本机", "Local")
-                      : "";
+                  showScopeLabel
+                    ? result?.runtime === "wsl"
+                      ? "WSL"
+                      : result?.runtime === "native"
+                        ? t("本机", "Local")
+                        : ""
+                    : "";
 
                 const baseSubtitleText =
                   result?.skipped
