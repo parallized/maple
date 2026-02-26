@@ -298,9 +298,14 @@ export function McpSkillsInstallCard({
               </div>
 
               <div className="flex items-center justify-between gap-2">
-                <p className="m-0 text-[11px] text-muted font-sans opacity-80 truncate">
-                  {detectedSummary}
-                </p>
+                <div className="flex items-center gap-2 min-w-0">
+                  {probing && !showDetectButton ? (
+                    <Icon icon="mingcute:loading-3-line" className="text-[14px] text-muted opacity-70 flex-none" />
+                  ) : null}
+                  <p className="m-0 text-[11px] text-muted font-sans opacity-80 truncate">
+                    {detectedSummary}
+                  </p>
+                </div>
                 {showDetectButton ? (
                   <button
                     type="button"

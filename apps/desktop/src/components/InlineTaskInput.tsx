@@ -59,7 +59,8 @@ export function InlineTaskInput({
 
   function commit() {
     if (committed.current) return;
-    const trimmed = value.trim();
+    const liveValue = ref.current?.value ?? value;
+    const trimmed = liveValue.trim();
     committed.current = true;
     onCommit(trimmed);
   }
@@ -88,6 +89,9 @@ export function InlineTaskInput({
           commit();
         }
         if (e.key === "Escape") {
+          const native = e.nativeEvent;
+          const imeComposing = composing.current || native.isComposing || native.keyCode === 229;
+          if (imeComposing) return;
           e.preventDefault();
           committed.current = true;
           if (onCancel) onCancel();

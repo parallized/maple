@@ -16,12 +16,14 @@ pub struct TrayTaskSnapshot {
     pub queued_count: u32,
     pub todo_count: u32,
     pub need_info_count: u32,
+    pub confirm_count: u32,
     pub blocked_count: u32,
     pub completed_count: u32,
 }
 
 #[derive(Clone, Copy)]
 enum AggregateStatus {
+    Confirm,
     InProgress,
     Queued,
     Todo,
@@ -33,6 +35,7 @@ enum AggregateStatus {
 impl AggregateStatus {
     fn label(self) -> &'static str {
         match self {
+            AggregateStatus::Confirm => "待确认",
             AggregateStatus::InProgress => "进行中",
             AggregateStatus::Queued => "队列中",
             AggregateStatus::Todo => "待办",
@@ -44,6 +47,7 @@ impl AggregateStatus {
 
     fn color(self) -> [u8; 4] {
         match self {
+            AggregateStatus::Confirm => [233, 151, 0, 255],
             AggregateStatus::InProgress => [31, 111, 235, 255],
             AggregateStatus::Queued => [233, 151, 0, 255],
             AggregateStatus::Todo => [202, 135, 0, 255],

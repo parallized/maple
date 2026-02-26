@@ -6,6 +6,7 @@ export type TrayTaskSnapshot = {
   queuedCount: number;
   todoCount: number;
   needInfoCount: number;
+  confirmCount: number;
   blockedCount: number;
   completedCount: number;
 };
@@ -15,6 +16,7 @@ export function buildTrayTaskSnapshot(projects: Project[]): TrayTaskSnapshot {
   let queuedCount = 0;
   let todoCount = 0;
   let needInfoCount = 0;
+  let confirmCount = 0;
   let blockedCount = 0;
   let completedCount = 0;
 
@@ -40,7 +42,11 @@ export function buildTrayTaskSnapshot(projects: Project[]): TrayTaskSnapshot {
           blockedCount += 1;
           break;
         case "已完成":
-          completedCount += 1;
+          if (task.needsConfirmation) {
+            confirmCount += 1;
+          } else {
+            completedCount += 1;
+          }
           break;
         default:
           todoCount += 1;
@@ -50,11 +56,12 @@ export function buildTrayTaskSnapshot(projects: Project[]): TrayTaskSnapshot {
   }
 
   return {
-    unresolvedCount: inProgressCount + queuedCount + todoCount + needInfoCount + blockedCount,
+    unresolvedCount: inProgressCount + queuedCount + todoCount + needInfoCount + confirmCount + blockedCount,
     inProgressCount,
     queuedCount,
     todoCount,
     needInfoCount,
+    confirmCount,
     blockedCount,
     completedCount
   };
