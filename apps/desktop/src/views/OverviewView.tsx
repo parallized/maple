@@ -52,8 +52,8 @@ interface StatusData {
 export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailability, installProbes, workerPool, onRefreshMcp }: OverviewViewProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
 
-  // Only show installed (available) workers on overview
-  const installedWorkers = workerAvailability.filter((w) => w.available);
+  // Show all workers on overview (install buttons available per-card)
+  const allWorkers = workerAvailability;
 
   const pieData: StatusData[] = [
     { label: "已完成", value: metrics.statusDistribution["已完成"] || 0, color: "var(--color-success)" },
@@ -257,31 +257,23 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
             </div>
             
             <div className="flex-1 overflow-y-auto pr-1 lg:pr-2 flex flex-col gap-2 min-h-0 pb-2">
-              {installedWorkers.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-8 opacity-40">
-                  <Icon icon="mingcute:alert-line" className="text-xl" />
-                  <span className="text-[12px] font-sans">{t("暂无已安装的 Worker", "No installed workers")}</span>
-                  <span className="text-[11px] text-muted font-sans">{t("前往设置页面安装", "Go to Settings to install")}</span>
-                </div>
-              ) : (
-                installedWorkers.map((worker) => {
-                  const nativeProbe = installProbes[worker.kind as InstallTargetId];
-                  const wslProbe = installProbes[`wsl:${worker.kind}` as InstallTargetId];
-                  return (
-                    <WorkerConfigCard
-                      key={worker.kind}
-                      kind={worker.kind}
-                      label={worker.label}
-                      executable={worker.executable}
-                      available={worker.available}
-                      nativeProbe={nativeProbe}
-                      wslProbe={wslProbe}
-                      uiLanguage={uiLanguage}
-                      variant="overview"
-                    />
-                  );
-                })
-              )}
+              {allWorkers.map((worker) => {
+                const nativeProbe = installProbes[worker.kind as InstallTargetId];
+                const wslProbe = installProbes[`wsl:${worker.kind}` as InstallTargetId];
+                return (
+                  <WorkerConfigCard
+                    key={worker.kind}
+                    kind={worker.kind}
+                    label={worker.label}
+                    executable={worker.executable}
+                    available={worker.available}
+                    nativeProbe={nativeProbe}
+                    wslProbe={wslProbe}
+                    uiLanguage={uiLanguage}
+                    variant="overview"
+                  />
+                );
+              })}
             </div>
           </FadeContent>
 

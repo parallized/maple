@@ -92,6 +92,7 @@ export function WorkerConfigCard({
     () => Object.fromEntries(INSTALL_TARGETS.map((id) => [id, "idle"])) as Record<InstallTargetId, InstallTargetState>
   );
   const [installTargetResults, setInstallTargetResults] = useState<Partial<Record<InstallTargetId, InstallTargetResult>>>({});
+  const [cliExpandedOverview, setCliExpandedOverview] = useState(false);
 
   useEffect(() => {
     installIdRef.current = installId;
@@ -224,8 +225,10 @@ export function WorkerConfigCard({
     rows.push({ id: wslTargetId, runtimeLabel: "WSL", cliFound: wslCliFound, installed: wslInstalled });
   }
 
-  // For overview variant, just show a compact card
+  // For overview variant, show compact card with install actions
   if (variant === "overview") {
+    const uninstalledMcpRows = rows.filter((r) => r.cliFound && !r.installed);
+
     return (
       <div className="group rounded-[12px] lg:rounded-[14px] bg-(--color-base-100) hover:bg-(--color-base-200) transition-all duration-300 flex flex-col flex-none overflow-hidden">
         <div className="p-3 lg:p-4 flex flex-col gap-1.5 lg:gap-2">
@@ -263,7 +266,72 @@ export function WorkerConfigCard({
             <Icon icon="mingcute:terminal-box-line" className="text-[12px] lg:text-[13px] flex-none" />
             <span className="truncate">{executable || t("未检测到", "Not detected")}</span>
           </div>
+
+          {/* Install actions */}
+          {!rows.some((r) => r.cliFound) ? (
+            <div className="flex flex-col gap-1.5 mt-0.5">
+              <button
+                type="button"
+                className="ui-btn ui-btn--xs ui-btn--outline gap-1 self-start ml-3 lg:ml-4"
+                onClick={() => setCliExpandedOverview((v) => !v)}
+              >
+                <Icon icon={cliExpandedOverview ? "mingcute:up-line" : "mingcute:download-2-line"} className="text-[12px]" />
+                {cliExpandedOverview ? t("收起", "Collapse") : t("安装 CLI", "Install CLI")}
+              </button>
+              {cliExpandedOverview && (
+                <CliInstallCard workerKind={kind} workerLabel={label} uiLanguage={uiLanguage} />
+              )}
+            </div>
+          ) : uninstalledMcpRows.length > 0 ? (
+            <div className="flex items-center gap-1.5 mt-0.5 pl-3 lg:pl-4">
+              {uninstalledMcpRows.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  className={`ui-btn ui-btn--xs ui-btn--outline gap-1 ${installing ? "opacity-70" : ""}`}
+                  disabled={installing}
+                  onClick={() => void doInstall([row.id])}
+                >
+                  <Icon icon={installing ? "mingcute:loading-3-line" : "mingcute:download-2-line"} className="text-[12px]" />
+                  {installing
+                    ? t("安装中…", "Installing…")
+                    : uninstalledMcpRows.length > 1
+                      ? t(`安装 ${row.runtimeLabel} MCP`, `Install ${row.runtimeLabel} MCP`)
+                      : t("安装 MCP", "Install MCP")}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {/* Reopen install window */}
+          {canReopenInstallWindow && (
+            <div className="pl-3 lg:pl-4">
+              <button
+                type="button"
+                className="ui-btn ui-btn--xs ui-btn--ghost gap-1"
+                onClick={() => setInstallWindowOpen(true)}
+              >
+                <Icon icon="mingcute:terminal-box-line" className="text-[12px]" />
+                {installing ? t("查看进度", "View progress") : t("查看日志", "View log")}
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Install task modal */}
+        <InstallTaskWindow
+          open={installWindowOpen}
+          uiLanguage={uiLanguage}
+          title={t(`安装 ${label} MCP`, `Install ${label} MCP`)}
+          subtitle={installing ? t("正在写入配置并注册 MCP…", "Writing config and registering MCP…") : `MCP: ${mcpUrl}`}
+          installing={installing}
+          targets={installWindowTargets}
+          targetStates={installTargetStates}
+          results={installTargetResults}
+          log={installLog}
+          error={installError}
+          onClose={() => setInstallWindowOpen(false)}
+        />
       </div>
     );
   }
@@ -365,8 +433,8 @@ export function WorkerConfigCard({
           </div>
         ) : null}
 
-        {/* CLI Install instructions when not available */}
-        {!available ? (
+        {/* CLI Install instructions when CLI not found */}
+        {!rows.some((r) => r.cliFound) ? (
           <CliInstallCard
             workerKind={kind}
             workerLabel={label}
