@@ -42,12 +42,12 @@ const FINAL_DECISION_STATUSES = ["已完成", "待返工", "已阻塞", "需要�
 const OUTPUT_SCHEMA_HINT =
   `终端最后请输出一个 JSON 代码块（\`\`\`json ... \`\`\`），字段包含：conclusion, changes[], verification[], mcp_decision{status, comment, tags[]}。`
   + `mcp_decision.status 仅可用：${FINAL_DECISION_STATUSES.join(" / ")}。`
-  + "mcp_decision.tags 可填写 0-5 个与任务相关的 tag（建议使用稳定的 tag id；若引入新 tag，请先 upsert_tag_definition 提供 icon 与 zh/en label）。";
+  + "mcp_decision.tags 可填写 0-5 个与任务相关的 tag。标签必须使用中文（如 bug修复、前端、重构、新功能），禁止使用英文标签（如 frontend、bugfix）。若引入新 tag，请先 upsert_tag_definition 提供 icon 与 zh/en label。";
 const REQUIRED_DECISION_HINT = "若缺少 mcp_decision，则任务会被判定为已阻塞，不允许兜底标记完成。";
 const REQUIRED_MCP_FLOW_HINT =
   "执行时必须逐条通过 submit_task_report 驱动状态流转：query_project_todos 后，选中要处理的任务先更新为「队列中」；真正开工再更新为「进行中」；结束后更新为「已完成/已阻塞/需要更多信息」。结束前再次 query_project_todos，确认无待办/待返工/队列中/进行中任务后，再调用 finish_worker（必须作为最后一个 MCP 调用）。";
 const REQUIRED_TAG_CATALOG_HINT =
-  "标签展示完全由 Tag Catalog（upsert_tag_definition）定义。若你引入/使用新的 tag（含颜色/图标/多语言 label），必须先 upsert 对应 tag 定义；不要依赖 UI 的硬编码兜底。icon 仅允许 mingcute:*。";
+  "标签展示完全由 Tag Catalog（upsert_tag_definition）定义。若你引入/使用新的 tag（含颜色/图标/多语言 label），必须先 upsert 对应 tag 定义；不要依赖 UI 的硬编码兜底。icon 仅允许 mingcute:*。submit_task_report 的 tags 和 mcp_decision.tags 都必须使用中文标签。";
 
 function renderSkillChecklist(skills: MapleWorkerSkill[]): string[] {
   return skills.map((skill, index) => `${index + 1}. ${skill.title}：${skill.objective}`);

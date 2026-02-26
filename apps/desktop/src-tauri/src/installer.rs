@@ -161,6 +161,7 @@ pub struct InstallTargetProbe {
   pub runtime: String,
   pub cli_found: bool,
   pub installed: bool,
+  pub npm_found: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -278,7 +279,12 @@ fn detect_cli_wsl(executable: &str) -> bool {
     if trimmed.is_empty() {
       return false;
     }
-    let script = format!("command -v {} >/dev/null 2>&1", sh_quote(trimmed));
+    // Use "command -v" and verify the result isn't a Windows binary accessible via /mnt/ or .exe
+    // WSL by default shares Windows PATH, so we must exclude those results
+    let script = format!(
+      "p=$(command -v {} 2>/dev/null) && [ -n \"$p\" ] && case \"$p\" in /mnt/*) false;; *.exe) false;; *) true;; esac",
+      sh_quote(trimmed)
+    );
     let args = vec!["-e".to_string(), "sh".to_string(), "-lc".to_string(), script];
     return run_cli("wsl", &args, None).map(|out| out.success).unwrap_or(false);
   }
@@ -351,42 +357,51 @@ pub fn probe_install_targets() -> Result<Vec<InstallTargetProbe>, String> {
   let claude_wsl_cli = detect_cli_wsl("claude");
   let iflow_wsl_cli = detect_cli_wsl("iflow");
 
+  let npm_native = detect_cli_native("npm");
+  let npm_wsl = detect_cli_wsl("npm");
+
   Ok(vec![
     InstallTargetProbe {
       id: "codex".to_string(),
       runtime: "native".to_string(),
       cli_found: codex_native_cli,
       installed: is_codex_installed_native(&home),
+      npm_found: npm_native,
     },
     InstallTargetProbe {
       id: "claude".to_string(),
       runtime: "native".to_string(),
       cli_found: claude_native_cli,
       installed: is_claude_installed_native(&home),
+      npm_found: npm_native,
     },
     InstallTargetProbe {
       id: "iflow".to_string(),
       runtime: "native".to_string(),
       cli_found: iflow_native_cli,
       installed: is_iflow_installed_native(&home),
+      npm_found: npm_native,
     },
     InstallTargetProbe {
       id: "wsl:codex".to_string(),
       runtime: "wsl".to_string(),
       cli_found: codex_wsl_cli,
       installed: is_codex_installed_wsl(),
+      npm_found: npm_wsl,
     },
     InstallTargetProbe {
       id: "wsl:claude".to_string(),
       runtime: "wsl".to_string(),
       cli_found: claude_wsl_cli,
       installed: is_claude_installed_wsl(),
+      npm_found: npm_wsl,
     },
     InstallTargetProbe {
       id: "wsl:iflow".to_string(),
       runtime: "wsl".to_string(),
       cli_found: iflow_wsl_cli,
       installed: is_iflow_installed_wsl(),
+      npm_found: npm_wsl,
     },
   ])
 }

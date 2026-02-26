@@ -507,6 +507,9 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
                       : ""
           }`}
         >
+          {task.status === "进行中" && (
+            <Icon icon="mingcute:loading-3-line" className="text-[11px] animate-spin opacity-80 mr-0.5" />
+          )}
           {task.status}
         </span>
       </td>

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import { WorkerLogo } from "./WorkerLogo";
-import { CliInstallCard } from "./CliInstallCard";
+import { CliInstallCard, CliInstallDialog } from "./CliInstallCard";
 import { InstallTaskWindow, type InstallTargetResult, type InstallTargetState } from "./InstallTaskWindow";
 import { copyTextToClipboard } from "../lib/clipboard";
 import type { UiLanguage } from "../lib/constants";
@@ -18,6 +18,7 @@ export type WorkerProbe = {
   runtime: "native" | "wsl";
   cliFound: boolean;
   installed: boolean;
+  npmFound: boolean;
 };
 
 type InstallTaskEvent =
@@ -92,7 +93,7 @@ export function WorkerConfigCard({
     () => Object.fromEntries(INSTALL_TARGETS.map((id) => [id, "idle"])) as Record<InstallTargetId, InstallTargetState>
   );
   const [installTargetResults, setInstallTargetResults] = useState<Partial<Record<InstallTargetId, InstallTargetResult>>>({});
-  const [cliExpandedOverview, setCliExpandedOverview] = useState(false);
+  const [cliDialogOpen, setCliDialogOpen] = useState(false);
 
   useEffect(() => {
     installIdRef.current = installId;
@@ -268,19 +269,16 @@ export function WorkerConfigCard({
           </div>
 
           {/* Install actions */}
-          {!rows.some((r) => r.cliFound) ? (
+          {rows.some((r) => !r.cliFound) ? (
             <div className="flex flex-col gap-1.5 mt-0.5">
               <button
                 type="button"
                 className="ui-btn ui-btn--xs ui-btn--outline gap-1 self-start ml-3 lg:ml-4"
-                onClick={() => setCliExpandedOverview((v) => !v)}
+                onClick={() => setCliDialogOpen(true)}
               >
-                <Icon icon={cliExpandedOverview ? "mingcute:up-line" : "mingcute:download-2-line"} className="text-[12px]" />
-                {cliExpandedOverview ? t("收起", "Collapse") : t("安装 CLI", "Install CLI")}
+                <Icon icon="mingcute:download-2-line" className="text-[12px]" />
+                {t("安装 CLI", "Install CLI")}
               </button>
-              {cliExpandedOverview && (
-                <CliInstallCard workerKind={kind} workerLabel={label} uiLanguage={uiLanguage} />
-              )}
             </div>
           ) : uninstalledMcpRows.length > 0 ? (
             <div className="flex items-center gap-1.5 mt-0.5 pl-3 lg:pl-4">
@@ -331,6 +329,19 @@ export function WorkerConfigCard({
           log={installLog}
           error={installError}
           onClose={() => setInstallWindowOpen(false)}
+        />
+
+        {/* CLI install dialog */}
+        <CliInstallDialog
+          open={cliDialogOpen}
+          workerKind={kind}
+          workerLabel={label}
+          uiLanguage={uiLanguage}
+          nativeNpmFound={nativeProbe?.npmFound}
+          wslNpmFound={wslProbe?.npmFound}
+          nativeCliFound={nativeCliFound}
+          wslCliFound={wslCliFound}
+          onClose={() => setCliDialogOpen(false)}
         />
       </div>
     );
@@ -433,12 +444,16 @@ export function WorkerConfigCard({
           </div>
         ) : null}
 
-        {/* CLI Install instructions when CLI not found */}
-        {!rows.some((r) => r.cliFound) ? (
+        {/* CLI Install instructions when any CLI not found */}
+        {rows.some((r) => !r.cliFound) ? (
           <CliInstallCard
             workerKind={kind}
             workerLabel={label}
             uiLanguage={uiLanguage}
+            nativeNpmFound={nativeProbe?.npmFound}
+            wslNpmFound={wslProbe?.npmFound}
+            nativeCliFound={nativeCliFound}
+            wslCliFound={wslCliFound}
           />
         ) : null}
       </div>

@@ -9,10 +9,61 @@ export type CliInstallOption = {
   command: string;
   noteZh?: string;
   noteEn?: string;
+  /** Which runtime this option targets (native/wsl). undefined = universal */
+  runtime?: "native" | "wsl";
 };
 
 export function getCliInstallOptions(target: InstallTargetId, platform: InstallPlatform): CliInstallOption[] {
   if (target === "codex") {
+    if (platform === "windows") {
+      return [
+        {
+          id: "binary-windows",
+          titleZh: "本机 — 下载可执行文件（推荐）",
+          titleEn: "Local — Download executable (Recommended)",
+          command: [
+            "iwr https://github.com/openai/codex/releases/latest/download/codex-x86_64-pc-windows-msvc.exe -OutFile codex.exe",
+            ".\\codex.exe --version",
+          ].join("\n"),
+          noteZh: "在 PowerShell 中运行。",
+          noteEn: "Run in PowerShell.",
+          runtime: "native",
+        },
+        {
+          id: "npm-native",
+          titleZh: "本机 — npm 全局安装",
+          titleEn: "Local — Install with npm",
+          command: "npm i -g @openai/codex",
+          noteZh: "在 PowerShell / CMD 中运行。需要 Node.js 环境。",
+          noteEn: "Run in PowerShell / CMD. Requires Node.js.",
+          runtime: "native",
+        },
+        {
+          id: "binary-wsl",
+          titleZh: "WSL — 下载二进制",
+          titleEn: "WSL — Download binary",
+          command: [
+            "curl -L https://github.com/openai/codex/releases/latest/download/codex-x86_64-unknown-linux-gnu.tar.gz -o codex.tar.gz",
+            "tar -xzf codex.tar.gz",
+            "sudo install -m 0755 codex /usr/local/bin/codex",
+            "codex --version",
+          ].join("\n"),
+          noteZh: "在 WSL 终端中运行。ARM 设备请选择 aarch64 的包。",
+          noteEn: "Run in WSL terminal. For ARM devices, choose the aarch64 build.",
+          runtime: "wsl",
+        },
+        {
+          id: "npm-wsl",
+          titleZh: "WSL — npm 全局安装",
+          titleEn: "WSL — Install with npm",
+          command: "npm i -g @openai/codex",
+          noteZh: "在 WSL 终端中运行。需要 Node.js 环境。",
+          noteEn: "Run in WSL terminal. Requires Node.js.",
+          runtime: "wsl",
+        },
+      ];
+    }
+
     const options: CliInstallOption[] = [];
 
     if (platform === "macos") {
@@ -37,22 +88,8 @@ export function getCliInstallOptions(target: InstallTargetId, platform: InstallP
           "sudo install -m 0755 codex /usr/local/bin/codex",
           "codex --version",
         ].join("\n"),
-        noteZh: "如为 ARM 设备，请在 GitHub Releases 中选择 aarch64 的包。",
+        noteZh: "ARM 设备请在 GitHub Releases 中选择 aarch64 的包。",
         noteEn: "On ARM devices, choose the aarch64 build from GitHub Releases.",
-      });
-    }
-
-    if (platform === "windows") {
-      options.push({
-        id: "binary-windows",
-        titleZh: "下载可执行文件（无需 npm）",
-        titleEn: "Download executable (no npm)",
-        command: [
-          "iwr https://github.com/openai/codex/releases/latest/download/codex-x86_64-pc-windows-msvc.exe -OutFile codex.exe",
-          ".\\codex.exe --version",
-        ].join("\n"),
-        noteZh: "Windows 支持仍在完善；如遇问题建议优先使用 WSL。",
-        noteEn: "Windows support is still evolving; use WSL if you hit issues.",
       });
     }
 
@@ -61,65 +98,98 @@ export function getCliInstallOptions(target: InstallTargetId, platform: InstallP
       titleZh: "npm 全局安装",
       titleEn: "Install with npm",
       command: "npm i -g @openai/codex",
-      noteZh: platform === "windows" ? "Windows 建议在 WSL 环境中使用 Codex CLI。" : undefined,
-      noteEn: platform === "windows" ? "On Windows, Codex CLI works best in WSL." : undefined,
+      noteZh: "需要 Node.js 环境。",
+      noteEn: "Requires Node.js.",
     });
     return options;
   }
 
   if (target === "claude") {
-    const options: CliInstallOption[] = [
+    if (platform === "windows") {
+      return [
+        {
+          id: "powershell",
+          titleZh: "本机 — PowerShell 一键安装（推荐）",
+          titleEn: "Local — PowerShell installer (Recommended)",
+          command: "irm https://claude.ai/install.ps1 | iex",
+          noteZh: "在 PowerShell 中运行。无需 Node.js。",
+          noteEn: "Run in PowerShell. No Node.js required.",
+          runtime: "native",
+        },
+        {
+          id: "npm-native",
+          titleZh: "本机 — npm 全局安装",
+          titleEn: "Local — Install with npm",
+          command: "npm install -g @anthropic-ai/claude-code",
+          noteZh: "在 PowerShell / CMD 中运行。需要 Node.js 环境。",
+          noteEn: "Run in PowerShell / CMD. Requires Node.js.",
+          runtime: "native",
+        },
+        {
+          id: "curl-wsl",
+          titleZh: "WSL — 脚本安装（推荐）",
+          titleEn: "WSL — Install script (Recommended)",
+          command: "curl -fsSL https://claude.ai/install.sh | bash",
+          noteZh: "在 WSL 终端中运行。无需 Node.js。",
+          noteEn: "Run in WSL terminal. No Node.js required.",
+          runtime: "wsl",
+        },
+        {
+          id: "npm-wsl",
+          titleZh: "WSL — npm 全局安装",
+          titleEn: "WSL — Install with npm",
+          command: "npm install -g @anthropic-ai/claude-code",
+          noteZh: "在 WSL 终端中运行。需要 Node.js 环境。",
+          noteEn: "Run in WSL terminal. Requires Node.js.",
+          runtime: "wsl",
+        },
+      ];
+    }
+
+    return [
+      {
+        id: "curl",
+        titleZh: "脚本一键安装（推荐）",
+        titleEn: "Install script (Recommended)",
+        command: "curl -fsSL https://claude.ai/install.sh | bash",
+        noteZh: "无需 Node.js。安装后运行 `claude doctor` 检查。",
+        noteEn: "No Node.js required. After install, run `claude doctor` to verify.",
+      },
       {
         id: "npm",
         titleZh: "npm 全局安装",
         titleEn: "Install with npm",
         command: "npm install -g @anthropic-ai/claude-code",
-        noteZh: "安装后可运行 `claude doctor` 检查安装状态。",
-        noteEn: "After install, run `claude doctor` to verify your setup.",
+        noteZh: "需要 Node.js 环境。安装后运行 `claude doctor` 检查。",
+        noteEn: "Requires Node.js. After install, run `claude doctor` to verify.",
       },
     ];
-
-    if (platform === "windows") {
-      options.unshift({
-        id: "powershell",
-        titleZh: "PowerShell 一键安装",
-        titleEn: "PowerShell installer",
-        command: "irm https://claude.ai/install.ps1 | iex",
-      });
-    } else {
-      options.unshift({
-        id: "curl",
-        titleZh: "脚本一键安装",
-        titleEn: "Install script",
-        command: "curl -fsSL https://claude.ai/install.sh | bash",
-      });
-    }
-
-    return options;
   }
 
   if (target === "iflow") {
     if (platform === "windows") {
       return [
         {
+          id: "npm",
+          titleZh: "本机 — npm 全局安装（推荐）",
+          titleEn: "Local — Install with npm (Recommended)",
+          command: "npm install -g @iflow-ai/iflow-cli@latest",
+          noteZh: "在 PowerShell / CMD 中运行。需要 Node.js 22+。",
+          noteEn: "Run in PowerShell / CMD. Requires Node.js 22+.",
+          runtime: "native",
+        },
+        {
           id: "bash",
-          titleZh: "WSL / Git Bash 脚本安装（无需 npm）",
-          titleEn: "WSL / Git Bash script (no npm)",
+          titleZh: "WSL / Git Bash — 脚本安装（无需 npm）",
+          titleEn: "WSL / Git Bash — Install script (no npm)",
           command: [
-            "# 在 WSL 或 Git Bash 中运行：",
+            "# 在 WSL 或 Git Bash 中运行（不支持 PowerShell）：",
             "bash -c \"$(curl -fsSL https://cloud.iflow.cn/iflow-cli/install.sh)\"",
             "iflow --version",
           ].join("\n"),
-          noteZh: "如果你只使用 PowerShell，建议先安装并进入 WSL 再运行以上命令。",
-          noteEn: "If you only use PowerShell, install and enter WSL first, then run the commands above.",
-        },
-        {
-          id: "npm",
-          titleZh: "npm 全局安装",
-          titleEn: "Install with npm",
-          command: "npm install -g @iflow-ai/iflow-cli@latest",
-          noteZh: "需要 Node.js 22+。安装后运行 `iflow --version` 验证。",
-          noteEn: "Requires Node.js 22+. Verify with `iflow --version`.",
+          noteZh: "仅适用于 WSL 或 Git Bash，不支持 PowerShell。",
+          noteEn: "Only works in WSL or Git Bash; not for PowerShell.",
+          runtime: "wsl",
         },
       ];
     }
@@ -143,4 +213,30 @@ export function getCliInstallOptions(target: InstallTargetId, platform: InstallP
   }
 
   return [];
+}
+
+/** Node.js installation guidance per platform/runtime */
+export function getNodeInstallHint(platform: InstallPlatform, runtime?: "native" | "wsl"): { zh: string; en: string } {
+  if (platform === "windows" && runtime === "wsl") {
+    return {
+      zh: "WSL 中未检测到 Node.js。可运行：curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs",
+      en: "Node.js not found in WSL. Run: curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt-get install -y nodejs",
+    };
+  }
+  if (platform === "windows") {
+    return {
+      zh: "未检测到 Node.js。请访问 https://nodejs.org 下载安装，或在 PowerShell 中运行：winget install OpenJS.NodeJS.LTS",
+      en: "Node.js not found. Visit https://nodejs.org to install, or run in PowerShell: winget install OpenJS.NodeJS.LTS",
+    };
+  }
+  if (platform === "macos") {
+    return {
+      zh: "未检测到 Node.js。可运行：brew install node 或访问 https://nodejs.org",
+      en: "Node.js not found. Run: brew install node or visit https://nodejs.org",
+    };
+  }
+  return {
+    zh: "未检测到 Node.js。请访问 https://nodejs.org 或使用系统包管理器安装。",
+    en: "Node.js not found. Visit https://nodejs.org or install via your package manager.",
+  };
 }

@@ -2,6 +2,34 @@ import type { TagCatalog, TagDefinition } from "../domain";
 import { normalizeTagId } from "./tag-catalog";
 
 const BUILTIN_TAG_CATALOG: TagCatalog = {
+  // Common worker tags (English IDs with proper bilingual labels)
+  "frontend": { icon: "mingcute:code-line", label: { zh: "前端", en: "Frontend" } },
+  "backend": { icon: "mingcute:server-line", label: { zh: "后端", en: "Backend" } },
+  "bugfix": { icon: "mingcute:shield-line", label: { zh: "bug修复", en: "Bugfix" } },
+  "refactor": { icon: "mingcute:refresh-2-line", label: { zh: "重构", en: "Refactor" } },
+  "install": { icon: "mingcute:download-line", label: { zh: "安装", en: "Install" } },
+  "docs": { icon: "mingcute:information-line", label: { zh: "文档", en: "Docs" } },
+  "ux": { icon: "mingcute:palette-line", label: { zh: "UX", en: "UX" } },
+  "wsl": { icon: "mingcute:terminal-box-line", label: { zh: "WSL", en: "WSL" } },
+  "cli": { icon: "mingcute:terminal-box-line", label: { zh: "CLI", en: "CLI" } },
+  "api": { icon: "mingcute:server-line", label: { zh: "API", en: "API" } },
+  "test": { icon: "mingcute:check-line", label: { zh: "测试", en: "Test" } },
+  "config": { icon: "mingcute:settings-3-line", label: { zh: "配置", en: "Config" } },
+  "style": { icon: "mingcute:palette-line", label: { zh: "样式", en: "Style" } },
+  "layout": { icon: "mingcute:layout-grid-line", label: { zh: "布局", en: "Layout" } },
+  "build": { icon: "mingcute:settings-3-line", label: { zh: "构建", en: "Build" } },
+  "database": { icon: "mingcute:server-line", label: { zh: "数据库", en: "Database" } },
+  "animation": { icon: "mingcute:palette-line", label: { zh: "动画", en: "Animation" } },
+  "feature": { icon: "mingcute:add-line", label: { zh: "新功能", en: "Feature" } },
+  "feat": { icon: "mingcute:add-line", label: { zh: "新功能", en: "Feat" } },
+  "enhancement": { icon: "mingcute:add-line", label: { zh: "改进", en: "Enhancement" } },
+  "toolchain": { icon: "mingcute:settings-3-line", label: { zh: "工具链", en: "Toolchain" } },
+  "performance": { icon: "mingcute:rocket-line", label: { zh: "性能", en: "Performance" } },
+  "security": { icon: "mingcute:shield-line", label: { zh: "安全", en: "Security" } },
+  "worker": { icon: "mingcute:ai-line", label: { zh: "执行器", en: "Worker" } },
+  "tags": { icon: "mingcute:tag-line", label: { zh: "标签", en: "Tags" } },
+  "chore": { icon: "mingcute:settings-3-line", label: { zh: "配置", en: "Chore" } },
+
   // Decision tags
   "ui": { icon: "mingcute:palette-line", label: { zh: "UI", en: "UI" } },
   "修复": { icon: "mingcute:shield-line", label: { zh: "修复", en: "Fix" } },
@@ -45,6 +73,9 @@ const BUILTIN_TAG_CATALOG: TagCatalog = {
   "待补充": { icon: "mingcute:information-line", label: { zh: "待补充", en: "Needs Info" } },
 };
 
+const HAS_CJK_RE = /[\u3400-\u9FFF]/;
+const HAS_LATIN_RE = /[A-Za-z]/;
+
 function mergeTagLabel(existing: TagDefinition["label"], builtin: TagDefinition["label"]): TagDefinition["label"] | undefined {
   const next: NonNullable<TagDefinition["label"]> = {};
   const builtinZh = builtin?.zh?.trim() ?? "";
@@ -52,7 +83,11 @@ function mergeTagLabel(existing: TagDefinition["label"], builtin: TagDefinition[
   const existingZh = existing?.zh?.trim() ?? "";
   const existingEn = existing?.en?.trim() ?? "";
 
-  const zh = existingZh || builtinZh;
+  // Prefer builtin zh when existing zh is pure Latin (wrong language)
+  // and builtin provides a proper CJK Chinese label.
+  const existingZhIsLatin = existingZh && HAS_LATIN_RE.test(existingZh) && !HAS_CJK_RE.test(existingZh);
+  const builtinZhHasCjk = builtinZh && HAS_CJK_RE.test(builtinZh);
+  const zh = (existingZhIsLatin && builtinZhHasCjk) ? builtinZh : (existingZh || builtinZh);
   const en = existingEn || builtinEn;
   if (zh) next.zh = zh;
   if (en) next.en = en;

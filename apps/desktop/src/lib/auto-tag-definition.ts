@@ -12,6 +12,47 @@ type TagPreset = {
 };
 
 const TAG_PRESETS: Record<string, TagPreset> = {
+  // Common worker tags
+  frontend: { zh: "前端", en: "Frontend", icon: "mingcute:code-line" },
+  backend: { zh: "后端", en: "Backend", icon: "mingcute:server-line" },
+  bugfix: { zh: "bug修复", en: "Bugfix", icon: "mingcute:shield-line" },
+  refactor: { zh: "重构", en: "Refactor", icon: "mingcute:refresh-2-line" },
+  install: { zh: "安装", en: "Install", icon: "mingcute:download-line" },
+  docs: { zh: "文档", en: "Docs", icon: "mingcute:information-line" },
+  ux: { zh: "UX", en: "UX", icon: "mingcute:palette-line" },
+  wsl: { zh: "WSL", en: "WSL", icon: "mingcute:terminal-box-line" },
+  cli: { zh: "CLI", en: "CLI", icon: "mingcute:terminal-box-line" },
+  api: { zh: "API", en: "API", icon: "mingcute:server-line" },
+  test: { zh: "测试", en: "Test", icon: "mingcute:check-line" },
+  testing: { zh: "测试", en: "Testing", icon: "mingcute:check-line" },
+  config: { zh: "配置", en: "Config", icon: "mingcute:settings-3-line" },
+  style: { zh: "样式", en: "Style", icon: "mingcute:palette-line" },
+  styles: { zh: "样式", en: "Styles", icon: "mingcute:palette-line" },
+  css: { zh: "样式", en: "CSS", icon: "mingcute:palette-line" },
+  layout: { zh: "布局", en: "Layout", icon: "mingcute:layout-grid-line" },
+  build: { zh: "构建", en: "Build", icon: "mingcute:settings-3-line" },
+  database: { zh: "数据库", en: "Database", icon: "mingcute:server-line" },
+  db: { zh: "数据库", en: "DB", icon: "mingcute:server-line" },
+  animation: { zh: "动画", en: "Animation", icon: "mingcute:palette-line" },
+  feature: { zh: "新功能", en: "Feature", icon: "mingcute:add-line" },
+  feat: { zh: "新功能", en: "Feat", icon: "mingcute:add-line" },
+  enhancement: { zh: "改进", en: "Enhancement", icon: "mingcute:add-line" },
+  toolchain: { zh: "工具链", en: "Toolchain", icon: "mingcute:settings-3-line" },
+  performance: { zh: "性能", en: "Performance", icon: "mingcute:rocket-line" },
+  perf: { zh: "性能", en: "Performance", icon: "mingcute:rocket-line" },
+  security: { zh: "安全", en: "Security", icon: "mingcute:shield-line" },
+  badge: { zh: "徽章", en: "Badge", icon: "mingcute:tag-line" },
+  tray: { zh: "托盘", en: "Tray", icon: "mingcute:layout-grid-line" },
+  task: { zh: "任务", en: "Task", icon: "mingcute:task-line" },
+  board: { zh: "看板", en: "Board", icon: "mingcute:layout-grid-line" },
+  detail: { zh: "详情", en: "Detail", icon: "mingcute:layout-right-line" },
+  panel: { zh: "面板", en: "Panel", icon: "mingcute:layout-right-line" },
+  prompt: { zh: "提示", en: "Prompt", icon: "mingcute:chat-3-line" },
+  worker: { zh: "执行器", en: "Worker", icon: "mingcute:ai-line" },
+  tags: { zh: "标签", en: "Tags", icon: "mingcute:tag-line" },
+  chore: { zh: "配置", en: "Chore", icon: "mingcute:settings-3-line" },
+
+  // Existing presets
   mcp: { zh: "MCP", en: "MCP", icon: "mingcute:server-line" },
   verify: { zh: "验证", en: "Verify", icon: "mingcute:check-line" },
   verified: { zh: "已验证", en: "Verified", icon: "mingcute:check-line" },
@@ -64,7 +105,11 @@ function inferLabelFromRaw(rawTag: string, language: UiLanguage): TagDefinition[
   const label: NonNullable<TagDefinition["label"]> = {};
 
   if (language === "zh") {
-    label.zh = raw;
+    // Only set label.zh when the raw tag contains CJK characters.
+    // Pure English tags should NOT get label.zh = English text.
+    if (HAS_CJK_RE.test(raw)) {
+      label.zh = raw;
+    }
     if (HAS_LATIN_RE.test(raw)) {
       label.en = raw;
     }
