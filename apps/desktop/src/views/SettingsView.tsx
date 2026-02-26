@@ -1,10 +1,9 @@
 import { Icon } from "@iconify/react";
+import { useState } from "react";
 import { FadeContent } from "../components/ReactBits";
 import { McpSkillsInstallCard } from "../components/McpSkillsInstallCard";
-import { WorkerLogo } from "../components/WorkerLogo";
-import { WORKER_KINDS } from "../lib/constants";
 import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage } from "../lib/constants";
-import type { DetailMode, McpServerStatus, WorkerKind } from "../domain";
+import type { DetailMode, McpServerStatus } from "../domain";
 
 type SettingsViewProps = {
   mcpStatus: McpServerStatus;
@@ -14,7 +13,6 @@ type SettingsViewProps = {
   uiLanguage: UiLanguage;
   aiLanguage: AiLanguage;
   externalEditorApp: ExternalEditorApp;
-  onProbeWorker: (kind: WorkerKind) => void;
   onRestartMcpServer: () => void;
   onThemeChange: (mode: ThemeMode) => void;
   onUiLanguageChange: (language: UiLanguage) => void;
@@ -31,7 +29,6 @@ export function SettingsView({
   uiLanguage,
   aiLanguage,
   externalEditorApp,
-  onProbeWorker,
   onRestartMcpServer,
   onThemeChange,
   onUiLanguageChange,
@@ -40,6 +37,7 @@ export function SettingsView({
   onDetailModeChange
 }: SettingsViewProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
+  const [workerProbeToken, setWorkerProbeToken] = useState(0);
 
   return (
     <FadeContent duration={300}>
@@ -177,7 +175,7 @@ export function SettingsView({
         <div className="ui-card p-4 mt-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="flex items-center gap-1.5 m-0 font-semibold">
-              <Icon icon="mingcute:plug-2-line" />
+              <Icon icon="mingcute:plugin-2-line" />
               MCP Server
             </h3>
             <span className={`ui-badge ${mcpStatus.running ? "ui-badge--success" : "ui-badge--error"}`}>
@@ -198,43 +196,33 @@ export function SettingsView({
         </div>
 
         <div className="ui-card p-4 mt-3">
-          <h3 className="flex items-center gap-1.5 m-0 font-semibold">
-            <Icon icon="mingcute:ai-line" />
-            {t("Worker 接入", "Workers")}
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+              <Icon icon="mingcute:ai-line" />
+              {t("Worker 接入", "Workers")}
+            </h3>
+
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm ui-btn--ghost ui-icon-btn"
+              onClick={() => setWorkerProbeToken((prev) => prev + 1)}
+              aria-label={t("刷新检测", "Refresh detection")}
+              title={t("刷新检测", "Refresh detection")}
+            >
+              <Icon icon="mingcute:refresh-2-line" />
+            </button>
+          </div>
 
           <div className="mt-3">
-            <McpSkillsInstallCard uiLanguage={uiLanguage} defaultOpen />
+            <McpSkillsInstallCard uiLanguage={uiLanguage} defaultOpen probeToken={workerProbeToken} showDetectButton={false} />
           </div>
 
-          <div className="overflow-x-auto mt-3">
-            <table className="ui-table">
-              <thead>
-                <tr>
-                  <th>Worker</th>
-                  <th>{t("操作", "Action")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {WORKER_KINDS.map(({ kind, label }) => (
-                  <tr key={kind}>
-                    <td className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <WorkerLogo kind={kind} size={16} />
-                        <span>{label}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <button type="button" className="ui-btn ui-btn--xs ui-btn--outline gap-1" onClick={() => onProbeWorker(kind)}>
-                        <Icon icon="mingcute:search-line" />
-                        {t("验证", "Verify")}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <p className="text-xs text-muted mt-3 m-0">
+            {t(
+              "Maple 会自动检测本机与 WSL 的 Worker 环境。若刚完成安装，可点击右上角刷新。",
+              "Maple detects Worker availability in Local and WSL automatically. Click refresh after installing."
+            )}
+          </p>
         </div>
       </section>
     </FadeContent>

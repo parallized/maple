@@ -124,7 +124,7 @@ export function InstallTaskWindow({
               onClick={onClose}
               aria-label={installing ? t("隐藏", "Hide") : t("关闭", "Close")}
             >
-              <Icon icon={installing ? "mingcute:minus-line" : "mingcute:close-line"} />
+              <Icon icon={installing ? "mingcute:minimize-line" : "mingcute:close-line"} />
             </button>
           </div>
         </div>

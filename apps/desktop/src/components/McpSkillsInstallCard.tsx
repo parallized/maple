@@ -22,6 +22,8 @@ type McpSkillsInstallCardProps = {
   uiLanguage: UiLanguage;
   defaultOpen?: boolean;
   className?: string;
+  showDetectButton?: boolean;
+  probeToken?: number;
 };
 
 type InstallMcpSkillsReport = {
@@ -76,7 +78,13 @@ function formatInstallLogLine(payload: Extract<InstallTaskEvent, { kind: "log" }
     .join("\n");
 }
 
-export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, className }: McpSkillsInstallCardProps) {
+export function McpSkillsInstallCard({
+  uiLanguage,
+  defaultOpen = false,
+  className,
+  showDetectButton = true,
+  probeToken
+}: McpSkillsInstallCardProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const isTauri = hasTauriRuntime();
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
@@ -197,7 +205,7 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
   useEffect(() => {
     if (!isTauri) return;
     void probeTargets();
-  }, [isTauri]);
+  }, [isTauri, probeToken]);
 
   const commandByPlatform = useMemo<Record<InstallPlatform, string>>(
     () => ({
@@ -293,16 +301,18 @@ export function McpSkillsInstallCard({ uiLanguage, defaultOpen = false, classNam
                 <p className="m-0 text-[11px] text-muted font-sans opacity-80 truncate">
                   {detectedSummary}
                 </p>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--xs ui-btn--ghost gap-1 flex-none"
-                  onClick={() => void probeTargets()}
-                  disabled={probing || installing}
-                  title={t("重新检测", "Re-detect")}
-                >
-                  <Icon icon={probing ? "mingcute:loading-3-line" : "mingcute:refresh-2-line"} className="text-[14px]" />
-                  <span className="text-[11px]">{t("检测", "Detect")}</span>
-                </button>
+                {showDetectButton ? (
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--xs ui-btn--ghost gap-1 flex-none"
+                    onClick={() => void probeTargets()}
+                    disabled={probing || installing}
+                    title={t("重新检测", "Re-detect")}
+                  >
+                    <Icon icon={probing ? "mingcute:loading-3-line" : "mingcute:refresh-2-line"} className="text-[14px]" />
+                    <span className="text-[11px]">{t("刷新", "Refresh")}</span>
+                  </button>
+                ) : null}
               </div>
 
               <div className="flex flex-wrap gap-1.5">

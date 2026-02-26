@@ -64,17 +64,21 @@ struct AppState {
 }
 
 #[tauri::command]
-fn probe_worker(
+async fn probe_worker(
   executable: String,
   args: Vec<String>,
   cwd: Option<String>,
 ) -> Result<WorkerCommandResult, String> {
-  run_command(executable, args, cwd)
+  tauri::async_runtime::spawn_blocking(move || run_command(executable, args, cwd))
+    .await
+    .map_err(|_| "Worker 探测线程异常退出".to_string())?
 }
 
 #[tauri::command]
-fn probe_install_targets() -> Result<Vec<installer::InstallTargetProbe>, String> {
-  installer::probe_install_targets()
+async fn probe_install_targets() -> Result<Vec<installer::InstallTargetProbe>, String> {
+  tauri::async_runtime::spawn_blocking(installer::probe_install_targets)
+    .await
+    .map_err(|_| "环境检测线程异常退出".to_string())?
 }
 
 #[tauri::command]

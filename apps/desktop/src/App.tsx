@@ -894,51 +894,6 @@ export function App() {
     });
   }
 
-  async function probeWorker(kind: WorkerKind) {
-    const config = workerConfigs[kind];
-    const label = WORKER_KINDS.find((w) => w.kind === kind)?.label ?? kind;
-    if (!config.executable.trim()) { setNotice(`${label} 未配置 executable。`); return; }
-    if (!isTauri) { setNotice("当前环境无法探测 Worker。"); return; }
-    // Gate on MCP
-    const mcpOk = await ensureMcpRunning();
-    if (!mcpOk) { setNotice(`MCP Server 未运行，请先在设置中启动 MCP。`); return; }
-    const args = parseArgs(config.probeArgs);
-    try {
-      const result = await invoke<WorkerCommandResult>("probe_worker", { executable: config.executable, args, cwd: "" });
-      const workerId = buildWorkerId(kind);
-      appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, args)}\n`);
-      if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
-      if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
-      if (result.success) {
-        setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "native" }));
-        appendWorkerLog(workerId, "[提示] 验证通过：仅表示 CLI 可执行，未校验 MCP 挂载是否成功。\n");
-        setNotice(`${label} CLI 可用（native，未校验 MCP 挂载）`);
-        return;
-      }
-
-      if (isWindows && isLikelyWindowsCliNotFound(result)) {
-        const wslProbeArgs = ["-e", config.executable, ...args];
-        const wslResult = await invoke<WorkerCommandResult>("probe_worker", { executable: "wsl", args: wslProbeArgs, cwd: "" });
-        appendWorkerLog(workerId, `\n$ ${formatCommandForLog("wsl", wslProbeArgs)}\n`);
-        if (wslResult.stdout.trim()) appendWorkerLog(workerId, `${wslResult.stdout.trim()}\n`);
-        if (wslResult.stderr.trim()) appendWorkerLog(workerId, `${wslResult.stderr.trim()}\n`);
-        if (wslResult.success) {
-          setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "wsl" }));
-          appendWorkerLog(workerId, "[提示] 验证通过：仅表示 CLI 可执行（WSL），未校验 MCP 挂载是否成功。\n");
-          setNotice(`${label} CLI 可用（WSL，未校验 MCP 挂载）`);
-          return;
-        }
-      }
-
-      setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "missing" }));
-      setNotice(`${label} 不可用（exit: ${result.code ?? "?"}）`);
-    } catch (error) {
-      appendWorkerLog(buildWorkerId(kind), `\n${label} 探测失败：${String(error)}\n`);
-      setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "missing" }));
-      setNotice(`${label} 探测失败。`);
-    }
-  }
-
   async function completePending(projectId: string, overrideKind?: WorkerKind) {
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
@@ -1222,7 +1177,6 @@ export function App() {
                     uiLanguage={uiLanguage}
                     aiLanguage={aiLanguage}
                     externalEditorApp={externalEditorApp}
-                    onProbeWorker={(kind) => void probeWorker(kind)}
                     onRestartMcpServer={() => void restartMcpServer()}
                     onThemeChange={setThemeState}
                     onUiLanguageChange={setUiLanguage}

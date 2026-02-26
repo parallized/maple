@@ -10,7 +10,7 @@ const KNOWN_MINGCUTE_ICONS = new Set<string>([
   "mingcute:information-line",
   "mingcute:layout-grid-line",
   "mingcute:palette-line",
-  "mingcute:plug-2-line",
+  "mingcute:plugin-2-line",
   "mingcute:refresh-2-line",
   "mingcute:settings-3-line",
   "mingcute:shield-line",

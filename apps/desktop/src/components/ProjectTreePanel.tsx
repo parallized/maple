@@ -168,7 +168,7 @@ export function ProjectTreePanel({ projects, activeProjectId, onSelectProject, o
           新建项目
         </button>
         <button type="button" onClick={onImportProject}>
-          <Icon icon="mingcute:folder-transfer-line" />
+          <Icon icon="mingcute:folder-upload-line" />
           导入项目
         </button>
       </div>
