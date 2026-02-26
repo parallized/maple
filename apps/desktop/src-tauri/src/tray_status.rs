@@ -6,7 +6,7 @@ use tauri::{
 };
 
 const TRAY_ID: &str = "maple-task-status";
-const ICON_SIZE: u32 = 64;
+const ICON_SIZE: u32 = 128;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -73,6 +73,15 @@ export function TaskDetailsEditor({ value, valueDoc, onCommit }: TaskDetailsEdit
   const maxWaitTimerRef = useRef<number | null>(null);
   const isTauri = hasTauriRuntime();
 
+  // Stabilize onCommit via ref so commitEditorMarkdown is not recreated on
+  // every parent render (onCommit is typically an inline arrow).
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+
+  // Flag: when true the next incoming prop change originated from our own
+  // commit and the sync effect must NOT replaceBlocks (which resets the cursor).
+  const isLocalCommitRef = useRef(false);
+
   const editor = useCreateBlockNote(
     {
       placeholders: {
@@ -119,12 +128,13 @@ export function TaskDetailsEditor({ value, valueDoc, onCommit }: TaskDetailsEdit
     const docUnchanged = normalizedDoc === lastSyncedDocRef.current;
     if (textUnchanged && docUnchanged) return;
 
-    onCommit(nextValue, nextValueDoc);
+    isLocalCommitRef.current = true;
+    onCommitRef.current(nextValue, nextValueDoc);
     currentValueRef.current = nextValue;
     currentValueDocRef.current = nextValueDoc;
     lastSyncedValueRef.current = normalizedText;
     lastSyncedDocRef.current = normalizedDoc;
-  }, [editor, onCommit, serializeEditorMarkdown]);
+  }, [editor, serializeEditorMarkdown]);
 
   const scheduleAutosave = useCallback(() => {
     const maxWaitMs = 2000;
@@ -194,6 +204,16 @@ export function TaskDetailsEditor({ value, valueDoc, onCommit }: TaskDetailsEdit
   useEffect(() => {
     currentValueRef.current = value;
     currentValueDocRef.current = valueDoc;
+
+    // If this prop change originated from our own commit, skip the
+    // replaceBlocks round-trip that would reset the cursor.
+    if (isLocalCommitRef.current) {
+      isLocalCommitRef.current = false;
+      lastSyncedValueRef.current = normalizeForCompare(value);
+      lastSyncedDocRef.current = normalizeDocForCompare(valueDoc);
+      return;
+    }
+
     const normalizedIncoming = normalizeForCompare(value);
     const normalizedIncomingDoc = normalizeDocForCompare(valueDoc);
     if (
@@ -210,6 +230,12 @@ export function TaskDetailsEditor({ value, valueDoc, onCommit }: TaskDetailsEdit
     }
   }, [value, valueDoc, syncEditorContent]);
 
+  // Keep a live ref so the unmount cleanup always calls the latest version.
+  const commitRef = useRef(commitEditorMarkdown);
+  commitRef.current = commitEditorMarkdown;
+
+  // Flush pending changes on unmount only — NOT on every commitEditorMarkdown
+  // recreation (which happens whenever the parent re-renders).
   useEffect(() => {
     return () => {
       if (debounceTimerRef.current) {
@@ -220,9 +246,10 @@ export function TaskDetailsEditor({ value, valueDoc, onCommit }: TaskDetailsEdit
         window.clearTimeout(maxWaitTimerRef.current);
         maxWaitTimerRef.current = null;
       }
-      commitEditorMarkdown();
+      commitRef.current();
     };
-  }, [commitEditorMarkdown]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="task-details-surface task-details-surface--editing">

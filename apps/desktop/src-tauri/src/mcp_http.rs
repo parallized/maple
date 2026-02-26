@@ -5,18 +5,123 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use base64::Engine;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::{HashSet, BTreeMap};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::collections::BTreeMap;
 use tauri::Emitter;
 
 use crate::maple_fs;
 
 const MCP_PORT: u16 = 45819;
+const MCP_IMAGE_MAX_BYTES: usize = 3 * 1024 * 1024;
+
+fn mime_from_extension(ext: &str) -> &'static str {
+    let normalized = ext.trim().to_lowercase();
+    if normalized == "png" {
+        return "image/png";
+    }
+    if normalized == "jpg" || normalized == "jpeg" {
+        return "image/jpeg";
+    }
+    if normalized == "webp" {
+        return "image/webp";
+    }
+    if normalized == "gif" {
+        return "image/gif";
+    }
+    if normalized == "svg" {
+        return "image/svg+xml";
+    }
+    "application/octet-stream"
+}
+
+fn parse_maple_asset_file_name(url: &str) -> Option<&str> {
+    let trimmed = url.trim().trim_end_matches('/');
+    if let Some(rest) = trimmed.strip_prefix("maple://asset/") {
+        return Some(rest);
+    }
+    if let Some(rest) = trimmed.strip_prefix("maple://localhost/asset/") {
+        return Some(rest);
+    }
+    if let Some(rest) = trimmed.strip_prefix("maple:///asset/") {
+        return Some(rest);
+    }
+    None
+}
+
+fn rewrite_maple_asset_urls(text: &str) -> (String, Vec<String>) {
+    let mut rewritten = String::with_capacity(text.len());
+    let mut cursor = 0usize;
+    let mut assets: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    while let Some(pos) = text[cursor..].find("maple://") {
+        let start = cursor + pos;
+        rewritten.push_str(&text[cursor..start]);
+
+        let rest = &text[start..];
+        let mut end_rel = rest.len();
+        for (idx, ch) in rest.char_indices() {
+            if ch.is_whitespace() || matches!(ch, ')' | ']' | '"' | '\'' | '<' | '>') {
+                end_rel = idx;
+                break;
+            }
+        }
+
+        let url = &rest[..end_rel];
+        let file_name = parse_maple_asset_file_name(url).map(str::trim);
+        if let Some(file_name) = file_name {
+            if maple_fs::is_valid_asset_file_name(file_name) {
+                if seen.insert(file_name.to_string()) {
+                    assets.push(file_name.to_string());
+                }
+                rewritten.push_str("asset://");
+                rewritten.push_str(file_name);
+            } else {
+                rewritten.push_str(url);
+            }
+        } else {
+            rewritten.push_str(url);
+        }
+
+        cursor = start + end_rel;
+    }
+
+    rewritten.push_str(&text[cursor..]);
+    (rewritten, assets)
+}
+
+fn read_asset_base64_image(file_name: &str) -> Result<(String, &'static str), String> {
+    let trimmed = file_name.trim();
+    if !maple_fs::is_valid_asset_file_name(trimmed) {
+        return Err("无效的 asset 文件名（必须为 64 位小写 hex + 扩展名）。".to_string());
+    }
+
+    let dir = maple_fs::asset_dir()?;
+    let path = dir.join(trimmed);
+    if !path.exists() {
+        return Err("asset 文件不存在。".to_string());
+    }
+
+    let bytes = fs::read(&path).map_err(|e| format!("读取 asset 文件失败: {e}"))?;
+    if bytes.len() > MCP_IMAGE_MAX_BYTES {
+        return Err(format!("图片过大（{} bytes），已跳过内联。", bytes.len()));
+    }
+
+    let ext = trimmed.split('.').nth(1).unwrap_or_default();
+    let mime = mime_from_extension(ext);
+    if mime == "application/octet-stream" {
+        return Err("不支持的图片类型。".to_string());
+    }
+
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok((encoded, mime))
+}
 
 pub struct McpHttpState {
     pub app_handle: tauri::AppHandle,
@@ -263,6 +368,7 @@ fn truncate_chars(s: &str, max: usize) -> &str {
 }
 
 fn summarize_report_content(content: &str, max_chars: usize) -> String {
+    let (content, _) = rewrite_maple_asset_urls(content);
     let collapsed = content
         .replace("\r\n", "\n")
         .lines()
@@ -519,11 +625,15 @@ fn tool_query_project_todos(args: &Value) -> Value {
                 t.title.as_str()
             };
             let details = t.details.trim();
-            let details_text = if details.is_empty() { "（空）" } else { details };
+            let details_text = if details.is_empty() {
+                "（空）".to_string()
+            } else {
+                rewrite_maple_asset_urls(details).0
+            };
             let mut block = vec![
                 format!("{}. [{}] {}{}  (id: {})", i + 1, t.status, title, tags, t.id),
                 "详情：".to_string(),
-                details_text.to_string(),
+                details_text,
                 String::new(),
             ];
             block.extend(build_report_history_lines(&t.reports));
@@ -587,7 +697,8 @@ fn tool_query_recent_context(args: &Value) -> Value {
     let lines: Vec<String> = result
         .iter()
         .map(|(proj, task, at, text)| {
-            let preview = truncate_chars(text, 200);
+            let (rewritten, _) = rewrite_maple_asset_urls(text);
+            let preview = truncate_chars(&rewritten, 200);
             format!("[{proj}] {task}\n  时间：{at}\n  内容：{preview}")
         })
         .collect();
@@ -627,7 +738,11 @@ fn tool_query_task_details(args: &Value) -> Value {
         task.tags.join("、")
     };
     let details = task.details.trim();
-    let details_text = if details.is_empty() { "（空）" } else { details };
+    let (details_text, assets) = if details.is_empty() {
+        ("（空）".to_string(), Vec::new())
+    } else {
+        rewrite_maple_asset_urls(details)
+    };
 
     let lines: Vec<String> = vec![
         format!("任务：{}  (id: {})", task.title, task.id),
@@ -637,10 +752,65 @@ fn tool_query_task_details(args: &Value) -> Value {
         format!("更新时间：{}", task.updated_at),
         String::new(),
         "详情：".to_string(),
-        details_text.to_string(),
+        details_text,
     ];
 
-    json!({ "content": [{ "type": "text", "text": lines.join("\n") }]})
+    let mut content: Vec<Value> = vec![json!({ "type": "text", "text": lines.join("\n") })];
+    for file_name in assets {
+        match read_asset_base64_image(&file_name) {
+            Ok((data, mime_type)) => {
+                content.push(json!({ "type": "text", "text": format!("图片：{file_name}") }));
+                content.push(json!({ "type": "image", "mimeType": mime_type, "data": data }));
+            }
+            Err(err) => {
+                content.push(json!({ "type": "text", "text": format!("图片读取失败：{file_name}（{err}）") }));
+            }
+        }
+    }
+
+    json!({ "content": content })
+}
+
+fn normalize_asset_file_name_arg(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(rest) = trimmed.strip_prefix("asset://") {
+        return Some(rest.trim());
+    }
+    if let Some(rest) = parse_maple_asset_file_name(trimmed) {
+        return Some(rest.trim());
+    }
+    Some(trimmed)
+}
+
+fn tool_read_asset_image(args: &Value) -> Value {
+    let raw = args
+        .get("file_name")
+        .and_then(|v| v.as_str())
+        .or_else(|| args.get("url").and_then(|v| v.as_str()))
+        .unwrap_or("");
+
+    let Some(file_name) = normalize_asset_file_name_arg(raw) else {
+        return json!({
+            "content": [{ "type": "text", "text": "缺少参数：file_name / url。" }],
+            "isError": true
+        });
+    };
+
+    match read_asset_base64_image(file_name) {
+        Ok((data, mime_type)) => json!({
+            "content": [
+                { "type": "text", "text": format!("图片：{file_name}") },
+                { "type": "image", "mimeType": mime_type, "data": data }
+            ]
+        }),
+        Err(err) => json!({
+            "content": [{ "type": "text", "text": format!("图片读取失败：{file_name}（{err}）") }],
+            "isError": true
+        }),
+    }
 }
 
 fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
@@ -986,6 +1156,7 @@ async fn handle_mcp_post(
                 "query_project_todos" => tool_query_project_todos(&arguments),
                 "query_recent_context" => tool_query_recent_context(&arguments),
                 "query_task_details" => tool_query_task_details(&arguments),
+                "read_asset_image" => tool_read_asset_image(&arguments),
                 "submit_task_report" => tool_submit_task_report(&arguments, state.as_ref()),
                 "query_tag_catalog" => tool_query_tag_catalog(&arguments),
                 "upsert_tag_definition" => tool_upsert_tag_definition(&arguments, state.as_ref()),
@@ -1038,6 +1209,17 @@ fn tool_definitions() -> Vec<Value> {
                     "task_id": { "type": "string", "description": "任务 ID" }
                 },
                 "required": ["project", "task_id"]
+            }
+        }),
+        json!({
+            "name": "read_asset_image",
+            "description": "读取任务中的本地图片 asset，并以 MCP image 内容块返回（避免 maple://）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_name": { "type": "string", "description": "asset 文件名（hash.ext），也支持 asset://... / maple://... 形式。" }
+                },
+                "required": ["file_name"]
             }
         }),
         json!({

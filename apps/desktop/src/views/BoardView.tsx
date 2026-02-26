@@ -413,8 +413,12 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
 	onDeleteTask
 }, ref) => {
   return (
-    <tr
+    <motion.tr
       ref={ref}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.12, ease: "easeOut" }}
       className={[
         "task-row",
         task.id === selectedTaskId ? "selected" : "",
@@ -547,7 +551,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           <Icon icon="mingcute:delete-2-line" />
         </motion.button>
       </td>
-    </tr>
+    </motion.tr>
   );
 });
 
@@ -649,22 +653,24 @@ function TaskTable({
         </tr>
       </thead>
       <tbody>
-        {visibleTasks.map((task) => (
-          <TaskRow
-            key={task.id}
-            task={task}
-            selectedTaskId={selectedTaskId}
-            editingTaskId={editingTaskId}
-            projectId={projectId}
-            uiLanguage={uiLanguage}
-            tagLanguage={tagLanguage}
-            tagCatalog={tagCatalog}
-            onSelectTask={onSelectTask}
-            onEditTask={onEditTask}
-            onCommitTaskTitle={onCommitTaskTitle}
-            onDeleteTask={onDeleteTask}
-          />
-        ))}
+        <AnimatePresence initial={false}>
+          {visibleTasks.map((task) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              selectedTaskId={selectedTaskId}
+              editingTaskId={editingTaskId}
+              projectId={projectId}
+              uiLanguage={uiLanguage}
+              tagLanguage={tagLanguage}
+              tagCatalog={tagCatalog}
+              onSelectTask={onSelectTask}
+              onEditTask={onEditTask}
+              onCommitTaskTitle={onCommitTaskTitle}
+              onDeleteTask={onDeleteTask}
+            />
+          ))}
+        </AnimatePresence>
         {hasMore ? (
           <tr ref={loadMoreRef}>
             <td colSpan={7} className="py-3 text-center text-[11px] text-muted">
