@@ -63,8 +63,8 @@ pub fn init(app_handle: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
 
-    let tray = TrayIconBuilder::with_id(TRAY_ID)
-        .icon(render_badge_icon(0, AggregateStatus::Done.color()))
+    let _tray = TrayIconBuilder::with_id(TRAY_ID)
+        .icon(render_idle_icon())
         .tooltip("Maple · 暂无任务")
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
@@ -85,7 +85,7 @@ pub fn init(app_handle: &AppHandle) -> tauri::Result<()> {
 
     #[cfg(target_os = "macos")]
     {
-        let _ = tray.set_title(Some("0"));
+        let _ = _tray.set_title(Some("0"));
     }
 
     Ok(())
@@ -101,7 +101,7 @@ pub fn sync(app_handle: &AppHandle, snapshot: &TrayTaskSnapshot) -> tauri::Resul
     };
 
     let status = aggregate_status(snapshot);
-    let icon = render_badge_icon(snapshot.unresolved_count.min(99), status.color());
+    let icon = render_tray_icon(snapshot, status);
     tray.set_icon(Some(icon))?;
     tray.set_tooltip(Some(build_tooltip(snapshot, status).as_str()))?;
 
@@ -115,14 +115,16 @@ pub fn sync(app_handle: &AppHandle, snapshot: &TrayTaskSnapshot) -> tauri::Resul
 }
 
 fn aggregate_status(snapshot: &TrayTaskSnapshot) -> AggregateStatus {
-    if snapshot.in_progress_count > 0 {
+    if snapshot.confirm_count > 0 {
+        AggregateStatus::Confirm
+    } else if snapshot.need_info_count > 0 {
+        AggregateStatus::NeedInfo
+    } else if snapshot.in_progress_count > 0 {
         AggregateStatus::InProgress
     } else if snapshot.queued_count > 0 {
         AggregateStatus::Queued
     } else if snapshot.todo_count > 0 {
         AggregateStatus::Todo
-    } else if snapshot.need_info_count > 0 {
-        AggregateStatus::NeedInfo
     } else if snapshot.blocked_count > 0 {
         AggregateStatus::Blocked
     } else {
@@ -140,13 +142,14 @@ fn build_tooltip(snapshot: &TrayTaskSnapshot, status: AggregateStatus) -> String
     }
 
     format!(
-        "Maple · {} · 待处理 {}\n进行中 {} · 队列中 {} · 待办 {} · 需信息 {} · 已阻塞 {} · 已完成 {}",
+        "Maple · {} · 待处理 {}\n待确认 {} · 检查 {} · 进行中 {} · 队列中 {} · 待办 {} · 已阻塞 {} · 已完成 {}",
         status.label(),
         snapshot.unresolved_count,
+        snapshot.confirm_count,
+        snapshot.need_info_count,
         snapshot.in_progress_count,
         snapshot.queued_count,
         snapshot.todo_count,
-        snapshot.need_info_count,
         snapshot.blocked_count,
         snapshot.completed_count
     )
@@ -161,7 +164,22 @@ fn format_badge_count(count: u32) -> String {
     }
 }
 
-fn render_badge_icon(count: u32, color: [u8; 4]) -> Image<'static> {
+fn has_attention(snapshot: &TrayTaskSnapshot) -> bool {
+    snapshot.confirm_count > 0 || snapshot.need_info_count > 0
+}
+
+fn render_idle_icon() -> Image<'static> {
+    render_empty_circle_icon([160, 160, 160, 220])
+}
+
+fn render_tray_icon(snapshot: &TrayTaskSnapshot, _status: AggregateStatus) -> Image<'static> {
+    if has_attention(snapshot) {
+        return render_check_icon();
+    }
+    render_overview_pie_icon(snapshot)
+}
+
+fn render_empty_circle_icon(color: [u8; 4]) -> Image<'static> {
     let mut rgba = vec![0u8; (ICON_SIZE * ICON_SIZE * 4) as usize];
 
     draw_circle(
@@ -171,115 +189,136 @@ fn render_badge_icon(count: u32, color: [u8; 4]) -> Image<'static> {
         (ICON_SIZE as i32 / 2) - 1,
         color,
     );
+
+    Image::new_owned(rgba, ICON_SIZE, ICON_SIZE)
+}
+
+fn render_check_icon() -> Image<'static> {
+    let mut rgba = vec![0u8; (ICON_SIZE * ICON_SIZE * 4) as usize];
+
     draw_circle(
         &mut rgba,
         (ICON_SIZE / 2) as i32,
         (ICON_SIZE / 2) as i32,
-        (ICON_SIZE as i32 / 2) - 3,
-        [255, 255, 255, 18],
+        (ICON_SIZE as i32 / 2) - 1,
+        [0, 0, 0, 255],
     );
 
-    draw_count_label(&mut rgba, count.min(99));
+    draw_check_mark(&mut rgba, [255, 255, 255, 255]);
     Image::new_owned(rgba, ICON_SIZE, ICON_SIZE)
 }
 
-fn draw_count_label(rgba: &mut [u8], count: u32) {
-    let digits: Vec<u32> = count
-        .to_string()
-        .chars()
-        .filter_map(|ch| ch.to_digit(10))
-        .collect();
-    if digits.is_empty() {
-        return;
-    }
-
-    let two_digits = digits.len() >= 2;
-    let digit_w = if two_digits { 9 } else { 12 };
-    let digit_h = if two_digits { 16 } else { 19 };
-    let gap = if two_digits { 2 } else { 0 };
-    let total_w = (digit_w * digits.len() as i32) + (gap * (digits.len() as i32 - 1));
-    let start_x = ((ICON_SIZE as i32 - total_w) / 2).max(0);
-    let start_y = ((ICON_SIZE as i32 - digit_h) / 2).max(0);
-
-    for (index, value) in digits.into_iter().enumerate() {
-        let x = start_x + index as i32 * (digit_w + gap);
-        draw_digit(
-            rgba,
-            x + 1,
-            start_y + 1,
-            digit_w,
-            digit_h,
-            value as u8,
-            [0, 0, 0, 110],
-        );
-        draw_digit(
-            rgba,
-            x,
-            start_y,
-            digit_w,
-            digit_h,
-            value as u8,
-            [255, 255, 255, 255],
-        );
-    }
+fn render_overview_pie_icon(snapshot: &TrayTaskSnapshot) -> Image<'static> {
+    let segments: [(u32, [u8; 4]); 5] = [
+        (snapshot.in_progress_count, AggregateStatus::InProgress.color()),
+        (snapshot.queued_count, AggregateStatus::Queued.color()),
+        (snapshot.todo_count, AggregateStatus::Todo.color()),
+        (snapshot.blocked_count, AggregateStatus::Blocked.color()),
+        (snapshot.completed_count, AggregateStatus::Done.color()),
+    ];
+    render_pie_icon(&segments, true)
 }
 
-fn draw_digit(rgba: &mut [u8], x: i32, y: i32, width: i32, height: i32, value: u8, color: [u8; 4]) {
-    if width <= 0 || height <= 0 {
-        return;
+fn render_pie_icon(segments: &[(u32, [u8; 4])], highlight: bool) -> Image<'static> {
+    let total: u32 = segments.iter().map(|(value, _)| *value).sum();
+    if total == 0 {
+        return render_idle_icon();
     }
-    let thickness = if width >= 11 { 3 } else { 2 };
-    let mid_y = y + (height / 2);
-    let top_h = thickness;
-    let vert_h = (height / 2) - thickness;
-    let bottom_h = height - (height / 2) - thickness;
 
-    let mut segments: [(i32, i32, i32, i32); 7] = [(0, 0, 0, 0); 7];
-    segments[0] = (x + thickness, y, width - (thickness * 2), top_h);
-    segments[1] = (x, y + thickness, thickness, vert_h);
-    segments[2] = (x + width - thickness, y + thickness, thickness, vert_h);
-    segments[3] = (
-        x + thickness,
-        mid_y - (thickness / 2),
-        width - (thickness * 2),
-        thickness,
-    );
-    segments[4] = (x, mid_y + (thickness / 2), thickness, bottom_h);
-    segments[5] = (
-        x + width - thickness,
-        mid_y + (thickness / 2),
-        thickness,
-        bottom_h,
-    );
-    segments[6] = (
-        x + thickness,
-        y + height - thickness,
-        width - (thickness * 2),
-        thickness,
-    );
+    let cx = ICON_SIZE as f32 / 2.0;
+    let cy = ICON_SIZE as f32 / 2.0;
+    let radius = (ICON_SIZE as f32 / 2.0) - 1.0;
+    let radius_sq = radius * radius;
+    let tau = std::f32::consts::PI * 2.0;
 
-    for (segment_index, enabled) in digit_segments(value).iter().enumerate() {
-        if !enabled {
+    let mut boundaries: Vec<(f32, [u8; 4])> = Vec::with_capacity(segments.len());
+    let mut acc = 0.0;
+    for (value, color) in segments {
+        if *value == 0 {
             continue;
         }
-        let (sx, sy, sw, sh) = segments[segment_index];
-        fill_rect(rgba, sx, sy, sw, sh, color);
+        acc += (*value as f32 / total as f32) * tau;
+        boundaries.push((acc, *color));
     }
+
+    if boundaries.is_empty() {
+        return render_idle_icon();
+    }
+
+    let mut rgba = vec![0u8; (ICON_SIZE * ICON_SIZE * 4) as usize];
+    for y in 0..(ICON_SIZE as i32) {
+        for x in 0..(ICON_SIZE as i32) {
+            let fx = x as f32 + 0.5;
+            let fy = y as f32 + 0.5;
+            let dx = fx - cx;
+            let dy = fy - cy;
+            let dist_sq = dx * dx + dy * dy;
+            if dist_sq > radius_sq {
+                continue;
+            }
+
+            let mut angle = dy.atan2(dx) + std::f32::consts::FRAC_PI_2;
+            if angle < 0.0 {
+                angle += tau;
+            }
+
+            let mut color = boundaries[boundaries.len() - 1].1;
+            for (limit, candidate) in &boundaries {
+                if angle <= *limit {
+                    color = *candidate;
+                    break;
+                }
+            }
+            blend_pixel(&mut rgba, x, y, color);
+        }
+    }
+
+    if highlight {
+        draw_circle(
+            &mut rgba,
+            (ICON_SIZE / 2) as i32,
+            (ICON_SIZE / 2) as i32,
+            (ICON_SIZE as i32 / 2) - 3,
+            [255, 255, 255, 18],
+        );
+    }
+
+    Image::new_owned(rgba, ICON_SIZE, ICON_SIZE)
 }
 
-fn digit_segments(value: u8) -> [bool; 7] {
-    match value {
-        0 => [true, true, true, false, true, true, true],
-        1 => [false, false, true, false, false, true, false],
-        2 => [true, false, true, true, true, false, true],
-        3 => [true, false, true, true, false, true, true],
-        4 => [false, true, true, true, false, true, false],
-        5 => [true, true, false, true, false, true, true],
-        6 => [true, true, false, true, true, true, true],
-        7 => [true, false, true, false, false, true, false],
-        8 => [true, true, true, true, true, true, true],
-        9 => [true, true, true, true, false, true, true],
-        _ => [false; 7],
+fn draw_check_mark(rgba: &mut [u8], color: [u8; 4]) {
+    let size = ICON_SIZE as f32;
+    let stroke_radius = 2;
+
+    let start = (size * 0.31, size * 0.53);
+    let mid = (size * 0.44, size * 0.66);
+    let end = (size * 0.71, size * 0.36);
+
+    draw_thick_line(rgba, start, mid, stroke_radius, color);
+    draw_thick_line(rgba, mid, end, stroke_radius, color);
+}
+
+fn draw_thick_line(
+    rgba: &mut [u8],
+    start: (f32, f32),
+    end: (f32, f32),
+    radius: i32,
+    color: [u8; 4],
+) {
+    if radius <= 0 {
+        return;
+    }
+
+    let dx = end.0 - start.0;
+    let dy = end.1 - start.1;
+    let dist = (dx * dx + dy * dy).sqrt();
+    let steps = dist.ceil().max(1.0) as i32;
+
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        let x = start.0 + dx * t;
+        let y = start.1 + dy * t;
+        draw_circle(rgba, x.round() as i32, y.round() as i32, radius, color);
     }
 }
 
@@ -295,17 +334,6 @@ fn draw_circle(rgba: &mut [u8], cx: i32, cy: i32, radius: i32, color: [u8; 4]) {
             if (dx * dx) + (dy * dy) <= radius_sq {
                 blend_pixel(rgba, x, y, color);
             }
-        }
-    }
-}
-
-fn fill_rect(rgba: &mut [u8], x: i32, y: i32, width: i32, height: i32, color: [u8; 4]) {
-    if width <= 0 || height <= 0 {
-        return;
-    }
-    for py in y..(y + height) {
-        for px in x..(x + width) {
-            blend_pixel(rgba, px, py, color);
         }
     }
 }

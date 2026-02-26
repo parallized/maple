@@ -385,18 +385,8 @@ type TaskTableProps = {
   onResizeDblClick: (col: string) => void;
 };
 
-const trVariants = {
-  hidden: { opacity: 0 },
-  visible: (index: number) => ({
-    opacity: 1,
-    transition: { delay: index * 0.03, duration: 0.18, ease: "easeOut" as const }
-  }),
-  exit: { opacity: 0, transition: { duration: 0.12 } }
-};
-
 type TaskRowProps = {
   task: Task;
-  index: number;
   selectedTaskId: string | null;
   editingTaskId: string | null;
   projectId: string;
@@ -411,7 +401,6 @@ type TaskRowProps = {
 
 const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   task,
-  index,
   selectedTaskId,
   editingTaskId,
   projectId,
@@ -424,14 +413,8 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
 	onDeleteTask
 }, ref) => {
   return (
-    <motion.tr
+    <tr
       ref={ref}
-      custom={index}
-      variants={trVariants}
-      initial="hidden"
-      animate="visible"
-      exit="exit"
-      style={{ "--row-enter-delay": `${index * 30}ms` } as React.CSSProperties}
       className={[
         "task-row",
         task.id === selectedTaskId ? "selected" : "",
@@ -564,7 +547,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           <Icon icon="mingcute:delete-2-line" />
         </motion.button>
       </td>
-    </motion.tr>
+    </tr>
   );
 });
 
@@ -623,36 +606,24 @@ function TaskTable({
           <th className="col-actions"></th>
         </tr>
       </thead>
-      <motion.tbody
-        initial="hidden"
-        animate="visible"
-        variants={{
-          hidden: { opacity: 0 },
-          visible: {
-            opacity: 1
-          }
-        }}
-      >
-        <AnimatePresence>
-          {tasks.map((task, index) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              index={index}
-              selectedTaskId={selectedTaskId}
-              editingTaskId={editingTaskId}
-              projectId={projectId}
-              uiLanguage={uiLanguage}
-              tagLanguage={tagLanguage}
-              tagCatalog={tagCatalog}
-              onSelectTask={onSelectTask}
-              onEditTask={onEditTask}
-              onCommitTaskTitle={onCommitTaskTitle}
-              onDeleteTask={onDeleteTask}
-            />
-          ))}
-        </AnimatePresence>
-      </motion.tbody>
+      <tbody>
+        {tasks.map((task, index) => (
+          <TaskRow
+            key={task.id}
+            task={task}
+            selectedTaskId={selectedTaskId}
+            editingTaskId={editingTaskId}
+            projectId={projectId}
+            uiLanguage={uiLanguage}
+            tagLanguage={tagLanguage}
+            tagCatalog={tagCatalog}
+            onSelectTask={onSelectTask}
+            onEditTask={onEditTask}
+            onCommitTaskTitle={onCommitTaskTitle}
+            onDeleteTask={onDeleteTask}
+          />
+        ))}
+      </tbody>
     </table>
   );
 }

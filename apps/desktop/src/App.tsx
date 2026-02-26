@@ -1244,19 +1244,16 @@ export function App() {
 	                ...t,
 	                status: "已完成",
 	                needsConfirmation: false,
-	                reports: [...t.reports, createTaskReport("user", ["状态：已完成", "描述：", "手动标记为已完成。"].join("\n"))]
 	              }))}
 	              onReworkToDraft={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                ...t,
 	                status: "草稿",
 	                needsConfirmation: false,
-	                reports: [...t.reports, createTaskReport("user", ["状态：草稿", "描述：", "已返工，任务已回到草稿状态。"].join("\n"))]
 	              }))}
 	              onSetAsTodo={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                ...t,
 	                status: "待办",
 	                needsConfirmation: false,
-	                reports: [...t.reports, createTaskReport("user", ["状态：待办", "描述：", "已设置为待办。"].join("\n"))]
 	              }))}
 	              onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
 	            />
@@ -1280,19 +1277,16 @@ export function App() {
 	                  ...t,
 	                  status: "已完成",
 	                  needsConfirmation: false,
-	                  reports: [...t.reports, createTaskReport("user", ["状态：已完成", "描述：", "手动标记为已完成。"].join("\n"))]
 	                }))}
 	                onReworkToDraft={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                  ...t,
 	                  status: "草稿",
 	                  needsConfirmation: false,
-	                  reports: [...t.reports, createTaskReport("user", ["状态：草稿", "描述：", "已返工，任务已回到草稿状态。"].join("\n"))]
 	                }))}
 	                onSetAsTodo={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                  ...t,
 	                  status: "待办",
 	                  needsConfirmation: false,
-	                  reports: [...t.reports, createTaskReport("user", ["状态：待办", "描述：", "已设置为待办。"].join("\n"))]
 	                }))}
 	                onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
 	              />
