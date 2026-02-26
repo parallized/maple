@@ -82,6 +82,11 @@ async fn probe_install_targets() -> Result<Vec<installer::InstallTargetProbe>, S
 }
 
 #[tauri::command]
+fn get_install_meta() -> installer::InstallMeta {
+  installer::read_install_meta()
+}
+
+#[tauri::command]
 async fn install_mcp_skills(
   window: tauri::Window,
   options: Option<installer::InstallMcpSkillsOptions>,
@@ -855,6 +860,7 @@ fn main() {
     .invoke_handler(tauri::generate_handler![
       probe_worker,
       probe_install_targets,
+      get_install_meta,
       install_mcp_skills,
       run_worker,
       start_interactive_worker,

@@ -624,20 +624,12 @@ export function App() {
   ): { args: string[]; prompt: string } {
     const kind = parseWorkerId(workerId).kind;
     const args = kind ? buildWorkerRunArgs(kind, config) : parseArgs(config.runArgs);
-    const directoryForPrompt =
-      kind && workerRuntimeByKind[kind] === "wsl"
-        ? windowsPathToWslMntPath(project.directory) ?? project.directory
-        : project.directory;
-    const promptText = [
-      createWorkerExecutionPrompt({
-        projectName: project.name,
-        directory: directoryForPrompt,
-        taskTitle: task.title
-      }),
-      effectiveAiLanguage === "en"
-        ? "You must output `mcp_decision.tags` in English only. No Chinese tags and no mixed-language fallback."
-        : "你必须仅使用中文输出 `mcp_decision.tags`，禁止英文或中英混写标签，不允许任何兜底。"
-    ].join("\n\n");
+    const promptText = createWorkerExecutionPrompt({
+      projectName: project.name,
+      directory: project.directory,
+      taskTitle: task.title,
+      workerKind: kind ?? undefined
+    });
 
     // Insert prompt into CLI args after the prompt flag (e.g. --print, e, -p).
     // If the flag isn't found, fall back to stdin piping (backward compat).
@@ -998,6 +990,22 @@ export function App() {
             if (result.stdout.trim()) appendWorkerLog(workerId, `${result.stdout.trim()}\n`);
             if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
           }
+
+          // Check if MCP events already updated the task to a terminal state.
+          // If so, the worker drove state transitions properly via MCP tools.
+          const currentTask = projectsRef.current
+            .find((p) => p.id === projectId)
+            ?.tasks.find((t) => t.id === task.id);
+          const mcpDrivenStatus = currentTask?.status;
+          const isTerminal = mcpDrivenStatus === "已完成" || mcpDrivenStatus === "已阻塞"
+            || mcpDrivenStatus === "需要更多信息" || mcpDrivenStatus === "待返工";
+
+          if (isTerminal) {
+            // MCP already handled status; nothing more to do for this task.
+            continue;
+          }
+
+          // Fallback: try parsing structured decision from stdout/stderr (backward compat).
           const decision = resolveMcpDecision(result);
           const report = createTaskReport(label, buildWorkerArchiveReport(result, task.title));
           if (!decision) {
@@ -1235,6 +1243,10 @@ export function App() {
                     onExternalEditorAppChange={setExternalEditorApp}
                     onDetailModeChange={setDetailMode}
                     onRefreshProbes={() => setInstallProbeToken((n) => n + 1)}
+                    onReinstallSkills={() => {
+                      if (!isTauri) return;
+                      invoke("install_mcp_skills", { options: null }).catch(() => {});
+                    }}
                   />
                 </motion.div>
               ) : null}

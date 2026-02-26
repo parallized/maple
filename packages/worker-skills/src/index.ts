@@ -2,6 +2,7 @@ export type WorkerExecutionPromptInput = {
   projectName: string;
   directory: string;
   taskTitle: string;
+  workerKind?: "claude" | "codex" | "iflow" | string;
 };
 
 export type WorkerExecutionResultLike = {
@@ -56,14 +57,7 @@ function renderSkillChecklist(skills: MapleWorkerSkill[]): string[] {
 }
 
 export function createWorkerExecutionPrompt(input: WorkerExecutionPromptInput): string {
-  return [
-    "[Maple Worker Task]",
-    `Project: ${input.projectName}`,
-    `Directory: ${input.directory}`,
-    `Task: ${input.taskTitle}`,
-    "先在会话中加载 Maple 能力：非 Codex 输入 `/maple`，Codex 输入 `$maple`。",
-    "然后按任务完成实现与验证。",
-  ].join("\n");
+  return input.workerKind === "codex" ? "$maple" : '"/maple"';
 }
 
 function normalizeList(value: unknown): string[] {

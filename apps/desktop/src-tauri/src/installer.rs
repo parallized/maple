@@ -8,8 +8,10 @@ use std::process::Command;
 use std::sync::Arc;
 
 use crate::maple_fs;
+use chrono::Utc;
 
 const MAPLE_MCP_URL: &str = "http://localhost:45819/mcp";
+const SKILLS_VERSION: u32 = 0;
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -152,6 +154,7 @@ pub struct InstallTargetResult {
 pub struct InstallMcpSkillsReport {
   pub mcp_url: String,
   pub targets: Vec<InstallTargetResult>,
+  pub skills_version: u32,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -162,6 +165,36 @@ pub struct InstallTargetProbe {
   pub cli_found: bool,
   pub installed: bool,
   pub npm_found: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallMeta {
+  pub skills_version: Option<u32>,
+  pub installed_at: Option<String>,
+  pub latest_skills_version: u32,
+}
+
+pub fn read_install_meta() -> InstallMeta {
+  let latest = SKILLS_VERSION;
+  let maple_home = match maple_fs::maple_home_dir() {
+    Ok(h) => h,
+    Err(_) => return InstallMeta { skills_version: None, installed_at: None, latest_skills_version: latest },
+  };
+  let meta_path = maple_home.join("install-meta.json");
+  let content = match fs::read_to_string(&meta_path) {
+    Ok(c) => c,
+    Err(_) => return InstallMeta { skills_version: None, installed_at: None, latest_skills_version: latest },
+  };
+  let parsed: serde_json::Value = match serde_json::from_str(&content) {
+    Ok(v) => v,
+    Err(_) => return InstallMeta { skills_version: None, installed_at: None, latest_skills_version: latest },
+  };
+  InstallMeta {
+    skills_version: parsed.get("skillsVersion").and_then(|v| v.as_u64()).map(|v| v as u32),
+    installed_at: parsed.get("installedAt").and_then(|v| v.as_str()).map(|s| s.to_string()),
+    latest_skills_version: latest,
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -1348,7 +1381,19 @@ pub fn install_mcp_and_skills_with_events(
   let report = InstallMcpSkillsReport {
     mcp_url: MAPLE_MCP_URL.to_string(),
     targets,
+    skills_version: SKILLS_VERSION,
   };
+
+  // Write install meta to ~/.maple/install-meta.json
+  if let Ok(maple_home) = maple_fs::maple_home_dir() {
+    let _ = fs::create_dir_all(&maple_home);
+    let meta = json!({
+      "skillsVersion": SKILLS_VERSION,
+      "installedAt": Utc::now().to_rfc3339(),
+    });
+    let meta_path = maple_home.join("install-meta.json");
+    let _ = fs::write(&meta_path, serde_json::to_string_pretty(&meta).unwrap_or_default());
+  }
 
   Ok(report)
 }

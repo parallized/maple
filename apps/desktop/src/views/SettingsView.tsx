@@ -1,8 +1,11 @@
 import { Icon } from "@iconify/react";
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
 import { FadeContent } from "../components/ReactBits";
 import { WorkerConfigCard, type WorkerProbe } from "../components/WorkerConfigCard";
 import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage } from "../lib/constants";
 import type { DetailMode, McpServerStatus, WorkerKind } from "../domain";
+import { hasTauriRuntime } from "../lib/utils";
 import type { InstallTargetId } from "../lib/install-targets";
 
 type SettingsViewProps = {
@@ -27,6 +30,7 @@ type SettingsViewProps = {
   onExternalEditorAppChange: (app: ExternalEditorApp) => void;
   onDetailModeChange: (mode: DetailMode) => void;
   onRefreshProbes: () => void;
+  onReinstallSkills: () => void;
 };
 
 export function SettingsView({
@@ -45,9 +49,19 @@ export function SettingsView({
   onAiLanguageChange,
   onExternalEditorAppChange,
   onDetailModeChange,
-  onRefreshProbes
+  onRefreshProbes,
+  onReinstallSkills
 }: SettingsViewProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
+  const isTauri = hasTauriRuntime();
+
+  type InstallMeta = { skillsVersion: number | null; installedAt: string | null; latestSkillsVersion: number };
+  const [installMeta, setInstallMeta] = useState<InstallMeta | null>(null);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    invoke<InstallMeta>("get_install_meta").then(setInstallMeta).catch(() => {});
+  }, [isTauri]);
 
   const installedWorkers = workerAvailability.filter((w) => w.available);
   const uninstalledWorkers = workerAvailability.filter((w) => !w.available);
@@ -202,6 +216,34 @@ export function SettingsView({
               {t("重启", "Restart")}
             </button>
           </div>
+          {installMeta ? (
+            <div className="flex items-center gap-3 mt-3">
+              <span className="text-xs text-muted">
+                MCP & Skills {installMeta.skillsVersion != null ? `v${installMeta.skillsVersion}` : t("未安装", "Not installed")}
+              </span>
+              {installMeta.skillsVersion != null && installMeta.skillsVersion < installMeta.latestSkillsVersion ? (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--xs ui-btn--outline gap-1 text-(--color-primary)"
+                  onClick={() => { onReinstallSkills(); invoke<InstallMeta>("get_install_meta").then(setInstallMeta).catch(() => {}); }}
+                >
+                  <Icon icon="mingcute:upload-2-line" className="text-xs" />
+                  {t("更新到", "Update to")} v{installMeta.latestSkillsVersion}
+                </button>
+              ) : installMeta.skillsVersion == null ? (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--xs ui-btn--outline gap-1 text-(--color-primary)"
+                  onClick={() => { onReinstallSkills(); invoke<InstallMeta>("get_install_meta").then(setInstallMeta).catch(() => {}); }}
+                >
+                  <Icon icon="mingcute:download-2-line" className="text-xs" />
+                  {t("安装", "Install")}
+                </button>
+              ) : (
+                <span className="ui-badge ui-badge--success text-[10px]">{t("最新", "Latest")}</span>
+              )}
+            </div>
+          ) : null}
           {mcpStartupError ? (
             <p className="text-sm mt-2" style={{ color: "var(--color-error, #d47049)" }}>
               {mcpStartupError}
