@@ -6,7 +6,18 @@ use tauri::{
 };
 
 const TRAY_ID: &str = "maple-task-status";
-const ICON_SIZE: u32 = 32;
+const ICON_SIZE: u32 = 64;
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrayTaskPalette {
+    pub in_progress: Option<String>,
+    pub queued: Option<String>,
+    pub todo: Option<String>,
+    pub blocked: Option<String>,
+    pub done: Option<String>,
+    pub attention: Option<String>,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +30,7 @@ pub struct TrayTaskSnapshot {
     pub confirm_count: u32,
     pub blocked_count: u32,
     pub completed_count: u32,
+    pub palette: Option<TrayTaskPalette>,
 }
 
 #[derive(Clone, Copy)]
@@ -47,13 +59,13 @@ impl AggregateStatus {
 
     fn color(self) -> [u8; 4] {
         match self {
-            AggregateStatus::Confirm => [233, 151, 0, 255],
-            AggregateStatus::InProgress => [31, 111, 235, 255],
-            AggregateStatus::Queued => [233, 151, 0, 255],
-            AggregateStatus::Todo => [202, 135, 0, 255],
-            AggregateStatus::NeedInfo => [242, 139, 58, 255],
-            AggregateStatus::Blocked => [215, 68, 68, 255],
-            AggregateStatus::Done => [76, 169, 94, 255],
+            AggregateStatus::Confirm => [227, 179, 65, 255],
+            AggregateStatus::InProgress => [47, 111, 179, 255],
+            AggregateStatus::Queued => [107, 114, 128, 255],
+            AggregateStatus::Todo => [107, 114, 128, 255],
+            AggregateStatus::NeedInfo => [227, 179, 65, 255],
+            AggregateStatus::Blocked => [212, 112, 73, 255],
+            AggregateStatus::Done => [77, 168, 114, 255],
         }
     }
 }
@@ -168,13 +180,69 @@ fn has_attention(snapshot: &TrayTaskSnapshot) -> bool {
     snapshot.confirm_count > 0 || snapshot.need_info_count > 0
 }
 
+fn parse_css_color(raw: &str) -> Option<[u8; 4]> {
+    let value = raw.trim();
+    let hex = value.strip_prefix('#')?;
+
+    fn hex_u8(pair: &str) -> Option<u8> {
+        u8::from_str_radix(pair, 16).ok()
+    }
+
+    match hex.len() {
+        3 => {
+            let r = hex_u8(&hex[0..1])? * 17;
+            let g = hex_u8(&hex[1..2])? * 17;
+            let b = hex_u8(&hex[2..3])? * 17;
+            Some([r, g, b, 255])
+        }
+        4 => {
+            let r = hex_u8(&hex[0..1])? * 17;
+            let g = hex_u8(&hex[1..2])? * 17;
+            let b = hex_u8(&hex[2..3])? * 17;
+            let a = hex_u8(&hex[3..4])? * 17;
+            Some([r, g, b, a])
+        }
+        6 => {
+            let r = hex_u8(&hex[0..2])?;
+            let g = hex_u8(&hex[2..4])?;
+            let b = hex_u8(&hex[4..6])?;
+            Some([r, g, b, 255])
+        }
+        8 => {
+            let r = hex_u8(&hex[0..2])?;
+            let g = hex_u8(&hex[2..4])?;
+            let b = hex_u8(&hex[4..6])?;
+            let a = hex_u8(&hex[6..8])?;
+            Some([r, g, b, a])
+        }
+        _ => None,
+    }
+}
+
+fn resolve_color(snapshot: &TrayTaskSnapshot, status: AggregateStatus) -> [u8; 4] {
+    let Some(palette) = snapshot.palette.as_ref() else {
+        return status.color();
+    };
+
+    let raw = match status {
+        AggregateStatus::Confirm | AggregateStatus::NeedInfo => palette.attention.as_deref(),
+        AggregateStatus::InProgress => palette.in_progress.as_deref(),
+        AggregateStatus::Queued => palette.queued.as_deref(),
+        AggregateStatus::Todo => palette.todo.as_deref(),
+        AggregateStatus::Blocked => palette.blocked.as_deref(),
+        AggregateStatus::Done => palette.done.as_deref(),
+    };
+
+    raw.and_then(parse_css_color).unwrap_or_else(|| status.color())
+}
+
 fn render_idle_icon() -> Image<'static> {
     render_empty_circle_icon([160, 160, 160, 220])
 }
 
-fn render_tray_icon(snapshot: &TrayTaskSnapshot, _status: AggregateStatus) -> Image<'static> {
+fn render_tray_icon(snapshot: &TrayTaskSnapshot, status: AggregateStatus) -> Image<'static> {
     if has_attention(snapshot) {
-        return render_check_icon();
+        return render_check_icon(resolve_color(snapshot, status));
     }
     render_overview_pie_icon(snapshot)
 }
@@ -193,7 +261,7 @@ fn render_empty_circle_icon(color: [u8; 4]) -> Image<'static> {
     Image::new_owned(rgba, ICON_SIZE, ICON_SIZE)
 }
 
-fn render_check_icon() -> Image<'static> {
+fn render_check_icon(bg_color: [u8; 4]) -> Image<'static> {
     let mut rgba = vec![0u8; (ICON_SIZE * ICON_SIZE * 4) as usize];
 
     draw_circle(
@@ -201,7 +269,7 @@ fn render_check_icon() -> Image<'static> {
         (ICON_SIZE / 2) as i32,
         (ICON_SIZE / 2) as i32,
         (ICON_SIZE as i32 / 2) - 1,
-        [0, 0, 0, 255],
+        bg_color,
     );
 
     draw_check_mark(&mut rgba, [255, 255, 255, 255]);
@@ -210,13 +278,22 @@ fn render_check_icon() -> Image<'static> {
 
 fn render_overview_pie_icon(snapshot: &TrayTaskSnapshot) -> Image<'static> {
     let segments: [(u32, [u8; 4]); 5] = [
-        (snapshot.in_progress_count, AggregateStatus::InProgress.color()),
-        (snapshot.queued_count, AggregateStatus::Queued.color()),
-        (snapshot.todo_count, AggregateStatus::Todo.color()),
-        (snapshot.blocked_count, AggregateStatus::Blocked.color()),
-        (snapshot.completed_count, AggregateStatus::Done.color()),
+        (
+            snapshot.in_progress_count,
+            resolve_color(snapshot, AggregateStatus::InProgress),
+        ),
+        (snapshot.queued_count, resolve_color(snapshot, AggregateStatus::Queued)),
+        (snapshot.todo_count, resolve_color(snapshot, AggregateStatus::Todo)),
+        (
+            snapshot.blocked_count,
+            resolve_color(snapshot, AggregateStatus::Blocked),
+        ),
+        (
+            snapshot.completed_count,
+            resolve_color(snapshot, AggregateStatus::Done),
+        ),
     ];
-    render_pie_icon(&segments, true)
+    render_pie_icon(&segments, false)
 }
 
 fn render_pie_icon(segments: &[(u32, [u8; 4])], highlight: bool) -> Image<'static> {
@@ -229,21 +306,29 @@ fn render_pie_icon(segments: &[(u32, [u8; 4])], highlight: bool) -> Image<'stati
     let cy = ICON_SIZE as f32 / 2.0;
     let radius = (ICON_SIZE as f32 / 2.0) - 1.0;
     let radius_sq = radius * radius;
+    let inner_radius = radius * 0.4;
+    let inner_radius_sq = inner_radius * inner_radius;
     let tau = std::f32::consts::PI * 2.0;
 
-    let mut boundaries: Vec<(f32, [u8; 4])> = Vec::with_capacity(segments.len());
+    let mut arcs: Vec<(f32, f32, [u8; 4])> = Vec::with_capacity(segments.len());
     let mut acc = 0.0;
     for (value, color) in segments {
         if *value == 0 {
             continue;
         }
-        acc += (*value as f32 / total as f32) * tau;
-        boundaries.push((acc, *color));
+        let sweep = (*value as f32 / total as f32) * tau;
+        let start = acc;
+        let end = acc + sweep;
+        arcs.push((start, end, *color));
+        acc = end;
     }
 
-    if boundaries.is_empty() {
+    if arcs.is_empty() {
         return render_idle_icon();
     }
+
+    let gap: f32 = if arcs.len() > 1 { 0.035 } else { 0.0 };
+    let half_gap: f32 = gap / 2.0_f32;
 
     let mut rgba = vec![0u8; (ICON_SIZE * ICON_SIZE * 4) as usize];
     for y in 0..(ICON_SIZE as i32) {
@@ -253,7 +338,7 @@ fn render_pie_icon(segments: &[(u32, [u8; 4])], highlight: bool) -> Image<'stati
             let dx = fx - cx;
             let dy = fy - cy;
             let dist_sq = dx * dx + dy * dy;
-            if dist_sq > radius_sq {
+            if dist_sq > radius_sq || dist_sq < inner_radius_sq {
                 continue;
             }
 
@@ -262,14 +347,16 @@ fn render_pie_icon(segments: &[(u32, [u8; 4])], highlight: bool) -> Image<'stati
                 angle += tau;
             }
 
-            let mut color = boundaries[boundaries.len() - 1].1;
-            for (limit, candidate) in &boundaries {
-                if angle <= *limit {
-                    color = *candidate;
+            for (start, end, color) in &arcs {
+                let sweep = end - start;
+                let local_half_gap = half_gap.min(sweep * 0.35_f32);
+                let inner_start = start + local_half_gap;
+                let inner_end = end - local_half_gap;
+                if inner_start <= inner_end && angle >= inner_start && angle <= inner_end {
+                    blend_pixel(&mut rgba, x, y, *color);
                     break;
                 }
             }
-            blend_pixel(&mut rgba, x, y, color);
         }
     }
 
@@ -288,7 +375,7 @@ fn render_pie_icon(segments: &[(u32, [u8; 4])], highlight: bool) -> Image<'stati
 
 fn draw_check_mark(rgba: &mut [u8], color: [u8; 4]) {
     let size = ICON_SIZE as f32;
-    let stroke_radius = 2;
+    let stroke_radius = ((size * 0.06).round() as i32).max(2);
 
     let start = (size * 0.31, size * 0.53);
     let mid = (size * 0.44, size * 0.66);

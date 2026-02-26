@@ -160,7 +160,7 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <div className="w-2 h-2 rounded-full bg-(--color-primary) flex-none" />
+                      <div className="w-2 h-2 rounded-full bg-(--color-info) flex-none" />
                       <span className="text-[11px] lg:text-[12px] text-muted truncate">进行中</span>
                       <span className="text-[11px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
                         {metrics.statusDistribution["进行中"] || 0}
@@ -297,8 +297,8 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
                 </h3>
               </div>
               <div className="flex gap-3 lg:gap-4 text-[11px] lg:text-[12px] font-sans text-muted">
-                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 opacity-80"></span>{metrics.runningCount} 运行</span>
-                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-500 opacity-80"></span>{metrics.pending} 待办</span>
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-(--color-info) opacity-80"></span>{metrics.runningCount} 运行</span>
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-(--color-secondary) opacity-80"></span>{metrics.pending} 待办</span>
                 <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-current opacity-30"></span>{metrics.projectCount} 项目</span>
               </div>
             </div>

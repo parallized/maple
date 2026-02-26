@@ -1,5 +1,14 @@
 import type { Project } from "../domain";
 
+export type TrayTaskPalette = {
+  inProgress: string;
+  queued: string;
+  todo: string;
+  blocked: string;
+  done: string;
+  attention: string;
+};
+
 export type TrayTaskSnapshot = {
   unresolvedCount: number;
   inProgressCount: number;
@@ -9,9 +18,10 @@ export type TrayTaskSnapshot = {
   confirmCount: number;
   blockedCount: number;
   completedCount: number;
+  palette?: TrayTaskPalette;
 };
 
-export function buildTrayTaskSnapshot(projects: Project[]): TrayTaskSnapshot {
+export function buildTrayTaskSnapshot(projects: Project[], palette?: TrayTaskPalette): TrayTaskSnapshot {
   let inProgressCount = 0;
   let queuedCount = 0;
   let todoCount = 0;
@@ -63,6 +73,7 @@ export function buildTrayTaskSnapshot(projects: Project[]): TrayTaskSnapshot {
     needInfoCount,
     confirmCount,
     blockedCount,
-    completedCount
+    completedCount,
+    ...(palette ? { palette } : {}),
   };
 }

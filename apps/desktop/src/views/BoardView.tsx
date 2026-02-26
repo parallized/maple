@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "framer-motion";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { InlineTaskInput } from "../components/InlineTaskInput";
 import { PopoverMenu, type PopoverMenuItem } from "../components/PopoverMenu";
 import { ClickSpark, FadeContent, TiltedCard } from "../components/ReactBits";
@@ -568,6 +568,48 @@ function TaskTable({
   onResizeStart,
   onResizeDblClick
 }: TaskTableProps) {
+  const INITIAL_ROWS = 80;
+  const PAGE_ROWS = 80;
+
+  const [visibleCount, setVisibleCount] = useState(() => Math.min(tasks.length, INITIAL_ROWS));
+  const loadMoreRef = useRef<HTMLTableRowElement | null>(null);
+  const prevProjectIdRef = useRef(projectId);
+  const hasMore = visibleCount < tasks.length;
+  const visibleTasks = tasks.slice(0, visibleCount);
+
+  useEffect(() => {
+    const projectChanged = prevProjectIdRef.current !== projectId;
+    if (projectChanged) {
+      prevProjectIdRef.current = projectId;
+    }
+
+    setVisibleCount((prev) => {
+      const initial = Math.min(tasks.length, INITIAL_ROWS);
+      if (projectChanged) return initial;
+      if (prev > tasks.length) return tasks.length;
+      if (prev === 0 && tasks.length > 0) return initial;
+      return prev;
+    });
+  }, [projectId, tasks.length]);
+
+  useEffect(() => {
+    if (!hasMore) return;
+    const node = loadMoreRef.current;
+    if (!node) return;
+
+    const root = node.closest(".board-main");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setVisibleCount((prev) => Math.min(prev + PAGE_ROWS, tasks.length));
+      },
+      { root, rootMargin: "600px 0px" }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasMore, tasks.length]);
+
   return (
     <table ref={tableRef} className="task-table">
       <colgroup>
@@ -607,7 +649,7 @@ function TaskTable({
         </tr>
       </thead>
       <tbody>
-        {tasks.map((task, index) => (
+        {visibleTasks.map((task) => (
           <TaskRow
             key={task.id}
             task={task}
@@ -623,6 +665,16 @@ function TaskTable({
             onDeleteTask={onDeleteTask}
           />
         ))}
+        {hasMore ? (
+          <tr ref={loadMoreRef}>
+            <td colSpan={7} className="py-3 text-center text-[11px] text-muted">
+              <span className="inline-flex items-center gap-1.5">
+                <Icon icon="mingcute:loading-3-line" className="text-[13px] animate-spin opacity-70" />
+                加载更多…
+              </span>
+            </td>
+          </tr>
+        ) : null}
       </tbody>
     </table>
   );

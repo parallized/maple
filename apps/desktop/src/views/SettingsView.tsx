@@ -147,26 +147,27 @@ export function SettingsView({
             {t("打开方式", "Open with")}
           </h3>
           <div className="flex items-center gap-3 mt-3 flex-wrap">
-            <span className="text-sm">{t("在编辑器打开", "Open in editor")}</span>
-            <div className="flex gap-1 flex-wrap">
-              {([
-                { value: "vscode" as ExternalEditorApp, label: "VS Code" },
-                { value: "cursor" as ExternalEditorApp, label: "Cursor" },
-                { value: "windsurf" as ExternalEditorApp, label: "Windsurf" },
-                { value: "visual_studio" as ExternalEditorApp, label: "Visual Studio" },
-                { value: "github_desktop" as ExternalEditorApp, label: "GitHub Desktop" },
-              ] as const).map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={`ui-btn ui-btn--sm ${externalEditorApp === opt.value ? "ui-btn--outline" : "ui-btn--ghost"}`}
-                  onClick={() => onExternalEditorAppChange(opt.value)}
-                >
-                  {opt.label}
-                </button>
-              ))}
+              <span className="text-sm">{t("在编辑器打开", "Open in editor")}</span>
+              <div className="flex gap-1 flex-wrap">
+                {([
+                { value: "vscode" as ExternalEditorApp, label: "VS Code", icon: "mingcute:vscode-line" },
+                { value: "cursor" as ExternalEditorApp, label: "Cursor", icon: "mingcute:cursor-3-line" },
+                { value: "windsurf" as ExternalEditorApp, label: "Windsurf", icon: "mingcute:wind-line" },
+                { value: "visual_studio" as ExternalEditorApp, label: "Visual Studio", icon: "mingcute:windows-line" },
+                { value: "github_desktop" as ExternalEditorApp, label: "GitHub Desktop", icon: "mingcute:github-line" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`ui-btn ui-btn--sm gap-1 ${externalEditorApp === opt.value ? "ui-btn--outline" : "ui-btn--ghost"}`}
+                    onClick={() => onExternalEditorAppChange(opt.value)}
+                  >
+                    <Icon icon={opt.icon} className="text-sm" />
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
           <p className="text-xs text-muted mt-2 m-0">
             {t("侧边栏中的「在编辑器打开」将使用此选项。", "The sidebar “Open in editor” button uses this setting.")}
           </p>

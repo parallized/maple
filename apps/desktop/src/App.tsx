@@ -46,6 +46,7 @@ import { normalizeTagsForAiLanguage } from "./lib/tag-language";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
 import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadTheme, loadUiLanguage } from "./lib/storage";
 import { buildTrayTaskSnapshot } from "./lib/task-tray";
+import { buildTrayTaskPalette } from "./lib/tray-palette";
 import { normalizeTagCatalog } from "./lib/tag-catalog";
 import { ensureTagCatalogDefinition } from "./lib/auto-tag-definition";
 
@@ -303,9 +304,10 @@ export function App() {
   }, [isTauri, stateBootstrapped, projects]);
   useEffect(() => {
     if (!isTauri) return;
-    const snapshot = buildTrayTaskSnapshot(projects);
+    const palette = buildTrayTaskPalette();
+    const snapshot = buildTrayTaskSnapshot(projects, palette);
     invoke("sync_tray_task_badge", { snapshot }).catch(() => {});
-  }, [isTauri, projects]);
+  }, [isTauri, projects, theme]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 3500);
