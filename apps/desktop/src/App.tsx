@@ -14,6 +14,7 @@ import { TaskDetailPanel } from "./components/TaskDetailPanel";
 import { ToastLayer } from "./components/ToastLayer";
 import { WorkerPickerModal } from "./components/WorkerPickerModal";
 import { WorkerConsoleModal } from "./components/WorkerConsoleModal";
+import ColorBends from "./components/reactbits/ColorBends";
 import { OverviewView } from "./views/OverviewView";
 import { BoardView } from "./views/BoardView";
 import { SettingsView } from "./views/SettingsView";
@@ -48,7 +49,7 @@ import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadTheme, loadUiL
 import { buildTrayTaskSnapshot } from "./lib/task-tray";
 import { buildTrayTaskPalette } from "./lib/tray-palette";
 import { normalizeTagCatalog } from "./lib/tag-catalog";
-import { ensureTagCatalogDefinition } from "./lib/auto-tag-definition";
+
 
 import type {
   DetailMode,
@@ -128,13 +129,6 @@ export function App() {
       const next = prev.map((project) => {
         let projectChanged = false;
         const nextCatalog = normalizeTagCatalog(project.tagCatalog);
-        for (const task of project.tasks) {
-          for (const tag of task.tags) {
-            if (ensureTagCatalogDefinition(nextCatalog, tag, effectiveAiLanguage)) {
-              projectChanged = true;
-            }
-          }
-        }
 
         const tasks = project.tasks.map((task) => {
           const localizedTags = normalizeTagsForAiLanguage({
@@ -169,14 +163,6 @@ export function App() {
           projectChanged = true;
           return { ...task, tags: normalizedTags };
         });
-
-        for (const task of tasks) {
-          for (const tag of task.tags) {
-            if (ensureTagCatalogDefinition(nextCatalog, tag, effectiveAiLanguage)) {
-              projectChanged = true;
-            }
-          }
-        }
 
         if (!projectChanged) return project;
         changed = true;
@@ -1131,6 +1117,18 @@ export function App() {
   // ── Render ──
   return (
     <div className={`app-root${windowMaximized ? " maximized" : ""}`}>
+      <ColorBends
+        className="app-bg"
+        colors={["#f2723c", "#ff9a5c", "#1c1c1e", "#2c2c2e"]}
+        speed={0.08}
+        noise={0.06}
+        scale={1.2}
+        frequency={0.8}
+        warpStrength={0.6}
+        mouseInfluence={0.3}
+        parallax={0.2}
+        transparent={false}
+      />
       <div className="shell">
         <TopNav
           isTauri={isTauri}

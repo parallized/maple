@@ -510,13 +510,26 @@ h3 {
 
 /* ── Shell Layout ── */
 
+.app-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.app-bg canvas {
+  border-radius: inherit;
+}
+
 .shell {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
   position: relative;
-  background: var(--color-base-200);
+  background: color-mix(in srgb, var(--color-base-200) 82%, transparent);
   border-radius: inherit;
   z-index: 1;
 }

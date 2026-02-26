@@ -47,27 +47,22 @@ const REQUIRED_DECISION_HINT = "若缺少 mcp_decision，则任务会被判定�
 const REQUIRED_MCP_FLOW_HINT =
   "执行时必须逐条通过 submit_task_report 驱动状态流转：query_project_todos 后，选中要处理的任务先更新为「队列中」；真正开工再更新为「进行中」；结束后更新为「已完成/已阻塞/需要更多信息」。结束前再次 query_project_todos，确认无待办/待返工/队列中/进行中任务后，再调用 finish_worker（必须作为最后一个 MCP 调用）。";
 const REQUIRED_TAG_CATALOG_HINT =
-  "标签展示完全由 Tag Catalog（upsert_tag_definition）定义。若你引入/使用新的 tag（含颜色/图标/多语言 label），必须先 upsert 对应 tag 定义；不要依赖 UI 的硬编码兜底。icon 仅允许 mingcute:*。submit_task_report 的 tags 和 mcp_decision.tags 都必须使用中文标签。";
+  "系统无任何内置 tag preset。所有 tag 的图标（icon，仅允许 mingcute:*）与多语言 label（label_zh / label_en）均由你负责定义。"
+  + "在 submit_task_report 或 mcp_decision 中使用任何 tag 之前，必须先调用 upsert_tag_definition 创建或确认该 tag 的定义（含 icon 和 zh/en label）。"
+  + "submit_task_report 的 tags 和 mcp_decision.tags 都必须使用中文标签。";
 
 function renderSkillChecklist(skills: MapleWorkerSkill[]): string[] {
   return skills.map((skill, index) => `${index + 1}. ${skill.title}：${skill.objective}`);
 }
 
 export function createWorkerExecutionPrompt(input: WorkerExecutionPromptInput): string {
-  const checklist = renderSkillChecklist(MAPLE_WORKER_SKILLS);
   return [
     "[Maple Worker Task]",
     `Project: ${input.projectName}`,
     `Directory: ${input.directory}`,
     `Task: ${input.taskTitle}`,
     "先在会话中加载 Maple 能力：非 Codex 输入 `/maple`，Codex 输入 `$maple`。",
-    "执行检查清单：",
-    ...checklist,
-    "随后按任务完成实现与验证。",
-    REQUIRED_MCP_FLOW_HINT,
-    REQUIRED_TAG_CATALOG_HINT,
-    REQUIRED_DECISION_HINT,
-    OUTPUT_SCHEMA_HINT
+    "然后按任务完成实现与验证。",
   ].join("\n");
 }
 

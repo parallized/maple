@@ -434,211 +434,25 @@ fn normalize_tag_id(raw: &str) -> String {
     raw.trim().to_lowercase()
 }
 
-fn has_cjk(value: &str) -> bool {
-    value
-        .chars()
-        .any(|ch| ('\u{3400}'..='\u{9FFF}').contains(&ch))
-}
-
-fn has_latin(value: &str) -> bool {
-    value.chars().any(|ch| ch.is_ascii_alphabetic())
-}
-
-fn resolve_tag_preset(tag_id: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    match tag_id {
-        // Common worker tags
-        "frontend" => Some(("前端", "Frontend", "mingcute:code-line")),
-        "backend" => Some(("后端", "Backend", "mingcute:server-line")),
-        "bugfix" => Some(("bug修复", "Bugfix", "mingcute:shield-line")),
-        "refactor" => Some(("重构", "Refactor", "mingcute:refresh-2-line")),
-        "install" => Some(("安装", "Install", "mingcute:download-line")),
-        "docs" => Some(("文档", "Docs", "mingcute:information-line")),
-        "ux" => Some(("UX", "UX", "mingcute:palette-line")),
-        "wsl" => Some(("WSL", "WSL", "mingcute:terminal-box-line")),
-        "cli" => Some(("CLI", "CLI", "mingcute:terminal-box-line")),
-        "api" => Some(("API", "API", "mingcute:server-line")),
-        "test" | "testing" => Some(("测试", "Test", "mingcute:check-line")),
-        "config" => Some(("配置", "Config", "mingcute:settings-3-line")),
-        "style" | "styles" | "css" => Some(("样式", "Style", "mingcute:palette-line")),
-        "layout" => Some(("布局", "Layout", "mingcute:layout-grid-line")),
-        "build" => Some(("构建", "Build", "mingcute:settings-3-line")),
-        "database" | "db" => Some(("数据库", "Database", "mingcute:server-line")),
-        "animation" => Some(("动画", "Animation", "mingcute:palette-line")),
-        "feature" | "feat" => Some(("新功能", "Feature", "mingcute:add-line")),
-        "enhancement" => Some(("改进", "Enhancement", "mingcute:add-line")),
-        "toolchain" => Some(("工具链", "Toolchain", "mingcute:settings-3-line")),
-        "performance" | "perf" => Some(("性能", "Performance", "mingcute:rocket-line")),
-        "security" => Some(("安全", "Security", "mingcute:shield-line")),
-        "badge" => Some(("徽章", "Badge", "mingcute:tag-line")),
-        "tray" => Some(("托盘", "Tray", "mingcute:layout-grid-line")),
-        "task" => Some(("任务", "Task", "mingcute:task-line")),
-        "board" => Some(("看板", "Board", "mingcute:layout-grid-line")),
-        "detail" => Some(("详情", "Detail", "mingcute:layout-right-line")),
-        "panel" => Some(("面板", "Panel", "mingcute:layout-right-line")),
-        "prompt" => Some(("提示", "Prompt", "mingcute:chat-3-line")),
-        "worker" => Some(("执行器", "Worker", "mingcute:ai-line")),
-        "tags" => Some(("标签", "Tags", "mingcute:tag-line")),
-        "chore" => Some(("配置", "Chore", "mingcute:settings-3-line")),
-
-        // Existing presets
-        "mcp" => Some(("MCP", "MCP", "mingcute:server-line")),
-        "verify" => Some(("验证", "Verify", "mingcute:check-line")),
-        "verified" => Some(("已验证", "Verified", "mingcute:check-line")),
-        "ui" => Some(("UI", "UI", "mingcute:palette-line")),
-        "fix" => Some(("修复", "Fix", "mingcute:shield-line")),
-        "i18n" => Some(("多语言", "i18n", "mingcute:translate-line")),
-        "tag" => Some(("标签", "Tag", "mingcute:tag-line")),
-        "icon" => Some(("图标", "Icon", "mingcute:tag-line")),
-        "image" => Some(("图片", "Image", "mingcute:layers-line")),
-        "editor" => Some(("编辑器", "Editor", "mingcute:code-line")),
-        "desktop" => Some(("桌面端", "Desktop", "mingcute:computer-line")),
-        "ci" => Some(("CI", "CI", "mingcute:settings-3-line")),
-        "release" => Some(("发布", "Release", "mingcute:settings-3-line")),
-        "research" => Some(("调研", "Research", "mingcute:search-line")),
-        "blocknote" => Some(("BlockNote", "BlockNote", "mingcute:layers-line")),
-        "hapi" => Some(("Hapi", "Hapi", "mingcute:server-line")),
-        "interactive" => Some(("交互", "Interactive", "mingcute:palette-line")),
-        "area:build" => Some(("构建", "Build", "mingcute:settings-3-line")),
-        "area:tags" => Some(("标签", "Tags", "mingcute:tag-line")),
-        "area:research" => Some(("调研", "Research", "mingcute:search-line")),
-        _ => {
-            if let Some(area) = tag_id.strip_prefix("area:") {
-                return match area {
-                    "core" => Some(("核心", "Core", "mingcute:layout-grid-line")),
-                    "ui" => Some(("UI", "UI", "mingcute:palette-line")),
-                    "task-detail" => Some(("详情", "Detail", "mingcute:layout-right-line")),
-                    "markdown" => Some(("Markdown", "Markdown", "mingcute:layers-line")),
-                    "worker" => Some(("执行器", "Worker", "mingcute:ai-line")),
-                    "mcp" => Some(("MCP", "MCP", "mingcute:server-line")),
-                    "xterm" => Some(("终端", "Terminal", "mingcute:terminal-box-line")),
-                    "i18n" => Some(("多语言", "i18n", "mingcute:translate-line")),
-                    "build" => Some(("构建", "Build", "mingcute:settings-3-line")),
-                    "tags" => Some(("标签", "Tags", "mingcute:tag-line")),
-                    "research" => Some(("调研", "Research", "mingcute:search-line")),
-                    _ => None,
-                };
-            }
-            if let Some(rest) = tag_id.strip_prefix("type:") {
-                return match rest {
-                    "feat" => Some(("新功能", "Feat", "mingcute:add-line")),
-                    "fix" => Some(("修复", "Fix", "mingcute:shield-line")),
-                    "refactor" => Some(("重构", "Refactor", "mingcute:refresh-2-line")),
-                    "docs" => Some(("文档", "Docs", "mingcute:information-line")),
-                    "chore" => Some(("配置", "Chore", "mingcute:settings-3-line")),
-                    "test" => Some(("测试", "Test", "mingcute:check-line")),
-                    "perf" => Some(("性能", "Performance", "mingcute:rocket-line")),
-                    _ => None,
-                };
-            }
-            None
-        }
-    }
-}
-
-fn build_auto_tag_definition(raw_tag: &str) -> TagDefinition {
-    let raw = raw_tag.trim();
-    let tag_id = normalize_tag_id(raw);
-    let preset = resolve_tag_preset(&tag_id);
-
-    let mut label = TagLabel::default();
-    if let Some((zh, en, _)) = preset {
-        label.zh = Some(zh.to_string());
-        label.en = Some(en.to_string());
-    }
-
-    if label.zh.is_none() && !raw.is_empty() && has_cjk(raw) {
-        label.zh = Some(raw.to_string());
-    }
-    if label.en.is_none() && !raw.is_empty() && has_latin(raw) {
-        label.en = Some(raw.to_string());
-    }
-    // Do NOT set label.zh to raw English text — that would produce incorrect
-    // Chinese labels (e.g. label.zh = "frontend" instead of "前端").
-    // If both labels are still empty, only copy en→zh when it contains CJK.
-    if label.zh.is_none() && !raw.is_empty() && !has_latin(raw) {
-        label.zh = Some(raw.to_string());
-    }
-    if label.en.is_none()
-        && label
-            .zh
-            .as_ref()
-            .map(|value| has_latin(value))
-            .unwrap_or(false)
-    {
-        label.en = label.zh.clone();
-    }
-
-    TagDefinition {
-        color: None,
-        icon: Some(
-            preset
-                .map(|(_, _, icon)| icon.to_string())
-                .unwrap_or_else(|| "mingcute:tag-line".to_string()),
-        ),
-        label: if label.zh.is_some() || label.en.is_some() {
-            Some(label)
-        } else {
-            None
-        },
-    }
-}
-
+// Tag catalog entries are created exclusively by workers via upsert_tag_definition.
+// No hardcoded presets — icons and labels are provided by AI at task completion time.
+// ensure_tag_catalog_for_tags only registers unknown tag IDs as empty entries so
+// they appear in the catalog; workers must call upsert_tag_definition to fill them.
 fn ensure_tag_catalog_for_tags(
     catalog: &mut BTreeMap<String, TagDefinition>,
     tags: &[String],
 ) -> bool {
     let mut changed = false;
-
     for raw_tag in tags {
         let tag_id = normalize_tag_id(raw_tag);
         if tag_id.is_empty() {
             continue;
         }
-
-        let inferred = build_auto_tag_definition(raw_tag);
-        let entry = catalog.entry(tag_id).or_default();
-
-        if entry.icon.is_none() && inferred.icon.is_some() {
-            entry.icon = inferred.icon;
-            changed = true;
-        }
-
-        let mut label = entry.label.clone().unwrap_or_default();
-        let mut label_changed = false;
-
-        // Override existing label.zh if it's pure Latin (wrong language) and
-        // the inferred label provides a proper CJK Chinese label.
-        let existing_zh_is_latin = label
-            .zh
-            .as_ref()
-            .map(|v| has_latin(v) && !has_cjk(v))
-            .unwrap_or(false);
-        let inferred_zh_has_cjk = inferred
-            .label
-            .as_ref()
-            .and_then(|item| item.zh.as_ref())
-            .map(|v| has_cjk(v))
-            .unwrap_or(false);
-
-        if label.zh.is_none() || (existing_zh_is_latin && inferred_zh_has_cjk) {
-            if let Some(value) = inferred.label.as_ref().and_then(|item| item.zh.clone()) {
-                label.zh = Some(value);
-                label_changed = true;
-            }
-        }
-        if label.en.is_none() {
-            if let Some(value) = inferred.label.as_ref().and_then(|item| item.en.clone()) {
-                label.en = Some(value);
-                label_changed = true;
-            }
-        }
-
-        if label_changed {
-            entry.label = Some(label);
+        if !catalog.contains_key(&tag_id) {
+            catalog.insert(tag_id, TagDefinition::default());
             changed = true;
         }
     }
-
     changed
 }
 

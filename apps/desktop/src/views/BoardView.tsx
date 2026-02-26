@@ -387,6 +387,7 @@ type TaskTableProps = {
 
 type TaskRowProps = {
   task: Task;
+  index: number;
   selectedTaskId: string | null;
   editingTaskId: string | null;
   projectId: string;
@@ -401,6 +402,7 @@ type TaskRowProps = {
 
 const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   task,
+  index,
   selectedTaskId,
   editingTaskId,
   projectId,
@@ -415,10 +417,10 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   return (
     <motion.tr
       ref={ref}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.12, ease: "easeOut" }}
+      transition={{ duration: 0.18, ease: "easeOut", delay: index * 0.03 }}
       className={[
         "task-row",
         task.id === selectedTaskId ? "selected" : "",
@@ -657,10 +659,11 @@ function TaskTable({
       </thead>
       <tbody>
         <AnimatePresence initial={false}>
-          {visibleTasks.map((task) => (
+          {visibleTasks.map((task, index) => (
             <TaskRow
               key={task.id}
               task={task}
+              index={index}
               selectedTaskId={selectedTaskId}
               editingTaskId={editingTaskId}
               projectId={projectId}
