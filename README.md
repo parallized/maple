@@ -1,17 +1,23 @@
 # Maple
 
-Maple 是一个面向本地工程的 AI 任务工作台：你把任务放进来，选择一个 Worker（Claude / Codex / iFlow），Maple 会在你的项目目录中执行变更、记录验证，并用统一的任务状态把流程收敛起来。
+Maple 是一个面向本地工程的 AI 工作台，简化你的开发工作流并提供开发和验收全流程可视化
 
-## 快速开始（桌面版）
+1. 创建需求提单
+2. 点击执行
+3. 等待 AI 报告验收
+
+你可以在执行的过程中更方便地描述需求，以类似 notion 的交互体验完成 SDD 开发
+
+## 如何使用
 
 1. 打开 Maple Desktop，创建项目并选择你的代码目录。
-2. 进入「概览 → Worker 配置」，选择一个 Worker。
+2. 配置并选择一个 Worker 执行工作
 
 ![Worker 配置](docs/assets/worker-config.png)
 
 ### Worker 选择建议
 
-- 国外模型：Claude（Opus 4.6）> GPT‑5.2 > GPT‑5.3 Codex
+- 国外模型：Claude Opus 4.6 > GPT‑5.2 > GPT‑5.3 Codex
 - 国内模型：建议安装 iFlow 后选择 GLM‑5
 
 ### 安装 CLI
@@ -29,7 +35,7 @@ Maple 是一个面向本地工程的 AI 任务工作台：你把任务放进来�
 
 ### 执行任务
 
-1. 在看板里新建任务并设为「待办」
+1. 在看板里新建任务，或从已完成的需要返工的任务详情页点击返工
 2. 点击「执行待办」开始执行
 3. 若任务进入「需要更多信息」，补充详情后点击「已补充信息」将其恢复为「待办」
 
@@ -38,20 +44,3 @@ Maple 是一个面向本地工程的 AI 任务工作台：你把任务放进来�
 - **CLI 未检测到**：确认已安装，并在 Worker 卡片点击「刷新」
 - **Windows / WSL**：若在 WSL 安装 CLI，请在对应 Worker 的 WSL 行安装 MCP
 - **已阻塞需要继续处理**：在任务详情页点击「返工」，将任务标记为「待返工」再继续执行
-
-## 开发（本仓库）
-
-### Workspace layout
-
-- `apps/desktop`: Maple 桌面端（Tauri + React）
-- `apps/homepage`: 产品主页（Vite + React + Tailwind）
-- `packages/kanban-core`: 任务域模型与状态工具
-- `packages/agent-runtime`: 多 Worker 执行接口
-- `packages/worker-skills`: Worker Prompt/Skill 模板与解析
-- `docs`: 产品与技术文档
-
-### Quick start
-
-1. Install `pnpm` (v9 or newer).
-2. Run `pnpm install`.
-3. Run `pnpm typecheck`.

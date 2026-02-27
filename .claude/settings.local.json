@@ -9,7 +9,8 @@
       "mcp__maple__submit_task_report",
       "Bash(head:*)",
       "Bash(tail:*)",
-      "mcp__maple__finish_worker"
+      "mcp__maple__finish_worker",
+      "mcp__maple__read_asset_image"
     ]
   }
 }
