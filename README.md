@@ -8,12 +8,20 @@ Maple 是一个面向本地工程的 AI 工作台，简化你的开发工作流�
 
 你可以在执行的过程中更方便地描述需求，以类似 Notion + Vibe-kanban + Cli 的交互体验完成 SDD 开发
 
+重要的是，每次完成都会提醒你验收（待验收的报告会打黄色标记）
+
+> 目前正处于快速迭代期，Windows 侧容易出现 BUG，可在 Q 群 1087691477 交流反馈
+
+![detail page](docs/assets/summary.png)
+![detail page](docs/assets/detail-page.png)
+
 ## 如何使用
 
 1. 打开 Maple Desktop，创建项目并选择你的代码目录。
 2. 配置并选择一个 Worker 执行工作
 
 ![Worker 配置](docs/assets/worker-config.png)
+![Worker 配置](docs/assets/worker-select.png)
 
 ### Worker 选择建议
 
@@ -41,7 +49,7 @@ Maple 是一个面向本地工程的 AI 工作台，简化你的开发工作流�
 
 ## 常见问题
 
-> 目前 Maple 刚刚起步，SDD 部分还需要探索如何更好实现。幸运的是，如果不算 BUG 的话（很快就能解决），我想 Maple 已经可以作为一个不错的 AI 看板 & 执行工具了！
+> 目前 Maple 刚刚起步，SDD 部分还需要探索如何更好实现支持。幸运的是，如果不算 BUG 的话（很快就能解决），已经可以作为一个不错的 AI 看板 & 执行工具了！
 
 - **CLI 未检测到**：确认已安装，并在 Worker 卡片点击「刷新」
 - **Windows / WSL**：若在 WSL 安装 CLI，请在对应 Worker 的 WSL 行安装 MCP
