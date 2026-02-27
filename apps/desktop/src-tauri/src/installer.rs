@@ -234,6 +234,107 @@ fn is_windows_cli_not_found(output: &CliOutput) -> bool {
   }
 }
 
+fn is_windows_permission_denied(output: &CliOutput) -> bool {
+  #[cfg(target_os = "windows")]
+  {
+    let message = format!("{}\n{}", output.stdout, output.stderr).to_lowercase();
+    message.contains("access is denied")
+      || message.contains("permission denied")
+      || message.contains("eacces")
+      || message.contains("eperm")
+      || message.contains("requires administrator")
+      || message.contains("requires elevated")
+      || message.contains("elevation")
+      || message.contains("管理员权限")
+      || message.contains("拒绝访问")
+  }
+  #[cfg(not(target_os = "windows"))]
+  {
+    let _ = output;
+    false
+  }
+}
+
+#[cfg(target_os = "windows")]
+fn ps_quote(value: &str) -> String {
+  format!("'{}'", value.replace('\'', "''"))
+}
+
+#[cfg(target_os = "windows")]
+fn run_cli_elevated(executable: &str, args: &[String], cwd: Option<&Path>) -> Result<CliOutput, String> {
+  use std::time::{SystemTime, UNIX_EPOCH};
+
+  let ts = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_millis();
+  let dir = std::env::temp_dir().join(format!("maple-elevated-{ts}"));
+  fs::create_dir_all(&dir).map_err(|error| format!("创建临时目录失败: {error}"))?;
+
+  let stdout_path = dir.join("stdout.txt");
+  let stderr_path = dir.join("stderr.txt");
+  let exit_path = dir.join("exitcode.txt");
+
+  let executable_ps = ps_quote(executable);
+  let stdout_ps = ps_quote(stdout_path.to_string_lossy().as_ref());
+  let stderr_ps = ps_quote(stderr_path.to_string_lossy().as_ref());
+  let exit_ps = ps_quote(exit_path.to_string_lossy().as_ref());
+  let arg_list = args
+    .iter()
+    .map(|arg| ps_quote(arg))
+    .collect::<Vec<_>>()
+    .join(", ");
+
+  let working_dir = cwd.map(|path| ps_quote(path.to_string_lossy().as_ref()));
+  let start = if let Some(wd) = working_dir {
+    format!(
+      "$p = Start-Process -Verb RunAs -WindowStyle Hidden -Wait -PassThru -FilePath {executable_ps} -ArgumentList @({arg_list}) -WorkingDirectory {wd} -RedirectStandardOutput {stdout_ps} -RedirectStandardError {stderr_ps};"
+    )
+  } else {
+    format!(
+      "$p = Start-Process -Verb RunAs -WindowStyle Hidden -Wait -PassThru -FilePath {executable_ps} -ArgumentList @({arg_list}) -RedirectStandardOutput {stdout_ps} -RedirectStandardError {stderr_ps};"
+    )
+  };
+
+  let script = format!(
+    "$ErrorActionPreference = 'Stop'; {start} $p.ExitCode | Out-File -FilePath {exit_ps} -Encoding utf8; exit 0"
+  );
+  let ps_args = vec![
+    "-NoProfile".to_string(),
+    "-NonInteractive".to_string(),
+    "-ExecutionPolicy".to_string(),
+    "Bypass".to_string(),
+    "-Command".to_string(),
+    script,
+  ];
+  let ps_out = run_cli("powershell", &ps_args, None)?;
+
+  let stdout = fs::read_to_string(&stdout_path).unwrap_or_default();
+  let stderr_file = fs::read_to_string(&stderr_path).unwrap_or_default();
+  let code = fs::read_to_string(&exit_path)
+    .ok()
+    .and_then(|value| value.trim().parse::<i32>().ok())
+    .or(ps_out.code);
+
+  let stderr = if stderr_file.trim().is_empty() {
+    let combined = [ps_out.stderr.trim(), ps_out.stdout.trim()]
+      .into_iter()
+      .filter(|value| !value.is_empty())
+      .collect::<Vec<_>>()
+      .join("\n");
+    combined.trim().to_string()
+  } else {
+    stderr_file.trim().to_string()
+  };
+
+  Ok(CliOutput {
+    success: code.unwrap_or(1) == 0 && ps_out.success,
+    code,
+    stdout: stdout.trim().to_string(),
+    stderr,
+  })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InstallRuntime {
   Native,
@@ -545,6 +646,10 @@ When user asks `/maple`:
 2. Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
 3. Always run typecheck/build verification before marking done.
 4. For each task, call `submit_task_report` to set `进行中` when execution starts, then set `已完成` / `已阻塞` / `需要更多信息` when execution ends.
+   - Only use `已阻塞` when you hit a real error you cannot proceed (tool failure / build failure / environment issue).
+   - If requirements are missing and you need to ask questions, use `需要更多信息` instead, and:
+     a) call `update_task_details` to write the question list + plan list into the task detail page
+     b) call `submit_task_report` to record the same questions + plan list for traceability
 5. Before ending, call `query_project_todos` and ensure no `待办` / `队列中` / `进行中` task remains.
 6. Call `finish_worker` as the final MCP call.
 7. Output `mcp_decision` with status, comment, and tags.
@@ -558,6 +663,8 @@ fn claude_command_md() -> &'static str {
 2. Implement the requested changes in the current project
 3. Run typecheck/build before finishing
 4. For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish
+   - Only use 已阻塞 for real errors you cannot proceed
+   - If you need user input/requirements: set 需要更多信息, then use update_task_details to write the question list + plan list into the task detail page
 5. Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains
 6. Call finish_worker as the final MCP call
 7. Output mcp_decision with status, comment, and tags
@@ -571,6 +678,8 @@ Work in the current working directory (do NOT cd elsewhere).
 Use Maple MCP tools to query tasks and submit results.
 Run typecheck/build before finishing.
 For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
+Only use 已阻塞 for real errors you cannot proceed.
+If you need user input/requirements: set 需要更多信息, then call update_task_details to write the question list + plan list into the task detail page.
 Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
 Call finish_worker as the final MCP call.
 Output mcp_decision with status, comment, and tags.
@@ -590,6 +699,8 @@ Maple execution skill:
 - use Maple MCP + local skills first
 - run typecheck/build before completion
 - use submit_task_report to mark each task as 进行中 at start, then settle to 已完成 / 已阻塞 / 需要更多信息
+- Only use 已阻塞 for real errors you cannot proceed
+- If requirements are missing: set 需要更多信息, then use update_task_details to write the question list + plan list into the task detail page
 - call query_project_todos before ending, and keep no 待办 / 队列中 / 进行中 tasks
 - call finish_worker as the final MCP call
 - keep Maple on the standalone execution path
@@ -663,6 +774,40 @@ fn run_registration_commands(
         emitter.log(Some(target_id), "info", "MCP 注册成功。\n".to_string());
         (Some(true), true, stdout.trim().to_string(), stderr.trim().to_string(), None)
       } else {
+        #[cfg(target_os = "windows")]
+        {
+          if executable != "wsl" && is_windows_permission_denied(&out) {
+            emitter.log(Some(target_id), "info", "检测到权限不足，正在请求管理员授权…\n".to_string());
+            match run_cli_elevated(executable, &add_args, None) {
+              Ok(elevated) => {
+                if !elevated.stdout.is_empty() {
+                  emitter.log(Some(target_id), "stdout", format!("{}\n", elevated.stdout.trim_end()));
+                  stdout.push_str(&elevated.stdout);
+                  stdout.push('\n');
+                }
+                if !elevated.stderr.is_empty() {
+                  emitter.log(Some(target_id), "stderr", format!("{}\n", elevated.stderr.trim_end()));
+                  stderr.push_str(&elevated.stderr);
+                  stderr.push('\n');
+                }
+                if elevated.success {
+                  emitter.log(Some(target_id), "info", "MCP 注册成功（管理员权限）。\n".to_string());
+                  return (Some(true), true, stdout.trim().to_string(), stderr.trim().to_string(), None);
+                }
+                let detail = format!(
+                  "MCP 注册失败（管理员权限，exit: {}）",
+                  elevated.code.map(|c| c.to_string()).unwrap_or_else(|| "?".into())
+                );
+                emitter.log(Some(target_id), "stderr", format!("{detail}\n"));
+                return (Some(true), false, stdout.trim().to_string(), stderr.trim().to_string(), Some(detail));
+              }
+              Err(error) => {
+                emitter.log(Some(target_id), "stderr", format!("{error}\n"));
+                return (Some(true), false, stdout.trim().to_string(), stderr.trim().to_string(), Some(error));
+              }
+            }
+          }
+        }
         let detail = format!("MCP 注册失败（exit: {}）", out.code.map(|c| c.to_string()).unwrap_or_else(|| "?".into()));
         emitter.log(Some(target_id), "stderr", format!("{detail}\n"));
         (Some(true), false, stdout.trim().to_string(), stderr.trim().to_string(), Some(detail))
@@ -722,19 +867,49 @@ fn install_codex(home: &Path, emitter: &InstallEventEmitter, runtime: InstallRun
     }
     written_files.push(pretty_path(&skill_path));
 
-    let (cli_found, registered, out, err, reg_error) = run_registration_commands(
+    let (mut cli_found, mut registered, mut out, mut err, mut reg_error) = run_registration_commands(
       emitter,
       target_id,
       "codex",
-      vec!["mcp".into(), "remove".into(), "maple".into()],
+      vec!["mcp".into(), "remove".into(), "maple".into(), "--scope".into(), "user".into()],
       vec![
         "mcp".into(),
         "add".into(),
         "maple".into(),
         "--url".into(),
         MAPLE_MCP_URL.into(),
+        "--scope".into(),
+        "user".into(),
       ],
     );
+
+    if !registered {
+      let combined = format!("{out}\n{err}").to_lowercase();
+      let scope_unsupported =
+        combined.contains("--scope")
+          && (combined.contains("unknown")
+            || combined.contains("unexpected")
+            || combined.contains("unrecognized")
+            || combined.contains("found argument")
+            || combined.contains("invalid option"));
+
+      if scope_unsupported {
+        (cli_found, registered, out, err, reg_error) = run_registration_commands(
+          emitter,
+          target_id,
+          "codex",
+          vec!["mcp".into(), "remove".into(), "maple".into()],
+          vec![
+            "mcp".into(),
+            "add".into(),
+            "maple".into(),
+            "--url".into(),
+            MAPLE_MCP_URL.into(),
+          ],
+        );
+      }
+    }
+
     stdout = out;
     stderr = err;
 

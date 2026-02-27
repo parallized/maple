@@ -649,6 +649,87 @@ fn tool_query_task_details(args: &Value) -> Value {
     json!({ "content": content })
 }
 
+fn tool_update_task_details(args: &Value, state: &McpHttpState) -> Value {
+    let project_name = args
+        .get("project")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let task_id = args
+        .get("task_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let details_value = args.get("details");
+    let details = details_value.and_then(|v| v.as_str()).unwrap_or("");
+    let mode = args
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("append")
+        .trim()
+        .to_lowercase();
+
+    if details_value.is_none() {
+        return json!({
+            "content": [{ "type": "text", "text": "缺少参数：details。" }],
+            "isError": true
+        });
+    }
+
+    let mut projects = read_state();
+
+    let Some(idx) = find_project_index(&projects, project_name) else {
+        return json!({
+            "content": [{ "type": "text", "text": format!("未找到匹配项目「{project_name}」。") }],
+            "isError": true
+        });
+    };
+
+    let target = &mut projects[idx];
+    let target_name = target.name.clone();
+
+    let Some(task_index) = target.tasks.iter().position(|t| t.id == task_id) else {
+        return json!({
+            "content": [{ "type": "text", "text": format!("项目「{target_name}」中未找到任务 ID「{task_id}」。") }],
+            "isError": true
+        });
+    };
+
+    let now = iso_now();
+    let task_title = target.tasks[task_index].title.clone();
+
+    {
+        let task = &mut target.tasks[task_index];
+        let incoming = details.trim();
+        let current = task.details.trim_end();
+        let next_details = if mode == "replace" {
+            incoming.to_string()
+        } else if incoming.is_empty() {
+            current.to_string()
+        } else if current.is_empty() {
+            incoming.to_string()
+        } else {
+            format!("{current}\n\n{incoming}")
+        };
+
+        task.details = next_details;
+        task.details_doc = None;
+        task.updated_at = now;
+    }
+
+    let task_snapshot = target.tasks[task_index].clone();
+    write_state(&projects);
+    let _ = state.app_handle.emit(
+        "maple://task-updated",
+        TaskUpdatedEvent {
+            project_name: target_name.clone(),
+            task: task_snapshot,
+        },
+    );
+
+    json!({ "content": [{ "type": "text", "text":
+        format!("已更新「{target_name}」任务「{task_title}」的详情。")
+    }]})
+}
+
 fn normalize_asset_file_name_arg(raw: &str) -> Option<&str> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -1034,6 +1115,7 @@ async fn handle_mcp_post(
                 "query_project_todos" => tool_query_project_todos(&arguments),
                 "query_recent_context" => tool_query_recent_context(&arguments),
                 "query_task_details" => tool_query_task_details(&arguments),
+                "update_task_details" => tool_update_task_details(&arguments, state.as_ref()),
                 "read_asset_image" => tool_read_asset_image(&arguments),
                 "submit_task_report" => tool_submit_task_report(&arguments, state.as_ref()),
                 "query_tag_catalog" => tool_query_tag_catalog(&arguments),
@@ -1087,6 +1169,24 @@ fn tool_definitions() -> Vec<Value> {
                     "task_id": { "type": "string", "description": "任务 ID" }
                 },
                 "required": ["project", "task_id"]
+            }
+        }),
+        json!({
+            "name": "update_task_details",
+            "description": "更新指定任务的详情内容（支持追加或替换）。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": { "type": "string", "description": "项目名称（模糊匹配）" },
+                    "task_id": { "type": "string", "description": "任务 ID" },
+                    "details": { "type": "string", "description": "详情内容（Markdown）" },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["append", "replace"],
+                        "description": "更新方式：append 追加 / replace 覆盖（可选，默认 append）"
+                    }
+                },
+                "required": ["project", "task_id", "details"]
             }
         }),
         json!({

@@ -20,6 +20,7 @@ type TaskDetailPanelProps = {
   onUpdateDetails?: (details: string, detailsDoc: unknown) => void;
   onMarkAsDone?: () => void;
   onReworkToDraft?: () => void;
+  onSetAsRework?: () => void;
   onSetAsTodo?: () => void;
   onClose?: () => void;
   onDelete?: () => void;
@@ -110,6 +111,7 @@ export function TaskDetailPanel({
   onUpdateDetails,
   onMarkAsDone,
   onReworkToDraft,
+  onSetAsRework,
   onSetAsTodo,
   onClose
 }: TaskDetailPanelProps) {
@@ -144,6 +146,26 @@ export function TaskDetailPanel({
             "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4",
           onClick: onMarkAsDone,
         }
+      : task.status === "需要更多信息" && typeof onSetAsTodo === "function"
+        ? {
+            label: "已补充信息",
+            ariaLabel: "已补充信息并设为待办",
+            title: "将任务设为待办，以便继续执行",
+            icon: "mingcute:time-line",
+            className:
+              "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4",
+            onClick: onSetAsTodo,
+          }
+        : task.status === "已阻塞" && typeof onSetAsRework === "function"
+          ? {
+              label: "返工",
+              ariaLabel: "返工并设为待返工",
+              title: "将任务设为待返工，以便继续处理",
+              icon: "mingcute:refresh-3-line",
+              className:
+                "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-warning/5 hover:border-warning/30 hover:text-warning text-muted transition-all duration-300 gap-1.5 px-4",
+              onClick: onSetAsRework,
+            }
       : task.status === "已完成" && typeof onReworkToDraft === "function"
         ? {
             label: "返工",

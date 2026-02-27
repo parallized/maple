@@ -37,6 +37,7 @@ type OverviewViewProps = {
     kind: WorkerKind | null;
   }>;
   onRefreshMcp?: () => void;
+  onRefreshProbes?: () => void;
 };
 
 function formatMode(mode: "task"): string {
@@ -49,7 +50,7 @@ interface StatusData {
   color: string;
 }
 
-export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailability, installProbes, workerPool, onRefreshMcp }: OverviewViewProps) {
+export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailability, installProbes, workerPool, onRefreshMcp, onRefreshProbes }: OverviewViewProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
 
   // Show all workers on overview (install buttons available per-card)
@@ -271,6 +272,7 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
                     wslProbe={wslProbe}
                     uiLanguage={uiLanguage}
                     variant="overview"
+                    onRefreshProbes={onRefreshProbes}
                   />
                 );
               })}

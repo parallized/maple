@@ -57,7 +57,7 @@ function renderSkillChecklist(skills: MapleWorkerSkill[]): string[] {
 }
 
 export function createWorkerExecutionPrompt(input: WorkerExecutionPromptInput): string {
-  return input.workerKind === "codex" ? "$maple" : '"/maple"';
+  return input.workerKind === "codex" ? "$maple" : "/maple";
 }
 
 function normalizeList(value: unknown): string[] {
@@ -148,6 +148,51 @@ function stripAnsi(text: string): string {
     .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "");
 }
 
+function combinedWorkerOutput(result: WorkerExecutionResultLike): string {
+  return stripAnsi([result.stdout, result.stderr].filter(Boolean).join("\n")).trim();
+}
+
+function looksLikeNeedsMoreInfo(output: string): boolean {
+  const text = output.trim();
+  if (!text) return false;
+
+  const lower = text.toLowerCase();
+  const signals = [
+    // zh
+    "需要更多信息",
+    "需要了解更多",
+    "需要补充",
+    "请提供",
+    "请补充",
+    "请问",
+    "能否提供",
+    "麻烦提供",
+    "缺少以下",
+    // en
+    "need more information",
+    "need more info",
+    "please provide",
+    "could you",
+    "can you provide",
+  ];
+
+  const hit = signals.some((signal) => lower.includes(signal));
+  if (!hit) return false;
+
+  const hasQuestionMark = text.includes("?") || text.includes("？");
+  const hasList = /\n\s*(\d+\.|[-*]\s+)/.test(text);
+  const hasQuestionHeader = /请问\s*[:：]/.test(text) || /questions?\s*[:：]/i.test(text);
+
+  return hasQuestionMark || hasList || hasQuestionHeader || lower.includes("please provide") || lower.includes("请提供");
+}
+
+export function inferFallbackTaskStatus(result: WorkerExecutionResultLike): MapleMcpDecisionStatus {
+  if (!result.success) return "已阻塞";
+  const output = combinedWorkerOutput(result);
+  if (looksLikeNeedsMoreInfo(output)) return "需要更多信息";
+  return "待返工";
+}
+
 export function parseWorkerExecutionResult(result: WorkerExecutionResultLike): MapleStructuredExecutionOutput | null {
   const stdout = stripAnsi(result.stdout).trim();
   const stderr = stripAnsi(result.stderr).trim();
@@ -163,13 +208,20 @@ export function buildWorkerArchiveReport(result: WorkerExecutionResultLike, task
   const structured = parseWorkerExecutionResult(result);
   const decision = structured?.decision ?? null;
 
-  const rawExcerpt = stripAnsi((result.stdout.trim() || result.stderr.trim())).slice(0, 200).trim();
+  const rawExcerpt = combinedWorkerOutput(result).slice(0, 240).trim();
 
   if (!structured) {
+    const inferred = inferFallbackTaskStatus(result);
+    const statusLine =
+      inferred === "已阻塞"
+        ? "状态：已阻塞（执行失败）"
+        : inferred === "需要更多信息"
+          ? "状态：需要更多信息（等待补充）"
+          : "状态：待返工（缺少 MCP 决策输出）";
     return [
-      "状态：已阻塞（缺少 MCP 决策输出）",
+      statusLine,
       "描述：",
-      `Worker 未返回可解析的 mcp_decision。${rawExcerpt ? `\n\n输出摘录：\n${rawExcerpt}` : ""}`.trim(),
+      `未检测到可解析的 mcp_decision。${rawExcerpt ? `\n\n输出摘录：\n${rawExcerpt}` : ""}`.trim(),
     ].join("\n");
   }
 
@@ -194,11 +246,18 @@ export function buildWorkerArchiveReport(result: WorkerExecutionResultLike, task
     || taskTitle;
 
   if (!decision) {
-    reportLines.push("状态：已阻塞（缺少 MCP 决策输出）");
+    const inferred = inferFallbackTaskStatus(result);
+    const statusLine =
+      inferred === "已阻塞"
+        ? "状态：已阻塞（执行失败）"
+        : inferred === "需要更多信息"
+          ? "状态：需要更多信息（等待补充）"
+          : "状态：待返工（缺少 MCP 决策输出）";
+    reportLines.push(statusLine);
     reportLines.push("描述：");
     reportLines.push(
       [
-        "Worker 未返回可解析的 mcp_decision。",
+        "未检测到可解析的 mcp_decision。",
         description ? `\n\n结论：\n${description}` : "",
         rawExcerpt ? `\n\n输出摘录：\n${rawExcerpt}` : "",
       ].join("").trim()

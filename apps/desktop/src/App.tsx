@@ -7,7 +7,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
-import { buildWorkerArchiveReport, createWorkerExecutionPrompt, resolveMcpDecision } from "@maple/worker-skills";
+import { buildWorkerArchiveReport, createWorkerExecutionPrompt, inferFallbackTaskStatus, resolveMcpDecision } from "@maple/worker-skills";
 
 import { TopNav } from "./components/TopNav";
 import { TaskDetailPanel } from "./components/TaskDetailPanel";
@@ -1035,7 +1035,8 @@ export function App() {
           const decision = resolveMcpDecision(result);
           const report = createTaskReport(label, buildWorkerArchiveReport(result, task.title));
           if (!decision) {
-            updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, report] }));
+            const inferredStatus = inferFallbackTaskStatus(result);
+            updateTask(project.id, task.id, (c) => ({ ...c, status: inferredStatus, reports: [...c.reports, report] }));
             continue;
           }
           const localizedDecisionTags = normalizeTagsForAiLanguage({
@@ -1207,6 +1208,7 @@ export function App() {
                     installProbes={installProbes}
                     workerPool={workerPool}
                     onRefreshMcp={() => void refreshMcpStatus()}
+                    onRefreshProbes={() => setInstallProbeToken((n) => n + 1)}
                   />
                 </motion.div>
               ) : null}
@@ -1335,6 +1337,11 @@ export function App() {
 	                status: "已完成",
 	                needsConfirmation: false,
 	              }))}
+	              onSetAsRework={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                ...t,
+	                status: "待返工",
+	                needsConfirmation: false,
+	              }))}
 	              onReworkToDraft={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                ...t,
 	                status: "草稿",
@@ -1366,6 +1373,11 @@ export function App() {
 	                onMarkAsDone={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
 	                  ...t,
 	                  status: "已完成",
+	                  needsConfirmation: false,
+	                }))}
+	                onSetAsRework={() => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                  ...t,
+	                  status: "待返工",
 	                  needsConfirmation: false,
 	                }))}
 	                onReworkToDraft={() => updateTask(boardProject.id, selectedTaskId, (t) => ({

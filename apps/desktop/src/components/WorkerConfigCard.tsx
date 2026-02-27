@@ -43,6 +43,7 @@ type WorkerConfigCardProps = {
   uiLanguage: UiLanguage;
   /** Variant: "overview" shows compact, "settings" shows full with install */
   variant?: "overview" | "settings";
+  onRefreshProbes?: () => void;
 };
 
 function isInstallTargetId(value: string): value is InstallTargetId {
@@ -77,6 +78,7 @@ export function WorkerConfigCard({
   wslProbe,
   uiLanguage,
   variant = "settings",
+  onRefreshProbes,
 }: WorkerConfigCardProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const isTauri = hasTauriRuntime();
@@ -270,15 +272,26 @@ export function WorkerConfigCard({
 
           {/* Install actions */}
           {rows.some((r) => !r.cliFound) ? (
-            <div className="flex flex-col gap-1.5 mt-0.5">
+            <div className="flex items-center gap-1.5 mt-0.5 ml-3 lg:ml-4">
               <button
                 type="button"
-                className="ui-btn ui-btn--xs ui-btn--outline gap-1 self-start ml-3 lg:ml-4"
+                className="ui-btn ui-btn--xs ui-btn--outline gap-1"
                 onClick={() => setCliDialogOpen(true)}
               >
                 <Icon icon="mingcute:download-2-line" className="text-[12px]" />
                 {t("安装 CLI", "Install CLI")}
               </button>
+              {typeof onRefreshProbes === "function" && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--xs ui-btn--outline ui-icon-btn"
+                  onClick={onRefreshProbes}
+                  aria-label={t("刷新检测", "Refresh probes")}
+                  title={t("刷新检测", "Refresh probes")}
+                >
+                  <Icon icon="mingcute:refresh-3-line" className="text-[12px]" />
+                </button>
+              )}
             </div>
           ) : uninstalledMcpRows.length > 0 ? (
             <div className="flex items-center gap-1.5 mt-0.5 pl-3 lg:pl-4">
