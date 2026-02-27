@@ -5,6 +5,7 @@ mod maple_fs;
 mod installer;
 mod maple_protocol;
 mod tray_status;
+mod process_utils;
 
 use base64::Engine;
 use serde::Serialize;
@@ -61,6 +62,7 @@ struct ManagedWorkerSession {
 struct AppState {
   mcp_server: Mutex<Option<ManagedMcpServer>>,
   worker_sessions: Mutex<HashMap<String, ManagedWorkerSession>>,
+  running_workers: Mutex<HashMap<String, u32>>,
 }
 
 #[tauri::command]
@@ -167,6 +169,8 @@ fn start_mcp_server(
   if let Some(dir) = normalize_cwd(cwd) {
     command.current_dir(dir);
   }
+
+  process_utils::apply_no_window(&mut command);
 
   let command_string = command_string(trimmed, &args);
   let child = command
@@ -283,7 +287,7 @@ async fn start_interactive_worker(
     let mut child = match pty_command.spawn() {
       Ok(child) => child,
       Err(pty_error) => {
-        let mut fallback = build_cli_command(&executable_trimmed, &args);
+        let mut fallback = process_utils::build_cli_command(&executable_trimmed, &args);
         fallback
           .env("TERM", "xterm-256color")
           .env("COLORTERM", "truecolor")
@@ -302,6 +306,14 @@ async fn start_interactive_worker(
           .map_err(|fallback_error| format!("启动 Worker 失败（PTY+回退均失败）: PTY={pty_error}; fallback={fallback_error}"))?
       }
     };
+
+    let worker_key = wid.clone();
+    let pid = child.id();
+    {
+      let state = app_handle.state::<AppState>();
+      let mut running = state.running_workers.lock().unwrap_or_else(|e| e.into_inner());
+      running.insert(worker_key.clone(), pid);
+    }
 
     if let Some(mut stdin_handle) = child.stdin.take() {
       if let Some(value) = prompt.as_ref() {
@@ -348,6 +360,12 @@ async fn start_interactive_worker(
       let state = app_handle.state::<AppState>();
       let mut sessions = state.worker_sessions.lock().unwrap_or_else(|e| e.into_inner());
       sessions.remove(&wid);
+    }
+
+    {
+      let state = app_handle.state::<AppState>();
+      let mut running = state.running_workers.lock().unwrap_or_else(|e| e.into_inner());
+      running.remove(&worker_key);
     }
 
     let _ = app_handle.emit(
@@ -522,31 +540,6 @@ fn open_in_editor(path: String, app: Option<String>) -> Result<bool, String> {
   Ok(true)
 }
 
-fn build_cli_command(executable: &str, args: &[String]) -> Command {
-  #[cfg(target_os = "windows")]
-  {
-    let trimmed = executable.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    if lower == "wsl" || lower.ends_with("\\wsl.exe") || lower.ends_with("/wsl.exe") {
-      let mut command = Command::new(trimmed);
-      command.args(args);
-      return command;
-    }
-
-    let mut command = Command::new("cmd");
-    command.arg("/D").arg("/C").arg(executable);
-    command.args(args);
-    command
-  }
-
-  #[cfg(not(target_os = "windows"))]
-  {
-    let mut command = Command::new(executable);
-    command.args(args);
-    command
-  }
-}
-
 fn run_command(
   executable: String,
   args: Vec<String>,
@@ -557,7 +550,7 @@ fn run_command(
     return Err("worker executable 不能为空".to_string());
   }
 
-  let mut command = build_cli_command(executable, &args);
+  let mut command = process_utils::build_cli_command(executable, &args);
 
   if let Some(dir) = normalize_cwd(cwd) {
     command.current_dir(dir);
@@ -610,7 +603,7 @@ fn run_command_stream(
   let mut child = match pty_command.spawn() {
     Ok(child) => child,
     Err(pty_error) => {
-      let mut fallback = build_cli_command(&executable, &args);
+      let mut fallback = process_utils::build_cli_command(&executable, &args);
       fallback
         .env("TERM", "xterm-256color")
         .env("COLORTERM", "truecolor")
@@ -629,6 +622,14 @@ fn run_command_stream(
       })?
     }
   };
+
+  let worker_key = worker_id.clone();
+  let pid = child.id();
+  {
+    let state = window.state::<AppState>();
+    let mut running = state.running_workers.lock().unwrap_or_else(|e| e.into_inner());
+    running.insert(worker_key.clone(), pid);
+  }
 
   if let Some(mut stdin_handle) = child.stdin.take() {
     if let Some(value) = prompt.as_ref() {
@@ -663,6 +664,12 @@ fn run_command_stream(
 
   let stdout_text = stdout_handle.join().unwrap_or_default();
   let stderr_text = stderr_handle.join().unwrap_or_default();
+
+  {
+    let state = window.state::<AppState>();
+    let mut running = state.running_workers.lock().unwrap_or_else(|e| e.into_inner());
+    running.remove(&worker_key);
+  }
 
   Ok(WorkerCommandResult {
     success: status.success(),
@@ -844,12 +851,45 @@ fn sync_tray_task_badge(
   tray_status::sync(&app_handle, &snapshot).map_err(|error| format!("同步托盘状态失败: {error}"))
 }
 
+fn cleanup_background_processes(app_handle: &AppHandle) {
+  let state = app_handle.state::<AppState>();
+
+  {
+    let mut guard = state.mcp_server.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(mut server) = guard.take() {
+      let _ = server.child.kill();
+      let _ = server.child.wait();
+    }
+  }
+
+  let pids = {
+    let mut running = state.running_workers.lock().unwrap_or_else(|e| e.into_inner());
+    let pids: Vec<u32> = running.values().copied().collect();
+    running.clear();
+    pids
+  };
+
+  for pid in pids {
+    process_utils::kill_process_tree(pid);
+  }
+
+  {
+    let mut sessions = state.worker_sessions.lock().unwrap_or_else(|e| e.into_inner());
+    sessions.clear();
+  }
+}
+
 fn main() {
   tauri::Builder::default()
     .register_uri_scheme_protocol("maple", maple_protocol::handle)
     .manage(AppState::default())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_notification::init())
+    .on_window_event(|window, event| {
+      if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+        cleanup_background_processes(window.app_handle());
+      }
+    })
     .setup(|app| {
       mcp_http::start(app.handle().clone());
       if let Err(error) = tray_status::init(app.handle()) {

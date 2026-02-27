@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
 import { buildWorkerArchiveReport, createWorkerExecutionPrompt, resolveMcpDecision } from "@maple/worker-skills";
 
@@ -227,6 +227,28 @@ export function App() {
   useEffect(() => {
     void probeInstallTargets();
   }, [isTauri, installProbeToken]);
+
+  // ——— Worker runtime warm-up ———
+  // Run probes in the background so the "execute pending" click stays snappy.
+  useEffect(() => {
+    if (!isTauri) return;
+    let cancelled = false;
+    void (async () => {
+      for (const entry of WORKER_KINDS) {
+        if (cancelled) return;
+        const config = workerConfigs[entry.kind];
+        if (!config?.executable?.trim()) continue;
+        try {
+          await resolveWorkerRuntime(entry.kind, config);
+        } catch {
+          // ignore
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isTauri, workerConfigs]);
 
   type WorkerPoolMode = "task";
   type WorkerPoolEntry = { workerId: string; workerLabel: string; projectName: string; mode: WorkerPoolMode; kind: WorkerKind | null };
@@ -882,7 +904,7 @@ export function App() {
   // ── MCP Guard ──
   async function ensureMcpRunning(): Promise<boolean> {
     if (!isTauri) return true;
-    setMcpStatus(createUnifiedMcpStatus());
+    setMcpStatus((prev) => (prev.running && prev.command === "Maple MCP" ? prev : createUnifiedMcpStatus()));
     return true;
   }
 
@@ -931,41 +953,45 @@ export function App() {
     const config = workerConfigs[kind];
     const label = WORKER_KINDS.find((w) => w.kind === kind)?.label ?? kind;
     if (!config.executable.trim()) { setNotice(`请先在进度页配置 ${label} 命令。`); return; }
-    // Gate on MCP
-    const mcpOk = await ensureMcpRunning();
-    if (!mcpOk) { setNotice("MCP Server 未运行，无法执行任务。请先在设置中启动 MCP。"); return; }
-
-    const runtime = await resolveWorkerRuntime(kind, config);
-    if (runtime === "missing") {
-      setNotice(`${label} CLI 未检测到，请先安装或配置（Windows/WSL）。`);
-      return;
-    }
-    if (runtime === "wsl" && !windowsPathToWslMntPath(project.directory)) {
-      setNotice(`项目目录无法转换为 WSL 路径，请使用 Windows 盘符目录：${project.directory}`);
-      return;
-    }
-
     const pendingTasks = project.tasks.filter((t) => t.status === "待办" || t.status === "待返工");
     if (pendingTasks.length === 0) { setNotice("目前没有更多待办"); return; }
-    setProjects((prev) => {
-      const now = new Date().toISOString();
-      return prev.map((item) => item.id !== project.id ? item : {
-        ...item,
-        tasks: item.tasks.map((task) => (
-          task.status === "待办" || task.status === "待返工"
-            ? { ...task, status: "队列中", updatedAt: now }
-            : task
-        ))
-      });
-    });
-    const nextVersion = bumpPatch(project.version);
     const workerId = buildWorkerId(kind, project.id);
     setExecutingWorkers((prev) => {
       const next = new Set(prev);
       next.add(workerId);
       return next;
     });
+    setNotice(`${label} 准备执行…`);
     try {
+      // Gate on MCP
+      const mcpOk = await ensureMcpRunning();
+      if (!mcpOk) { setNotice("MCP Server 未运行，无法执行任务。请先在设置中启动 MCP。"); return; }
+
+      const runtime = await resolveWorkerRuntime(kind, config);
+      if (runtime === "missing") {
+        setNotice(`${label} CLI 未检测到，请先安装或配置（Windows/WSL）。`);
+        return;
+      }
+      if (runtime === "wsl" && !windowsPathToWslMntPath(project.directory)) {
+        setNotice(`项目目录无法转换为 WSL 路径，请使用 Windows 盘符目录：${project.directory}`);
+        return;
+      }
+
+      startTransition(() => {
+        setProjects((prev) => {
+          const now = new Date().toISOString();
+          return prev.map((item) => item.id !== project.id ? item : {
+            ...item,
+            tasks: item.tasks.map((task) => (
+              task.status === "待办" || task.status === "待返工"
+                ? { ...task, status: "队列中", updatedAt: now }
+                : task
+            ))
+          });
+        });
+      });
+
+      const nextVersion = bumpPatch(project.version);
       for (const task of pendingTasks) {
         // Check if user deleted this task while worker was running
         const currentProject = projectsRef.current.find((p) => p.id === projectId);

@@ -2,12 +2,13 @@ use base64::engine::general_purpose;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 use std::fs;
-use std::path::{Path};
-use std::process::Command;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::maple_fs;
+use crate::process_utils;
 use chrono::Utc;
 
 const MAPLE_MCP_URL: &str = "http://localhost:45819/mcp";
@@ -157,7 +158,7 @@ pub struct InstallMcpSkillsReport {
   pub skills_version: u32,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallTargetProbe {
   pub id: String,
@@ -205,33 +206,8 @@ struct CliOutput {
   stderr: String,
 }
 
-fn build_cli_command(executable: &str, args: &[String]) -> Command {
-  #[cfg(target_os = "windows")]
-  {
-    let trimmed = executable.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    if lower == "wsl" || lower.ends_with("\\wsl.exe") || lower.ends_with("/wsl.exe") {
-      let mut command = Command::new(trimmed);
-      command.args(args);
-      return command;
-    }
-
-    let mut command = Command::new("cmd");
-    command.arg("/D").arg("/C").arg(executable);
-    command.args(args);
-    command
-  }
-
-  #[cfg(not(target_os = "windows"))]
-  {
-    let mut command = Command::new(executable);
-    command.args(args);
-    command
-  }
-}
-
 fn run_cli(executable: &str, args: &[String], cwd: Option<&Path>) -> Result<CliOutput, String> {
-  let mut command = build_cli_command(executable, args);
+  let mut command = process_utils::build_cli_command(executable, args);
   if let Some(dir) = cwd {
     command.current_dir(dir);
   }
@@ -381,64 +357,94 @@ fn is_iflow_installed_wsl() -> bool {
   }
 }
 
+fn read_install_probe_cache() -> HashMap<String, InstallTargetProbe> {
+  let Ok(maple_home) = maple_fs::maple_home_dir() else {
+    return HashMap::new();
+  };
+  let path = maple_home.join("install-probes.json");
+  let Ok(content) = fs::read_to_string(path) else {
+    return HashMap::new();
+  };
+  serde_json::from_str(&content).unwrap_or_default()
+}
+
+fn write_install_probe_cache(cache: &HashMap<String, InstallTargetProbe>) {
+  let Ok(maple_home) = maple_fs::maple_home_dir() else {
+    return;
+  };
+  let path = maple_home.join("install-probes.json");
+  let _ = fs::create_dir_all(&maple_home);
+  let Ok(payload) = serde_json::to_string_pretty(cache) else {
+    return;
+  };
+  let _ = fs::write(path, payload);
+}
+
 pub fn probe_install_targets() -> Result<Vec<InstallTargetProbe>, String> {
+  fn cache_ok(probe: &InstallTargetProbe) -> bool {
+    probe.installed && probe.cli_found
+  }
+
+  let mut cache = read_install_probe_cache();
   let home = maple_fs::user_home_dir()?;
+  let mut changed = false;
 
-  let codex_native_cli = detect_cli_native("codex");
-  let claude_native_cli = detect_cli_native("claude");
-  let iflow_native_cli = detect_cli_native("iflow");
+  let mut npm_native: Option<bool> = None;
+  let mut npm_wsl: Option<bool> = None;
 
-  let codex_wsl_cli = detect_cli_wsl("codex");
-  let claude_wsl_cli = detect_cli_wsl("claude");
-  let iflow_wsl_cli = detect_cli_wsl("iflow");
+  let order: [(&str, &str); 6] = [
+    ("codex", "native"),
+    ("claude", "native"),
+    ("iflow", "native"),
+    ("wsl:codex", "wsl"),
+    ("wsl:claude", "wsl"),
+    ("wsl:iflow", "wsl"),
+  ];
 
-  let npm_native = detect_cli_native("npm");
-  let npm_wsl = detect_cli_wsl("npm");
+  let mut probes: Vec<InstallTargetProbe> = Vec::with_capacity(order.len());
 
-  Ok(vec![
-    InstallTargetProbe {
-      id: "codex".to_string(),
-      runtime: "native".to_string(),
-      cli_found: codex_native_cli,
-      installed: is_codex_installed_native(&home),
-      npm_found: npm_native,
-    },
-    InstallTargetProbe {
-      id: "claude".to_string(),
-      runtime: "native".to_string(),
-      cli_found: claude_native_cli,
-      installed: is_claude_installed_native(&home),
-      npm_found: npm_native,
-    },
-    InstallTargetProbe {
-      id: "iflow".to_string(),
-      runtime: "native".to_string(),
-      cli_found: iflow_native_cli,
-      installed: is_iflow_installed_native(&home),
-      npm_found: npm_native,
-    },
-    InstallTargetProbe {
-      id: "wsl:codex".to_string(),
-      runtime: "wsl".to_string(),
-      cli_found: codex_wsl_cli,
-      installed: is_codex_installed_wsl(),
-      npm_found: npm_wsl,
-    },
-    InstallTargetProbe {
-      id: "wsl:claude".to_string(),
-      runtime: "wsl".to_string(),
-      cli_found: claude_wsl_cli,
-      installed: is_claude_installed_wsl(),
-      npm_found: npm_wsl,
-    },
-    InstallTargetProbe {
-      id: "wsl:iflow".to_string(),
-      runtime: "wsl".to_string(),
-      cli_found: iflow_wsl_cli,
-      installed: is_iflow_installed_wsl(),
-      npm_found: npm_wsl,
-    },
-  ])
+  for (id, runtime) in order {
+    if let Some(cached) = cache.get(id) {
+      if cache_ok(cached) {
+        probes.push(cached.clone());
+        continue;
+      }
+    }
+
+    let npm_found = if runtime == "wsl" {
+      *npm_wsl.get_or_insert_with(|| detect_cli_wsl("npm"))
+    } else {
+      *npm_native.get_or_insert_with(|| detect_cli_native("npm"))
+    };
+
+    let (cli_found, installed) = match id {
+      "codex" => (detect_cli_native("codex"), is_codex_installed_native(&home)),
+      "claude" => (detect_cli_native("claude"), is_claude_installed_native(&home)),
+      "iflow" => (detect_cli_native("iflow"), is_iflow_installed_native(&home)),
+      "wsl:codex" => (detect_cli_wsl("codex"), is_codex_installed_wsl()),
+      "wsl:claude" => (detect_cli_wsl("claude"), is_claude_installed_wsl()),
+      "wsl:iflow" => (detect_cli_wsl("iflow"), is_iflow_installed_wsl()),
+      _ => (false, false),
+    };
+
+    let probe = InstallTargetProbe {
+      id: id.to_string(),
+      runtime: runtime.to_string(),
+      cli_found,
+      installed,
+      npm_found,
+    };
+
+    probes.push(probe.clone());
+    cache.insert(id.to_string(), probe);
+    changed = true;
+  }
+
+  if changed {
+    write_install_probe_cache(&cache);
+  }
+
+  Ok(probes)
 }
 
 fn normalize_home_relative_path(path: &str) -> Result<String, String> {
