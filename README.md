@@ -6,7 +6,7 @@ Maple 是一个面向本地工程的 AI 工作台，简化你的开发工作流�
 2. 点击执行
 3. 等待 AI 报告验收
 
-你可以在执行的过程中更方便地描述需求，以类似 notion 的交互体验完成 SDD 开发
+你可以在执行的过程中更方便地描述需求，以类似 Notion + Vibe-kanban + Cli 的交互体验完成 SDD 开发
 
 ## 如何使用
 
@@ -41,6 +41,13 @@ Maple 是一个面向本地工程的 AI 工作台，简化你的开发工作流�
 
 ## 常见问题
 
+> 目前 Maple 刚刚起步，SDD 部分还需要探索如何更好实现。幸运的是，如果不算 BUG 的话（很快就能解决），我想 Maple 已经可以作为一个不错的 AI 看板 & 执行工具了！
+
 - **CLI 未检测到**：确认已安装，并在 Worker 卡片点击「刷新」
 - **Windows / WSL**：若在 WSL 安装 CLI，请在对应 Worker 的 WSL 行安装 MCP
 - **已阻塞需要继续处理**：在任务详情页点击「返工」，将任务标记为「待返工」再继续执行
+
+## Why Maple
+
+- **为什么不直接用 CLI**：是的！你可以用 tmux、hapi、happy、cursor 等等各种你喜欢的工作方式，做这样一个工具只是一次抛砖引玉！
+- **为什么不用 Notion / Linear**：notion 部分 api 需要企业用户，而且很难做到在 notion 上直接 hook code agent cli，制作这个软件的灵感之一就是 notion 管理任务，可以看到我们在 notion 做的早期实践 https://github.com/parallized/notion-project-tracker
