@@ -28,6 +28,7 @@ type BoardViewProps = {
   onSelectTask: (taskId: string | null) => void;
   onEditTask: (taskId: string | null) => void;
   onCompletePending: (projectId: string) => void;
+  onRestartExecution: (projectId: string) => void;
   onAssignWorkerKind: (projectId: string, kind: WorkerKind) => void;
   onSetDetailMode: (mode: DetailMode) => void;
   onOpenConsole: () => void;
@@ -68,6 +69,7 @@ export function BoardView({
   onSelectTask,
   onEditTask,
   onCompletePending,
+  onRestartExecution,
   onAssignWorkerKind,
   onSetDetailMode,
   onOpenConsole,
@@ -256,21 +258,24 @@ export function BoardView({
                 </TiltedCard>
 
                 <TiltedCard 
-                  className={`sidebar-card-btn sidebar-card-btn--primary ${isExecutingProject ? "sidebar-card-btn--disabled" : ""}`}
-                  onClick={isExecutingProject ? undefined : () => onCompletePending(boardProject.id)}
+                  className="sidebar-card-btn sidebar-card-btn--primary"
+                  onClick={isExecutingProject ? () => onRestartExecution(boardProject.id) : () => onCompletePending(boardProject.id)}
                   rotateAmplitude={isExecutingProject ? 0 : 12}
                   scaleOnHover={isExecutingProject ? 1 : 1.02}
                 >
                   <div className="sidebar-card-btn-content">
-                    <span className="sidebar-card-btn-title text-[13px]">
+                    <span className="sidebar-card-btn-title text-[13px] flex items-center gap-2">
                       <Icon 
                         icon={isExecutingProject ? "svg-spinners:pulse-ring" : "mingcute:play-fill"} 
                         className={`mr-1.5 ${isExecutingProject ? "text-base" : "text-[14px]"} inline-block -translate-y-px`} 
                       />
-                      {isExecutingProject ? "执行中" : "执行待办"}
+                      <span>{isExecutingProject ? "执行中" : "执行待办"}</span>
+                      {isExecutingProject ? (
+                        <span className="text-[11px] font-medium text-primary/85">重新开始</span>
+                      ) : null}
                     </span>
                     <span className="sidebar-card-btn-desc text-[10.5px]">
-                      {isExecutingProject ? "正在运行当前项目的待办任务" : "运行当前项目的所有待办"}
+                      {isExecutingProject ? "已检测到执行中的任务，点击可重置并重新开始" : "运行当前项目的所有待办"}
                     </span>
                   </div>
                   <div className="sidebar-card-watermark sidebar-card-watermark--metallic">

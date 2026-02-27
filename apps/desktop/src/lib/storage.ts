@@ -1,6 +1,13 @@
 import type { McpServerConfig, Project } from "../domain";
-import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage } from "./constants";
+import type {
+  AiLanguage,
+  ExternalEditorApp,
+  ThemeMode,
+  UiLanguage,
+  WorkerRetryConfig
+} from "./constants";
 import {
+  DEFAULT_WORKER_RETRY_CONFIG,
   DEFAULT_EXTERNAL_EDITOR_APP,
   DEFAULT_MCP_CONFIG,
   STORAGE_AI_LANGUAGE,
@@ -8,7 +15,9 @@ import {
   STORAGE_MCP_CONFIG,
   STORAGE_PROJECTS,
   STORAGE_THEME,
-  STORAGE_UI_LANGUAGE
+  STORAGE_UI_LANGUAGE,
+  STORAGE_WORKER_RETRY_INTERVAL_SECONDS,
+  STORAGE_WORKER_RETRY_MAX_ATTEMPTS
 } from "./constants";
 import { normalizeProjects } from "./utils";
 
@@ -98,5 +107,32 @@ export function loadExternalEditorApp(): ExternalEditorApp {
     }
   } catch {
     return DEFAULT_EXTERNAL_EDITOR_APP;
+  }
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+export function loadWorkerRetryConfig(): WorkerRetryConfig {
+  try {
+    const rawInterval = localStorage.getItem(STORAGE_WORKER_RETRY_INTERVAL_SECONDS);
+    const rawMaxAttempts = localStorage.getItem(STORAGE_WORKER_RETRY_MAX_ATTEMPTS);
+
+    const intervalSeconds = clampInteger(
+      Number(rawInterval ?? DEFAULT_WORKER_RETRY_CONFIG.intervalSeconds),
+      1,
+      600
+    );
+    const maxAttempts = clampInteger(
+      Number(rawMaxAttempts ?? DEFAULT_WORKER_RETRY_CONFIG.maxAttempts),
+      1,
+      20
+    );
+
+    return { intervalSeconds, maxAttempts };
+  } catch {
+    return DEFAULT_WORKER_RETRY_CONFIG;
   }
 }

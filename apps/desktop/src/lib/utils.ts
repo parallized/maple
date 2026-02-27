@@ -81,7 +81,9 @@ export function normalizeProjects(projects: Project[]): Project[] {
               ? task.updatedAt
               : createdAt;
           const status =
-            task.status === "队列中" ? ("待办" as const) : task.status;
+            task.status === "队列中" || task.status === "进行中"
+              ? ("待办" as const)
+              : task.status;
           const details =
             typeof (task as Task).details === "string"
               ? (task as Task).details

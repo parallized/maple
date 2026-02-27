@@ -22,6 +22,7 @@ type TaskDetailPanelProps = {
   onReworkToDraft?: () => void;
   onSetAsRework?: () => void;
   onSetAsTodo?: () => void;
+  onRestartExecution?: () => void;
   onClose?: () => void;
   onDelete?: () => void;
 };
@@ -113,6 +114,7 @@ export function TaskDetailPanel({
   onReworkToDraft,
   onSetAsRework,
   onSetAsTodo,
+  onRestartExecution,
   onClose
 }: TaskDetailPanelProps) {
   const reports = useMemo(() => {
@@ -253,6 +255,16 @@ export function TaskDetailPanel({
                 )}
                 {task.status}
               </span>
+              {task.status === "进行中" && onRestartExecution ? (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--xs ui-btn--ghost ml-2 px-2 text-[11px] text-primary"
+                  onClick={onRestartExecution}
+                  title="重置进行中任务并重新开始执行"
+                >
+                  重新开始
+                </button>
+              ) : null}
             </div>
           </div>
 

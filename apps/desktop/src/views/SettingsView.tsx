@@ -29,6 +29,10 @@ type SettingsViewProps = {
   onAiLanguageChange: (language: AiLanguage) => void;
   onExternalEditorAppChange: (app: ExternalEditorApp) => void;
   onDetailModeChange: (mode: DetailMode) => void;
+  workerRetryIntervalSeconds: number;
+  workerRetryMaxAttempts: number;
+  onWorkerRetryIntervalChange: (seconds: number) => void;
+  onWorkerRetryMaxAttemptsChange: (count: number) => void;
   onRefreshProbes: () => void;
   onReinstallSkills: () => void;
 };
@@ -49,6 +53,10 @@ export function SettingsView({
   onAiLanguageChange,
   onExternalEditorAppChange,
   onDetailModeChange,
+  workerRetryIntervalSeconds,
+  workerRetryMaxAttempts,
+  onWorkerRetryIntervalChange,
+  onWorkerRetryMaxAttemptsChange,
   onRefreshProbes,
   onReinstallSkills
 }: SettingsViewProps) {
@@ -165,6 +173,45 @@ export function SettingsView({
 
           <p className="text-xs text-muted mt-2 m-0">
             {t("AI 语言用于引导 Worker 输出报告的结论与标签。", "AI language guides Worker output (conclusion and tags).")}
+          </p>
+        </div>
+
+        <div className="ui-card p-4 mt-3">
+          <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+            <Icon icon="mingcute:time-line" />
+            {t("执行重试", "Retry Policy")}
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-sm">{t("重试间隔（秒）", "Retry interval (s)")}</span>
+              <input
+                type="number"
+                min={1}
+                max={600}
+                step={1}
+                value={workerRetryIntervalSeconds}
+                onChange={(event) => onWorkerRetryIntervalChange(Number(event.currentTarget.value))}
+                className="ui-input w-[120px] text-right"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3">
+              <span className="text-sm">{t("最多重试次数", "Max retries")}</span>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                step={1}
+                value={workerRetryMaxAttempts}
+                onChange={(event) => onWorkerRetryMaxAttemptsChange(Number(event.currentTarget.value))}
+                className="ui-input w-[120px] text-right"
+              />
+            </label>
+          </div>
+          <p className="text-xs text-muted mt-2 m-0">
+            {t(
+              "当 Worker 结束后仍存在「进行中」任务时，Maple 会按此策略自动重试（默认 10 秒一次，最多 5 次）。",
+              "When a worker exits but tasks are still in progress, Maple retries automatically with this policy."
+            )}
           </p>
         </div>
 

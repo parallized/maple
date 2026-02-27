@@ -6,6 +6,8 @@ export const STORAGE_THEME = "maple.desktop.theme";
 export const STORAGE_UI_LANGUAGE = "maple.desktop.ui-language";
 export const STORAGE_AI_LANGUAGE = "maple.desktop.ai-language";
 export const STORAGE_EDITOR_APP = "maple.desktop.editor-app";
+export const STORAGE_WORKER_RETRY_INTERVAL_SECONDS = "maple.desktop.worker-retry-interval-seconds";
+export const STORAGE_WORKER_RETRY_MAX_ATTEMPTS = "maple.desktop.worker-retry-max-attempts";
 
 export type ThemeMode = "system" | "light" | "dark";
 export type UiLanguage = "zh" | "en";
@@ -18,7 +20,16 @@ export type ExternalEditorApp =
   | "windsurf"
   | "visual_studio";
 
+export type WorkerRetryConfig = {
+  intervalSeconds: number;
+  maxAttempts: number;
+};
+
 export const DEFAULT_EXTERNAL_EDITOR_APP: ExternalEditorApp = "vscode";
+export const DEFAULT_WORKER_RETRY_CONFIG: WorkerRetryConfig = {
+  intervalSeconds: 10,
+  maxAttempts: 5,
+};
 
 export const WORKER_KINDS: {
   kind: WorkerKind;

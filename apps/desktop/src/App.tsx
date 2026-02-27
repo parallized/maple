@@ -26,9 +26,11 @@ import {
   STORAGE_PROJECTS,
   STORAGE_THEME,
   STORAGE_UI_LANGUAGE,
+  STORAGE_WORKER_RETRY_INTERVAL_SECONDS,
+  STORAGE_WORKER_RETRY_MAX_ATTEMPTS,
   WORKER_KINDS
 } from "./lib/constants";
-import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage } from "./lib/constants";
+import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage, WorkerRetryConfig } from "./lib/constants";
 import {
   hasTauriRuntime,
   applyTheme,
@@ -45,7 +47,7 @@ import { generatePrStyleTags } from "./lib/pr-tags";
 import { buildVersionTag, mergeTaskTags } from "./lib/task-tags";
 import { normalizeTagsForAiLanguage } from "./lib/tag-language";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
-import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadTheme, loadUiLanguage } from "./lib/storage";
+import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadTheme, loadUiLanguage, loadWorkerRetryConfig } from "./lib/storage";
 import { buildTrayTaskSnapshot } from "./lib/task-tray";
 import { buildTrayTaskPalette } from "./lib/tray-palette";
 import { normalizeTagCatalog } from "./lib/tag-catalog";
@@ -79,6 +81,48 @@ function areTagListsEqual(a: string[], b: string[]): boolean {
 
 type WorkerRuntime = "unknown" | "native" | "wsl" | "missing";
 
+type PromptPlacementStrategy = {
+  flag: string;
+  mode: "after_flag" | "append_tail";
+};
+
+const PROMPT_PLACEMENT_BY_KIND: Record<WorkerKind, PromptPlacementStrategy> = {
+  claude: { flag: "--print", mode: "append_tail" },
+  codex: { flag: "e", mode: "append_tail" },
+  iflow: { flag: "-p", mode: "after_flag" },
+};
+
+const PERMISSION_OPTION_PATTERN = /\[(?:y\/n|Y\/n|y\/N)\]|\((?:yes\/no|y\/n)\)|\b(?:yes\/no|y\/n)\b/i;
+const PERMISSION_QUESTION_PATTERN = /\b(?:allow|approve|permission|confirm|accept|continue|proceed)\b/i;
+const PERMISSION_CODE_HINT_PATTERN = /(::|=>|;\s*$|\bfn\b|\bstruct\b|\bpub\b|\bconst\b|\bimport\b|\bexport\b)/i;
+
+function clampInteger(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function normalizeWorkerRetryConfig(input: WorkerRetryConfig): WorkerRetryConfig {
+  return {
+    intervalSeconds: clampInteger(input.intervalSeconds, 1, 600),
+    maxAttempts: clampInteger(input.maxAttempts, 1, 20),
+  };
+}
+
+function detectPermissionPromptLine(chunk: string): string | null {
+  const lines = chunk
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]!;
+    if (line.length > 220) continue;
+    if (PERMISSION_CODE_HINT_PATTERN.test(line)) continue;
+    if (PERMISSION_OPTION_PATTERN.test(line)) return line;
+    if (line.includes("?") && PERMISSION_QUESTION_PATTERN.test(line)) return line;
+  }
+  return null;
+}
+
 export function App() {
   const isTauri = hasTauriRuntime();
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
@@ -111,10 +155,17 @@ export function App() {
   const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(() => buildWorkerId(WORKER_KINDS[0]?.kind ?? "claude"));
   const [executingWorkers, setExecutingWorkers] = useState<Set<string>>(() => new Set());
   const [permissionPrompt, setPermissionPrompt] = useState<{ workerId: string; question: string } | null>(null);
+  const [workerRetryConfig, setWorkerRetryConfigState] = useState<WorkerRetryConfig>(() =>
+    normalizeWorkerRetryConfig(loadWorkerRetryConfig())
+  );
   const [theme, setThemeState] = useState<ThemeMode>(() => loadTheme());
   const [windowMaximized, setWindowMaximized] = useState(false);
   const workerLogsRef = useRef<Record<string, string>>({});
   const projectsRef = useRef<Project[]>(projects);
+  const executingWorkersRef = useRef<Set<string>>(executingWorkers);
+  const retryTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const retryAttemptRef = useRef<Record<string, number>>({});
+  const permissionAnsweredAtRef = useRef<Record<string, number>>({});
   const doneProjectIdsRef = useRef<Set<string>>(new Set());
   const doneProjectInitRef = useRef(false);
 
@@ -308,6 +359,10 @@ export function App() {
   useEffect(() => { localStorage.setItem(STORAGE_AI_LANGUAGE, aiLanguage); }, [aiLanguage]);
   useEffect(() => { localStorage.setItem(STORAGE_EDITOR_APP, externalEditorApp); }, [externalEditorApp]);
   useEffect(() => {
+    localStorage.setItem(STORAGE_WORKER_RETRY_INTERVAL_SECONDS, String(workerRetryConfig.intervalSeconds));
+    localStorage.setItem(STORAGE_WORKER_RETRY_MAX_ATTEMPTS, String(workerRetryConfig.maxAttempts));
+  }, [workerRetryConfig]);
+  useEffect(() => {
     if (!isTauri) return;
     let cancelled = false;
     invoke<string>("read_state_file")
@@ -354,11 +409,34 @@ export function App() {
   }, [projects]);
 
   useEffect(() => {
+    executingWorkersRef.current = executingWorkers;
+  }, [executingWorkers]);
+
+  useEffect(() => {
     if (boardProjectId && !projects.some((p) => p.id === boardProjectId)) {
       setBoardProjectId(null);
       setSelectedTaskId(null);
     }
   }, [boardProjectId, projects]);
+
+  useEffect(() => {
+    const activeProjectIds = new Set(projects.map((project) => project.id));
+    for (const projectId of Object.keys(retryTimerRef.current)) {
+      if (activeProjectIds.has(projectId)) continue;
+      clearTimeout(retryTimerRef.current[projectId]);
+      delete retryTimerRef.current[projectId];
+      delete retryAttemptRef.current[projectId];
+    }
+  }, [projects]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of Object.values(retryTimerRef.current)) {
+        clearTimeout(timer);
+      }
+      retryTimerRef.current = {};
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedTaskId) return;
@@ -465,8 +543,24 @@ export function App() {
     void listen<WorkerLogEvent>("maple://worker-log", (event) => {
       const { workerId, line } = event.payload;
       setWorkerLogs((prev) => ({ ...prev, [workerId]: `${prev[workerId] ?? ""}${line}` }));
-      const permissionPattern = /\b(allow|approve|permit|confirm|accept)\b.*\?|\[y\/n\]|\[Y\/n\]|\[y\/N\]|\(yes\/no\)|\(y\/n\)/i;
-      if (permissionPattern.test(line)) setPermissionPrompt({ workerId, question: line });
+      const promptLine = detectPermissionPromptLine(line);
+      if (!promptLine) return;
+
+      const parsed = parseWorkerId(workerId);
+      if (parsed.kind) {
+        const config = workerConfigs[parsed.kind];
+        if (config && hasDangerBypassEnabled(parsed.kind, config)) {
+          const now = Date.now();
+          const lastAnsweredAt = permissionAnsweredAtRef.current[workerId] ?? 0;
+          if (now - lastAnsweredAt >= 1200) {
+            permissionAnsweredAtRef.current[workerId] = now;
+            void answerPermission(workerId, "y", { silent: true, question: promptLine });
+          }
+          return;
+        }
+      }
+
+      setPermissionPrompt({ workerId, question: promptLine });
     }).then((unlisten) => {
       if (disposed) {
         unlisten();
@@ -478,7 +572,7 @@ export function App() {
       disposed = true;
       cleanup?.();
     };
-  }, [isTauri]);
+  }, [isTauri, workerConfigs]);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -612,11 +706,25 @@ export function App() {
     if (!dangerMode) return [];
     if (kind === "claude") return ["--dangerously-skip-permissions"];
     if (kind === "codex") return ["--dangerously-bypass-approvals-and-sandbox"];
+    if (kind === "iflow") return ["--yolo"];
     return [];
   }
 
   function buildWorkerRunArgs(kind: WorkerKind, config: WorkerConfig): string[] {
     return [...buildDangerArgs(kind, config.dangerMode), ...parseArgs(config.runArgs)];
+  }
+
+  function hasDangerBypassEnabled(kind: WorkerKind, config: WorkerConfig): boolean {
+    const args = buildWorkerRunArgs(kind, config);
+    if (kind === "claude") {
+      const permissionModeFlag = args.indexOf("--permission-mode");
+      const permissionModeBypass = permissionModeFlag >= 0 && args[permissionModeFlag + 1]?.toLowerCase() === "bypasspermissions";
+      return args.includes("--dangerously-skip-permissions") || permissionModeBypass;
+    }
+    if (kind === "codex") {
+      return args.includes("--dangerously-bypass-approvals-and-sandbox") || args.includes("--yolo");
+    }
+    return args.includes("--yolo");
   }
 
   function quoteShellArg(value: string): string {
@@ -630,13 +738,6 @@ export function App() {
     if (prompt && prompt.length > 0) parts.push(prompt);
     return parts.map(quoteShellArg).join(" ");
   }
-
-  // Prompt flag markers — the prompt arg is inserted right after this flag.
-  const PROMPT_FLAG_BY_KIND: Record<WorkerKind, string> = {
-    claude: "--print",
-    codex: "e",
-    iflow: "-p",
-  };
 
   function buildWorkerRunPayload(
     workerId: string,
@@ -653,14 +754,19 @@ export function App() {
       workerKind: kind ?? undefined
     });
 
-    // Insert prompt into CLI args after the prompt flag (e.g. --print, e, -p).
-    // If the flag isn't found, fall back to stdin piping (backward compat).
+    // Insert prompt according to worker CLI conventions.
+    // - Claude/Codex: append prompt after option block so danger flags are preserved.
+    // - iFlow: "-p" expects prompt right after the flag.
     if (kind) {
-      const flag = PROMPT_FLAG_BY_KIND[kind];
-      if (flag) {
-        const flagIndex = args.indexOf(flag);
-        if (flagIndex >= 0) {
+      const strategy = PROMPT_PLACEMENT_BY_KIND[kind];
+      if (strategy) {
+        const flagIndex = args.indexOf(strategy.flag);
+        if (flagIndex >= 0 && strategy.mode === "after_flag") {
           args.splice(flagIndex + 1, 0, promptText);
+          return { args, prompt: "" };
+        }
+        if (flagIndex >= 0 && strategy.mode === "append_tail") {
+          args.push(promptText);
           return { args, prompt: "" };
         }
       }
@@ -853,6 +959,151 @@ export function App() {
     setWorkerConsoleOpen(true);
   }
 
+  function setWorkerRetryConfig(next: Partial<WorkerRetryConfig>) {
+    setWorkerRetryConfigState((prev) => normalizeWorkerRetryConfig({ ...prev, ...next }));
+  }
+
+  function clearRetryTimer(projectId: string) {
+    const timer = retryTimerRef.current[projectId];
+    if (!timer) return;
+    clearTimeout(timer);
+    delete retryTimerRef.current[projectId];
+  }
+
+  function clearRetryState(projectId: string) {
+    clearRetryTimer(projectId);
+    delete retryAttemptRef.current[projectId];
+  }
+
+  function countTasksByStatus(projectId: string, status: Task["status"]): number {
+    const project = projectsRef.current.find((item) => item.id === projectId);
+    if (!project) return 0;
+    return project.tasks.filter((task) => task.status === status).length;
+  }
+
+  function resetProjectTasksToTodo(projectId: string, statuses: Task["status"][]): number {
+    const statusSet = new Set(statuses);
+    const now = new Date().toISOString();
+    let resetCount = 0;
+    let changed = false;
+
+    const nextProjects: Project[] = projectsRef.current.map((project) => {
+      if (project.id !== projectId) return project;
+      let projectChanged = false;
+      const nextTasks: Task[] = project.tasks.map((task): Task => {
+        if (!statusSet.has(task.status)) return task;
+        projectChanged = true;
+        resetCount += 1;
+        return {
+          ...task,
+          status: "待办" as const,
+          needsConfirmation: false,
+          updatedAt: now,
+        };
+      });
+      if (!projectChanged) return project;
+      changed = true;
+      return { ...project, tasks: nextTasks };
+    });
+
+    if (changed) {
+      projectsRef.current = nextProjects;
+      setProjects(nextProjects);
+    }
+
+    return resetCount;
+  }
+
+  async function stopWorkerProcess(workerId: string): Promise<boolean> {
+    if (!isTauri) return false;
+    try {
+      return await invoke<boolean>("stop_worker_process", { workerId });
+    } catch {
+      return false;
+    }
+  }
+
+  async function restartProjectExecution(projectId: string) {
+    const project = projectsRef.current.find((item) => item.id === projectId);
+    if (!project) return;
+    const kind = project.workerKind;
+    if (!kind) { setPickerForProject(projectId); return; }
+
+    const workerId = buildWorkerId(kind, project.id);
+    clearRetryState(projectId);
+
+    const stopped = await stopWorkerProcess(workerId);
+    setExecutingWorkers((prev) => {
+      const next = new Set(prev);
+      next.delete(workerId);
+      return next;
+    });
+    setPermissionPrompt((prev) => (prev?.workerId === workerId ? null : prev));
+
+    const resetCount = resetProjectTasksToTodo(projectId, ["进行中", "队列中"]);
+    if (resetCount === 0) {
+      setNotice("当前项目没有执行中的任务。");
+      return;
+    }
+
+    appendWorkerLog(
+      workerId,
+      `\n[手动重启] 已重置 ${resetCount} 个任务为待办，${stopped ? "旧 Worker 已终止" : "未检测到可终止的 Worker 进程"}。\n`
+    );
+    setNotice(`已重置 ${resetCount} 个任务并重新开始执行。`);
+    await completePending(projectId, kind);
+  }
+
+  function scheduleProjectRetry(projectId: string, kind: WorkerKind, workerId: string, label: string) {
+    clearRetryTimer(projectId);
+    const inProgressCount = countTasksByStatus(projectId, "进行中");
+    if (inProgressCount === 0) {
+      delete retryAttemptRef.current[projectId];
+      return;
+    }
+
+    const previousAttempts = retryAttemptRef.current[projectId] ?? 0;
+    const nextAttempt = previousAttempts + 1;
+    if (nextAttempt > workerRetryConfig.maxAttempts) {
+      appendWorkerLog(
+        workerId,
+        `\n[自动重试停止] 仍有 ${inProgressCount} 个任务处于进行中，已达到最大重试次数 ${workerRetryConfig.maxAttempts}。\n`
+      );
+      setNotice(`${label} 自动重试已停止：已达到最大重试次数。`);
+      return;
+    }
+
+    const delayMs = workerRetryConfig.intervalSeconds * 1000;
+    appendWorkerLog(
+      workerId,
+      `\n[自动重试] 检测到 ${inProgressCount} 个进行中任务，将在 ${workerRetryConfig.intervalSeconds} 秒后执行第 ${nextAttempt}/${workerRetryConfig.maxAttempts} 次重试。\n`
+    );
+    retryTimerRef.current[projectId] = setTimeout(() => {
+      delete retryTimerRef.current[projectId];
+
+      if (executingWorkersRef.current.has(workerId)) {
+        scheduleProjectRetry(projectId, kind, workerId, label);
+        return;
+      }
+
+      const remainingInProgress = countTasksByStatus(projectId, "进行中");
+      if (remainingInProgress === 0) {
+        delete retryAttemptRef.current[projectId];
+        return;
+      }
+
+      retryAttemptRef.current[projectId] = nextAttempt;
+      const resetCount = resetProjectTasksToTodo(projectId, ["进行中"]);
+      if (resetCount === 0) {
+        delete retryAttemptRef.current[projectId];
+        return;
+      }
+
+      setNotice(`${label} 正在自动重试（第 ${nextAttempt}/${workerRetryConfig.maxAttempts} 次）。`);
+      void completePending(projectId, kind);
+    }, delayMs);
+  }
+
   // ── Project Management ──
   async function pickStandaloneDirectory(): Promise<string | null> {
     if (!isTauri) { setNotice("目录选择仅支持桌面端。"); return null; }
@@ -945,7 +1196,7 @@ export function App() {
   }
 
   async function completePending(projectId: string, overrideKind?: WorkerKind) {
-    const project = projects.find((p) => p.id === projectId);
+    const project = projectsRef.current.find((p) => p.id === projectId);
     if (!project) return;
     const kind = overrideKind ?? project.workerKind;
     if (!kind) { setPickerForProject(projectId); return; }
@@ -954,7 +1205,11 @@ export function App() {
     const label = WORKER_KINDS.find((w) => w.kind === kind)?.label ?? kind;
     if (!config.executable.trim()) { setNotice(`请先在进度页配置 ${label} 命令。`); return; }
     const pendingTasks = project.tasks.filter((t) => t.status === "待办" || t.status === "待返工");
-    if (pendingTasks.length === 0) { setNotice("目前没有更多待办"); return; }
+    if (pendingTasks.length === 0) {
+      if (countTasksByStatus(project.id, "进行中") === 0) clearRetryState(project.id);
+      setNotice("目前没有更多待办");
+      return;
+    }
     const workerId = buildWorkerId(kind, project.id);
     setExecutingWorkers((prev) => {
       const next = new Set(prev);
@@ -1080,13 +1335,28 @@ export function App() {
         next.delete(workerId);
         return next;
       });
+
+      if (countTasksByStatus(project.id, "进行中") > 0) {
+        scheduleProjectRetry(project.id, kind, workerId, label);
+      } else {
+        clearRetryState(project.id);
+      }
     }
   }
 
-  async function answerPermission(workerId: string, answer: string) {
+  async function answerPermission(
+    workerId: string,
+    answer: string,
+    options?: { silent?: boolean; question?: string }
+  ) {
     setPermissionPrompt(null);
     if (!isTauri) return;
-    appendWorkerLog(workerId, `> ${answer}\n`);
+    if (options?.silent) {
+      const question = options.question?.trim();
+      appendWorkerLog(workerId, `\n[自动确认] ${question ? `${question} -> ` : ""}${answer}\n`);
+    } else {
+      appendWorkerLog(workerId, `> ${answer}\n`);
+    }
     try { await invoke<boolean>("send_worker_input", { workerId, input: answer, appendNewline: true }); }
     catch (error) { appendWorkerLog(workerId, `\n${String(error)}\n`); }
   }
@@ -1237,6 +1507,7 @@ export function App() {
                     onSelectTask={selectTask}
                     onEditTask={setEditingTaskId}
                     onCompletePending={(id) => void completePending(id)}
+                    onRestartExecution={(id) => void restartProjectExecution(id)}
                     onAssignWorkerKind={assignWorkerKind}
                     onSetDetailMode={setDetailMode}
                     onOpenConsole={() => openWorkerConsole(boardProject?.workerKind, { requireActive: true, projectId: boardProject?.id })}
@@ -1270,6 +1541,10 @@ export function App() {
                     onAiLanguageChange={setAiLanguage}
                     onExternalEditorAppChange={setExternalEditorApp}
                     onDetailModeChange={setDetailMode}
+                    workerRetryIntervalSeconds={workerRetryConfig.intervalSeconds}
+                    workerRetryMaxAttempts={workerRetryConfig.maxAttempts}
+                    onWorkerRetryIntervalChange={(seconds) => setWorkerRetryConfig({ intervalSeconds: seconds })}
+                    onWorkerRetryMaxAttemptsChange={(count) => setWorkerRetryConfig({ maxAttempts: count })}
                     onRefreshProbes={() => setInstallProbeToken((n) => n + 1)}
                     onReinstallSkills={() => {
                       if (!isTauri) return;
@@ -1352,6 +1627,7 @@ export function App() {
 	                status: "待办",
 	                needsConfirmation: false,
 	              }))}
+	              onRestartExecution={() => void restartProjectExecution(boardProject.id)}
 	              onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
 	            />
           </aside>
@@ -1390,6 +1666,7 @@ export function App() {
 	                  status: "待办",
 	                  needsConfirmation: false,
 	                }))}
+	                onRestartExecution={() => void restartProjectExecution(boardProject.id)}
 	                onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
 	              />
             </div>

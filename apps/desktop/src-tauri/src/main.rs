@@ -879,6 +879,35 @@ fn cleanup_background_processes(app_handle: &AppHandle) {
   }
 }
 
+#[tauri::command]
+fn stop_worker_process(
+  worker_id: String,
+  state: State<'_, AppState>,
+) -> Result<bool, String> {
+  let pid = {
+    let mut running = state
+      .running_workers
+      .lock()
+      .map_err(|_| "Worker 进程锁不可用".to_string())?;
+    running.remove(&worker_id)
+  };
+
+  {
+    let mut sessions = state
+      .worker_sessions
+      .lock()
+      .map_err(|_| "会话锁不可用".to_string())?;
+    sessions.remove(&worker_id);
+  }
+
+  if let Some(pid) = pid {
+    process_utils::kill_process_tree(pid);
+    Ok(true)
+  } else {
+    Ok(false)
+  }
+}
+
 fn main() {
   tauri::Builder::default()
     .register_uri_scheme_protocol("maple", maple_protocol::handle)
@@ -906,6 +935,7 @@ fn main() {
       start_interactive_worker,
       send_worker_input,
       stop_worker_session,
+      stop_worker_process,
       open_path,
       open_in_editor,
       start_mcp_server,
