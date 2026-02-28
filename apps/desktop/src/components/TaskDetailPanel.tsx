@@ -1,8 +1,9 @@
 import { Icon } from "@iconify/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import type { TagCatalog, Task } from "../domain";
+import type { TagCatalog, Task, WorkerKind } from "../domain";
 import type { UiLanguage } from "../lib/constants";
+import { WORKER_KINDS } from "../lib/constants";
 import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { resolveTagIconMeta } from "../lib/task-icons";
@@ -11,9 +12,11 @@ import { getTimeLevel, relativeTimeZh } from "../lib/utils";
 import { InlineTaskInput } from "./InlineTaskInput";
 import { TaskDetailsEditor } from "./TaskDetailsEditor";
 import { WorkerLogo } from "./WorkerLogo";
+import { PopoverMenu, type PopoverMenuItem } from "./PopoverMenu";
 
 type TaskDetailPanelProps = {
   task: Task;
+  projectWorkerKind?: WorkerKind | null;
   tagLanguage: UiLanguage;
   tagCatalog?: TagCatalog | null;
   onUpdateTitle?: (title: string) => void;
@@ -22,6 +25,7 @@ type TaskDetailPanelProps = {
   onReworkToDraft?: () => void;
   onSetAsRework?: () => void;
   onSetAsTodo?: () => void;
+  onUpdateTargetWorkerKind?: (kind: WorkerKind | null) => void;
   onRestartExecution?: () => void;
   onClose?: () => void;
   onDelete?: () => void;
@@ -106,6 +110,7 @@ function renderAuthorIcon(author: string, size = 14) {
 
 export function TaskDetailPanel({
   task,
+  projectWorkerKind,
   tagLanguage,
   tagCatalog,
   onUpdateTitle,
@@ -114,8 +119,10 @@ export function TaskDetailPanel({
   onReworkToDraft,
   onSetAsRework,
   onSetAsTodo,
+  onUpdateTargetWorkerKind,
   onRestartExecution,
-  onClose
+  onClose,
+  onDelete,
 }: TaskDetailPanelProps) {
   const reports = useMemo(() => {
     return task.reports
@@ -190,6 +197,43 @@ export function TaskDetailPanel({
             }
           : null;
 
+  const canPickTargetWorker =
+    typeof onUpdateTargetWorkerKind === "function"
+    && (task.status === "草稿" || task.status === "需要更多信息");
+
+  const resolvedProjectWorkerLabel = projectWorkerKind
+    ? WORKER_KINDS.find((entry) => entry.kind === projectWorkerKind)?.label ?? projectWorkerKind
+    : "";
+
+  const resolvedTargetWorkerLabel = task.targetWorkerKind
+    ? WORKER_KINDS.find((entry) => entry.kind === task.targetWorkerKind)?.label ?? task.targetWorkerKind
+    : resolvedProjectWorkerLabel
+      ? `跟随项目（${resolvedProjectWorkerLabel}）`
+      : "跟随项目";
+
+  const workerPickerColor = WORKER_KINDS.find((entry) => entry.kind === (task.targetWorkerKind ?? projectWorkerKind))?.color
+    ?? "var(--color-primary)";
+
+  const workerPickerItems: PopoverMenuItem[] = [
+    { kind: "heading", label: "指定 Worker" },
+    {
+      kind: "item",
+      key: "follow-project",
+      label: resolvedProjectWorkerLabel ? `跟随项目（${resolvedProjectWorkerLabel}）` : "跟随项目",
+      icon: "mingcute:link-line",
+      checked: !task.targetWorkerKind,
+      onSelect: () => onUpdateTargetWorkerKind?.(null),
+    },
+    ...WORKER_KINDS.map(({ kind, label }) => ({
+      kind: "item" as const,
+      key: `worker-${kind}`,
+      label,
+      iconNode: <WorkerLogo kind={kind} size={16} className="opacity-85" />,
+      checked: task.targetWorkerKind === kind,
+      onSelect: () => onUpdateTargetWorkerKind?.(kind),
+    })),
+  ];
+
   return (
     <motion.section 
       initial={{ x: 300, opacity: 0 }}
@@ -215,7 +259,7 @@ export function TaskDetailPanel({
           </div>
         </div>
         {primaryAction ? (
-          <div className="mt-3 flex justify-start">
+          <div className="mt-3 flex justify-start items-center gap-2 flex-wrap">
             <button
               type="button"
               className={primaryAction.className}
@@ -226,6 +270,16 @@ export function TaskDetailPanel({
               <Icon icon={primaryAction.icon} className="text-[14px]" />
               <span className="font-medium text-[12.5px]">{primaryAction.label}</span>
             </button>
+            {canPickTargetWorker ? (
+              <PopoverMenu
+                label="指定 Worker"
+                icon="mingcute:ai-line"
+                triggerText={resolvedTargetWorkerLabel}
+                align="left"
+                style={{ "--worker-color": workerPickerColor } as CSSProperties}
+                items={workerPickerItems}
+              />
+            ) : null}
           </div>
         ) : null}
       </header>

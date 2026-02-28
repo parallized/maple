@@ -93,11 +93,17 @@ export function normalizeProjects(projects: Project[]): Project[] {
             typeof (task as Task).needsConfirmation === "boolean"
               ? Boolean((task as Task).needsConfirmation)
               : false;
+          const rawTargetWorkerKind = (task as Task as Record<string, unknown>).targetWorkerKind;
+          const targetWorkerKind =
+            typeof rawTargetWorkerKind === "string" && WORKER_KINDS.some((w) => w.kind === rawTargetWorkerKind)
+              ? (rawTargetWorkerKind as Task["targetWorkerKind"])
+              : undefined;
           return {
             ...task,
             status,
             details,
             detailsDoc,
+            targetWorkerKind,
             needsConfirmation,
             createdAt,
             updatedAt,

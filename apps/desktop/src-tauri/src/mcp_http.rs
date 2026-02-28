@@ -170,6 +170,8 @@ struct Task {
     #[serde(rename = "detailsDoc", default, skip_serializing_if = "Option::is_none")]
     details_doc: Option<Value>,
     status: String,
+    #[serde(rename = "targetWorkerKind", default, skip_serializing_if = "Option::is_none")]
+    target_worker_kind: Option<String>,
     tags: Vec<String>,
     version: String,
     #[serde(rename = "createdAt")]
@@ -464,6 +466,12 @@ fn is_valid_mingcute_icon(icon: &str) -> bool {
 
 fn tool_query_project_todos(args: &Value) -> Value {
     let name = args.get("project").and_then(|v| v.as_str()).unwrap_or("");
+    let worker_kind = args
+        .get("worker_kind")
+        .and_then(|v| v.as_str())
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_lowercase());
     let projects = read_state();
 
     let Some(idx) = find_project_index(&projects, name) else {
@@ -479,6 +487,22 @@ fn tool_query_project_todos(args: &Value) -> Value {
         .tasks
         .iter()
         .filter(|t| t.status != "已完成" && t.status != "草稿")
+        .filter(|task| match worker_kind.as_deref() {
+            None => task
+                .target_worker_kind
+                .as_deref()
+                .map(|value| value.trim().is_empty())
+                .unwrap_or(true),
+            Some(kind) => {
+                if let Some(target_kind) = task.target_worker_kind.as_deref() {
+                    target_kind.trim().eq_ignore_ascii_case(kind)
+                } else if let Some(default_kind) = target.worker_kind.as_deref() {
+                    default_kind.trim().eq_ignore_ascii_case(kind)
+                } else {
+                    true
+                }
+            }
+        })
         .collect();
     todos.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
@@ -1001,6 +1025,12 @@ fn tool_finish_worker(args: &Value, state: &McpHttpState) -> Value {
         .get("project")
         .and_then(|v| v.as_str())
         .unwrap_or("");
+    let worker_kind = args
+        .get("worker_kind")
+        .and_then(|v| v.as_str())
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_lowercase());
     let summary = args
         .get("summary")
         .and_then(|v| v.as_str())
@@ -1019,6 +1049,18 @@ fn tool_finish_worker(args: &Value, state: &McpHttpState) -> Value {
         .tasks
         .iter()
         .filter(|task| !is_terminal_task_status(&task.status))
+        .filter(|task| match worker_kind.as_deref() {
+            None => true,
+            Some(kind) => {
+                if let Some(target_kind) = task.target_worker_kind.as_deref() {
+                    target_kind.trim().eq_ignore_ascii_case(kind)
+                } else if let Some(default_kind) = target.worker_kind.as_deref() {
+                    default_kind.trim().eq_ignore_ascii_case(kind)
+                } else {
+                    true
+                }
+            }
+        })
         .collect();
 
     if !unresolved_tasks.is_empty() {
@@ -1055,6 +1097,7 @@ fn tool_finish_worker(args: &Value, state: &McpHttpState) -> Value {
     let _ = fs::create_dir_all(&dir);
     let signal = json!({
         "project": target.name,
+        "workerKind": worker_kind,
         "summary": summary,
         "timestamp": iso_now(),
         "action": "finish"
@@ -1154,7 +1197,12 @@ fn tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "project": { "type": "string", "description": "项目名称（模糊匹配）" }
+                    "project": { "type": "string", "description": "项目名称（模糊匹配）" },
+                    "worker_kind": {
+                        "type": "string",
+                        "enum": ["claude", "codex", "iflow"],
+                        "description": "可选：按 Worker kind 过滤可见任务（用于任务指定 Worker 派发）。"
+                    }
                 },
                 "required": ["project"]
             }
@@ -1269,6 +1317,11 @@ fn tool_definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "project": { "type": "string", "description": "项目名称" },
+                    "worker_kind": {
+                        "type": "string",
+                        "enum": ["claude", "codex", "iflow"],
+                        "description": "可选：当前 Worker kind（用于按任务指定 Worker 分流 finish_worker 校验）。"
+                    },
                     "summary": { "type": "string", "description": "执行总结（可选）" }
                 },
                 "required": ["project"]

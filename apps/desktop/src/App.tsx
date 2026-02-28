@@ -7,7 +7,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 
-import { buildWorkerArchiveReport, createWorkerExecutionPrompt, inferFallbackTaskStatus, resolveMcpDecision } from "@maple/worker-skills";
+import { buildWorkerArchiveReport, createWorkerExecutionPrompt } from "@maple/worker-skills";
 
 import { TopNav } from "./components/TopNav";
 import { TaskDetailPanel } from "./components/TaskDetailPanel";
@@ -43,8 +43,6 @@ import {
 } from "./lib/utils";
 import { windowsPathToWslMntPath } from "./lib/wsl-path";
 import { collectTokenUsage } from "./lib/token-usage";
-import { generatePrStyleTags } from "./lib/pr-tags";
-import { buildVersionTag, mergeTaskTags } from "./lib/task-tags";
 import { normalizeTagsForAiLanguage } from "./lib/tag-language";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
 import { loadAiLanguage, loadExternalEditorApp, loadProjects, loadTheme, loadUiLanguage, loadWorkerRetryConfig } from "./lib/storage";
@@ -1204,12 +1202,15 @@ export function App() {
     const config = workerConfigs[kind];
     const label = WORKER_KINDS.find((w) => w.kind === kind)?.label ?? kind;
     if (!config.executable.trim()) { setNotice(`请先在进度页配置 ${label} 命令。`); return; }
-    const pendingTasks = project.tasks.filter((t) => t.status === "待办" || t.status === "待返工");
+    const allPendingTasks = project.tasks.filter((t) => t.status === "待办" || t.status === "待返工");
+    const pendingTasks = allPendingTasks.filter((t) => !t.targetWorkerKind || t.targetWorkerKind === kind);
     if (pendingTasks.length === 0) {
       if (countTasksByStatus(project.id, "进行中") === 0) clearRetryState(project.id);
-      setNotice("目前没有更多待办");
+      const assignedElsewhere = allPendingTasks.filter((t) => t.targetWorkerKind && t.targetWorkerKind !== kind).length;
+      setNotice(assignedElsewhere > 0 ? `当前 Worker 没有可执行的任务（${assignedElsewhere} 条已指定给其他 Worker）` : "目前没有更多待办");
       return;
     }
+    const pendingTaskIds = new Set(pendingTasks.map((t) => t.id));
     const workerId = buildWorkerId(kind, project.id);
     setExecutingWorkers((prev) => {
       const next = new Set(prev);
@@ -1238,7 +1239,7 @@ export function App() {
           return prev.map((item) => item.id !== project.id ? item : {
             ...item,
             tasks: item.tasks.map((task) => (
-              task.status === "待办" || task.status === "待返工"
+              pendingTaskIds.has(task.id) && (task.status === "待办" || task.status === "待返工")
                 ? { ...task, status: "队列中", updatedAt: now }
                 : task
             ))
@@ -1246,7 +1247,6 @@ export function App() {
         });
       });
 
-      const nextVersion = bumpPatch(project.version);
       for (const task of pendingTasks) {
         // Check if user deleted this task while worker was running
         const currentProject = projectsRef.current.find((p) => p.id === projectId);
@@ -1286,44 +1286,16 @@ export function App() {
             continue;
           }
 
-          // Fallback: try parsing structured decision from stdout/stderr (backward compat).
-          const decision = resolveMcpDecision(result);
+          // Fallback: worker exited without driving a terminal MCP state.
           const report = createTaskReport(label, buildWorkerArchiveReport(result, task.title));
-          if (!decision) {
-            const inferredStatus = inferFallbackTaskStatus(result);
-            updateTask(project.id, task.id, (c) => ({ ...c, status: inferredStatus, reports: [...c.reports, report] }));
-            continue;
-          }
-          const localizedDecisionTags = normalizeTagsForAiLanguage({
-            tags: decision.tags,
-            language: effectiveAiLanguage,
-            tagCatalog: project.tagCatalog,
-            max: 5
-          });
-          const generatedTags = generatePrStyleTags({
-            title: task.title,
-            status: decision.status,
-            decisionTags: localizedDecisionTags,
-            reportContent: report.content,
-            language: effectiveAiLanguage
-          });
-          const workerAndSystemTags = [...localizedDecisionTags, ...generatedTags];
-
           updateTask(project.id, task.id, (c) => ({
             ...c,
-            status: decision.status,
-            needsConfirmation: decision.status === "已完成" ? true : c.needsConfirmation,
-            tags: mergeTaskTags({
-              existing: c.tags,
-              generated: workerAndSystemTags,
-              versionTag: decision.status === "已完成" ? buildVersionTag(nextVersion) : null,
-              max: 6
-            }),
-            version: decision.status === "已完成" ? nextVersion : c.version,
-            reports: [...c.reports, report]
+            status: "已阻塞",
+            needsConfirmation: false,
+            reports: [...c.reports, report],
           }));
 
-        } catch (error) {
+    } catch (error) {
           appendWorkerLog(workerId, `\n${String(error)}\n`);
           updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, createTaskReport(label, `执行异常：${String(error)}`)] }));
         }
@@ -1602,6 +1574,7 @@ export function App() {
             </button>
 	            <TaskDetailPanel
 	              task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
+	              projectWorkerKind={boardProject.workerKind ?? null}
 	              tagLanguage={effectiveAiLanguage}
 	              tagCatalog={boardProject.tagCatalog}
 	              onClose={() => setSelectedTaskId(null)}
@@ -1627,6 +1600,10 @@ export function App() {
 	                status: "待办",
 	                needsConfirmation: false,
 	              }))}
+	              onUpdateTargetWorkerKind={(kind) => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                ...t,
+	                targetWorkerKind: kind ?? undefined,
+	              }))}
 	              onRestartExecution={() => void restartProjectExecution(boardProject.id)}
 	              onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
 	            />
@@ -1641,6 +1618,7 @@ export function App() {
             <div className="ui-modal-body">
 	              <TaskDetailPanel
 	                task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
+	                projectWorkerKind={boardProject.workerKind ?? null}
 	                tagLanguage={effectiveAiLanguage}
 	                tagCatalog={boardProject.tagCatalog}
 	                onClose={() => setSelectedTaskId(null)}
@@ -1665,6 +1643,10 @@ export function App() {
 	                  ...t,
 	                  status: "待办",
 	                  needsConfirmation: false,
+	                }))}
+	                onUpdateTargetWorkerKind={(kind) => updateTask(boardProject.id, selectedTaskId, (t) => ({
+	                  ...t,
+	                  targetWorkerKind: kind ?? undefined,
 	                }))}
 	                onRestartExecution={() => void restartProjectExecution(boardProject.id)}
 	                onDelete={() => deleteTask(boardProject.id, selectedTaskId)}

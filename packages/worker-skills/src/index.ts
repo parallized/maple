@@ -152,6 +152,18 @@ function combinedWorkerOutput(result: WorkerExecutionResultLike): string {
   return stripAnsi([result.stdout, result.stderr].filter(Boolean).join("\n")).trim();
 }
 
+function tailExcerpt(text: string, maxChars: number): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  if (trimmed.length <= maxChars) return trimmed;
+  const slice = trimmed.slice(trimmed.length - maxChars);
+  const firstNewline = slice.indexOf("\n");
+  if (firstNewline >= 0 && firstNewline < 80) {
+    return slice.slice(firstNewline + 1).trimStart();
+  }
+  return slice.trimStart();
+}
+
 function looksLikeNeedsMoreInfo(output: string): boolean {
   const text = output.trim();
   if (!text) return false;
@@ -206,75 +218,38 @@ export function resolveMcpDecision(result: WorkerExecutionResultLike): MapleMcpD
 
 export function buildWorkerArchiveReport(result: WorkerExecutionResultLike, taskTitle: string): string {
   const structured = parseWorkerExecutionResult(result);
-  const decision = structured?.decision ?? null;
-
-  const rawExcerpt = combinedWorkerOutput(result).slice(0, 240).trim();
-
-  if (!structured) {
-    const inferred = inferFallbackTaskStatus(result);
-    const statusLine =
-      inferred === "已阻塞"
-        ? "状态：已阻塞（执行失败）"
-        : inferred === "需要更多信息"
-          ? "状态：需要更多信息（等待补充）"
-          : "状态：待返工（缺少 MCP 决策输出）";
-    return [
-      statusLine,
-      "描述：",
-      `未检测到可解析的 mcp_decision。${rawExcerpt ? `\n\n输出摘录：\n${rawExcerpt}` : ""}`.trim(),
-    ].join("\n");
-  }
-
-  const statusDetail = decision
-    ? decision.status === "已完成"
-      ? "已完成（执行成功）"
-      : decision.status === "进行中"
-        ? "进行中（等待继续处理）"
-        : decision.status === "队列中"
-          ? "队列中（等待执行）"
-          : decision.status === "待返工"
-            ? "待返工（需要继续处理）"
-            : decision.status === "需要更多信息"
-              ? "需要更多信息（请补充后继续）"
-              : "已阻塞（执行受阻）"
-    : null;
+  const output = combinedWorkerOutput(result);
+  const rawExcerpt = tailExcerpt(output, 320);
 
   const reportLines: string[] = [];
-  const description =
-    structured.conclusion.trim()
-    || decision?.comment.trim()
-    || taskTitle;
+  const statusLine = result.success
+    ? "状态：已阻塞（未收到 MCP 回写）"
+    : "状态：已阻塞（执行失败）";
 
-  if (!decision) {
-    const inferred = inferFallbackTaskStatus(result);
-    const statusLine =
-      inferred === "已阻塞"
-        ? "状态：已阻塞（执行失败）"
-        : inferred === "需要更多信息"
-          ? "状态：需要更多信息（等待补充）"
-          : "状态：待返工（缺少 MCP 决策输出）";
-    reportLines.push(statusLine);
-    reportLines.push("描述：");
-    reportLines.push(
-      [
-        "未检测到可解析的 mcp_decision。",
-        description ? `\n\n结论：\n${description}` : "",
-        rawExcerpt ? `\n\n输出摘录：\n${rawExcerpt}` : "",
-      ].join("").trim()
-    );
-  } else {
-    reportLines.push("状态：" + (statusDetail ?? "已阻塞（执行受阻）"));
-    reportLines.push("描述：");
-    reportLines.push(description);
-  }
+  reportLines.push(statusLine);
+  reportLines.push("描述：");
 
-  if (structured.changes.length > 0) {
+  const conclusion = structured?.conclusion?.trim();
+  const baseDescription = result.success
+    ? "Worker 已退出，但未通过 MCP 提交任务状态与报告。"
+    : "Worker 执行失败，且未通过 MCP 提交任务状态与报告。";
+
+  reportLines.push(
+    [
+      baseDescription,
+      conclusion ? `\n\n结论：\n${conclusion}` : taskTitle.trim() ? `\n\n任务：\n${taskTitle.trim()}` : "",
+      result.code != null ? `\n\nExit code：${result.code}` : "",
+      rawExcerpt ? `\n\n输出摘录（末尾）：\n${rawExcerpt}` : "",
+    ].join("").trim()
+  );
+
+  if (structured?.changes?.length) {
     reportLines.push("");
     reportLines.push("变更：");
     reportLines.push(...structured.changes.map((item) => `- ${item}`));
   }
 
-  if (structured.verification.length > 0) {
+  if (structured?.verification?.length) {
     reportLines.push("");
     reportLines.push("验证：");
     reportLines.push(...structured.verification.map((item) => `- ${item}`));

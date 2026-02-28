@@ -332,6 +332,7 @@ export function SettingsView({
                   wslProbe={wslProbe}
                   uiLanguage={uiLanguage}
                   variant="settings"
+                  onRefreshProbes={onRefreshProbes}
                 />
               );
             })}
@@ -362,6 +363,7 @@ export function SettingsView({
                       wslProbe={wslProbe}
                       uiLanguage={uiLanguage}
                       variant="settings"
+                      onRefreshProbes={onRefreshProbes}
                     />
                   );
                 })}

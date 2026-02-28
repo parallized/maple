@@ -419,6 +419,7 @@ fn is_claude_installed_native(home: &Path) -> bool {
 fn is_iflow_installed_native(home: &Path) -> bool {
   home.join(".iflow").join("workflows").join("maple.md").exists()
     && home.join(".iflow").join("skills").join("maple").join("SKILL.md").exists()
+    && home.join(".iflow").join("commands").join("maple.toml").exists()
 }
 
 fn is_codex_installed_wsl() -> bool {
@@ -450,6 +451,7 @@ fn is_iflow_installed_wsl() -> bool {
   {
     wsl_home_file_exists(".iflow/workflows/maple.md").unwrap_or(false)
       && wsl_home_file_exists(".iflow/skills/maple/SKILL.md").unwrap_or(false)
+      && wsl_home_file_exists(".iflow/commands/maple.toml").unwrap_or(false)
   }
 
   #[cfg(not(target_os = "windows"))]
@@ -644,6 +646,7 @@ description: "Run /maple workflow for Maple development tasks."
 When user asks `/maple`:
 1. Work in the current working directory (do NOT cd elsewhere).
 2. Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
+   - For routing, call `query_project_todos` / `finish_worker` with `worker_kind: "codex"`.
 3. Always run typecheck/build verification before marking done.
 4. For each task, call `submit_task_report` to set `进行中` when execution starts, then set `已完成` / `已阻塞` / `需要更多信息` when execution ends.
    - Only use `已阻塞` when you hit a real error you cannot proceed (tool failure / build failure / environment issue).
@@ -660,6 +663,7 @@ fn claude_command_md() -> &'static str {
   r#"Run Maple workflow in the current working directory:
 
 1. Use Maple MCP tools (query_project_todos, query_recent_context) to get tasks
+   - For routing, call query_project_todos / finish_worker with worker_kind: "claude"
 2. Implement the requested changes in the current project
 3. Run typecheck/build before finishing
 4. For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish
@@ -676,6 +680,7 @@ fn iflow_workflow_md() -> &'static str {
 
 Work in the current working directory (do NOT cd elsewhere).
 Use Maple MCP tools to query tasks and submit results.
+Always call query_project_todos / finish_worker with worker_kind: "iflow".
 Run typecheck/build before finishing.
 For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
 Only use 已阻塞 for real errors you cannot proceed.
@@ -683,6 +688,27 @@ If you need user input/requirements: set 需要更多信息, then call update_ta
 Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
 Call finish_worker as the final MCP call.
 Output mcp_decision with status, comment, and tags.
+"#
+}
+
+fn iflow_command_toml() -> &'static str {
+  r#"# Command: maple
+# Description: Run Maple workflow in the current working directory
+# Version: 1
+
+description = "Run Maple workflow in the current working directory"
+
+prompt = """
+Work in the current working directory (do NOT cd elsewhere).
+Use Maple MCP tools to query tasks and submit results.
+Always call query_project_todos / finish_worker with worker_kind: "iflow".
+Run typecheck/build before finishing.
+For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
+Only use 已阻塞 for real errors you cannot proceed.
+If you need user input/requirements: set 需要更多信息, then call update_task_details to write the question list + plan list into the task detail page.
+Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
+Call finish_worker as the final MCP call.
+"""
 "#
 }
 
@@ -1229,6 +1255,25 @@ Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
     }
     written_files.push(pretty_path(&workflow_path));
 
+    let command_path = home.join(".iflow").join("commands").join("maple.toml");
+    emitter.log(Some(target_id), "info", format!("写入 {}\n", pretty_path(&command_path)));
+    if let Err(error) = write_text_file(&command_path, iflow_command_toml()) {
+      emitter.target_state(target_id, "error");
+      emitter.log(Some(target_id), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: target_id.to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+    written_files.push(pretty_path(&command_path));
+
     let skill_path = home.join(".iflow").join("skills").join("maple").join("SKILL.md");
     emitter.log(Some(target_id), "info", format!("写入 {}\n", pretty_path(&skill_path)));
     if let Err(error) = write_text_file(&skill_path, iflow_skill_md()) {
@@ -1320,6 +1365,25 @@ Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
   }
 
   match wsl_write_home_file(emitter, target_id, ".iflow/workflows/maple.md", iflow_workflow_md()) {
+    Ok(path) => written_files.push(path),
+    Err(error) => {
+      emitter.target_state(target_id, "error");
+      emitter.log(Some(target_id), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: target_id.to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+  }
+
+  match wsl_write_home_file(emitter, target_id, ".iflow/commands/maple.toml", iflow_command_toml()) {
     Ok(path) => written_files.push(path),
     Err(error) => {
       emitter.target_state(target_id, "error");

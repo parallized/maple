@@ -76,6 +76,8 @@ export type Task = {
   details: string;
   detailsDoc?: unknown;
   status: TaskStatus;
+  /** Optional: force this task to be handled by a specific worker kind. */
+  targetWorkerKind?: WorkerKind;
   needsConfirmation?: boolean;
   tags: string[];
   version: string;

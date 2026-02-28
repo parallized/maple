@@ -18,12 +18,13 @@ export type PopoverMenuItem =
 type PopoverMenuProps = {
   label: string;
   icon: string;
+  triggerText?: string;
   items: PopoverMenuItem[];
   align?: "left" | "right";
   style?: React.CSSProperties;
 };
 
-export function PopoverMenu({ label, icon, items, align = "right", style }: PopoverMenuProps) {
+export function PopoverMenu({ label, icon, triggerText, items, align = "right", style }: PopoverMenuProps) {
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -62,14 +63,21 @@ export function PopoverMenu({ label, icon, items, align = "right", style }: Popo
     <div ref={rootRef} className="popover" style={style}>
       <button
         type="button"
-        className={`ui-btn ui-btn--sm ui-btn--outline ui-icon-btn ${open ? "popover-trigger active" : "popover-trigger"}`}
+        className={`ui-btn ui-btn--sm ui-btn--outline ${triggerText ? "gap-2 px-3" : "ui-icon-btn"} ${open ? "popover-trigger active" : "popover-trigger"}`}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((previous) => !previous)}
       >
         <Icon icon={icon} className="text-base" />
-        {label ? <span className="sr-only">{label}</span> : null}
+        {triggerText ? (
+          <>
+            <span className="text-[12px] font-sans">{triggerText}</span>
+            <Icon icon="mingcute:down-line" className="text-[14px] opacity-60" />
+          </>
+        ) : label ? (
+          <span className="sr-only">{label}</span>
+        ) : null}
       </button>
 
       {open ? (
