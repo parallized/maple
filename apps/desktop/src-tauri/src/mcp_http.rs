@@ -1141,7 +1141,7 @@ async fn handle_mcp_post(
         "initialize" => json!({
             "protocolVersion": "2025-03-26",
             "capabilities": { "tools": {} },
-            "serverInfo": { "name": "maple", "version": "0.1.0" }
+            "serverInfo": { "name": "maple", "version": "0.1.3" }
         }),
 
         "ping" => json!({}),

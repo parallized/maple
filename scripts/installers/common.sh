@@ -31,6 +31,8 @@ When user asks \`/maple\`:
 1. Work in the current working directory (do NOT cd elsewhere).
 2. Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
 3. Always run typecheck/build verification before marking done.
+   - IMPORTANT: Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts), e.g. \`pnpm dev\`, \`tauri dev\`, \`vite dev\`, or commands with \`--watch\`.
+   - Prefer one-shot commands (typecheck/build/test). Every command must exit on its own; add an explicit timeout or pick a safer alternative when unsure.
 4. For each task, call \`submit_task_report\` to set \`进行中\` when execution starts, then set \`已完成\` / \`已阻塞\` / \`需要更多信息\` when execution ends.
 5. Before ending, call \`query_project_todos\` and ensure no \`待办\` / \`队列中\` / \`进行中\` task remains.
 6. Call \`finish_worker\` as the final MCP call.
@@ -47,6 +49,7 @@ Run Maple workflow in the current working directory:
 1. Use Maple MCP tools (query_project_todos, query_recent_context) to get tasks
 2. Implement the requested changes in the current project
 3. Run typecheck/build before finishing
+   - Do NOT start long-lived dev/watch processes (they block the workflow). Prefer one-shot verification commands.
 4. For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish
 5. Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains
 6. Call finish_worker as the final MCP call
@@ -65,6 +68,7 @@ write_iflow_user_assets() {
 Work in the current working directory (do NOT cd elsewhere).
 Use Maple MCP tools to query tasks and submit results.
 Run typecheck/build before finishing.
+Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
 For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
 Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
 Call finish_worker as the final MCP call.
@@ -92,6 +96,7 @@ Maple execution skill:
 - execute tasks end-to-end
 - use Maple MCP + local skills first
 - run typecheck/build before completion
+- avoid long-lived dev/watch commands that never exit; prefer one-shot verification commands
 - use submit_task_report to mark each task as 进行中 at start, then settle to 已完成 / 已阻塞 / 需要更多信息
 - call query_project_todos before ending, and keep no 待办 / 队列中 / 进行中 tasks
 - call finish_worker as the final MCP call

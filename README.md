@@ -25,6 +25,10 @@ Maple 是一个面向本地工程的 AI 工作台（自带 MCP & Skills）
 ![Worker 配置](docs/assets/worker-config.png)
 ![Worker 配置](docs/assets/worker-select.png)
 
+完成之后黄色问号 + 提醒验收
+
+![alt text](docs/assets/notice.png)
+
 ### Worker 选择建议
 
 - 国外模型：Claude Opus 4.6 > GPT‑5.2 > GPT‑5.3 Codex

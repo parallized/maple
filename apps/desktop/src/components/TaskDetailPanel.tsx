@@ -199,7 +199,14 @@ export function TaskDetailPanel({
 
   const canPickTargetWorker =
     typeof onUpdateTargetWorkerKind === "function"
-    && (task.status === "草稿" || task.status === "需要更多信息");
+    && (
+      task.status === "草稿"
+      || task.status === "需要更多信息"
+      || task.status === "待办"
+      || task.status === "待返工"
+      || task.status === "队列中"
+      || task.status === "已阻塞"
+    );
 
   const resolvedProjectWorkerLabel = projectWorkerKind
     ? WORKER_KINDS.find((entry) => entry.kind === projectWorkerKind)?.label ?? projectWorkerKind
@@ -258,18 +265,20 @@ export function TaskDetailPanel({
             />
           </div>
         </div>
-        {primaryAction ? (
+        {primaryAction || canPickTargetWorker ? (
           <div className="mt-3 flex justify-start items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              className={primaryAction.className}
-              onClick={primaryAction.onClick}
-              aria-label={primaryAction.ariaLabel}
-              title={primaryAction.title}
-            >
-              <Icon icon={primaryAction.icon} className="text-[14px]" />
-              <span className="font-medium text-[12.5px]">{primaryAction.label}</span>
-            </button>
+            {primaryAction ? (
+              <button
+                type="button"
+                className={primaryAction.className}
+                onClick={primaryAction.onClick}
+                aria-label={primaryAction.ariaLabel}
+                title={primaryAction.title}
+              >
+                <Icon icon={primaryAction.icon} className="text-[14px]" />
+                <span className="font-medium text-[12.5px]">{primaryAction.label}</span>
+              </button>
+            ) : null}
             {canPickTargetWorker ? (
               <PopoverMenu
                 label="指定 Worker"
