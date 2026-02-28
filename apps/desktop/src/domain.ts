@@ -80,7 +80,6 @@ export type Task = {
   targetWorkerKind?: WorkerKind;
   needsConfirmation?: boolean;
   tags: string[];
-  version: string;
   createdAt: string;
   updatedAt: string;
   reports: TaskReport[];
@@ -89,7 +88,6 @@ export type Task = {
 export type Project = {
   id: string;
   name: string;
-  version: string;
   directory: string;
   workerKind?: WorkerKind;
   tasks: Task[];

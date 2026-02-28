@@ -1,4 +1,5 @@
 import type { McpServerConfig, Project } from "../domain";
+import type { CodexUsageConfig } from "./codex-usage";
 import type {
   AiLanguage,
   ExternalEditorApp,
@@ -10,6 +11,8 @@ import {
   DEFAULT_WORKER_RETRY_CONFIG,
   DEFAULT_EXTERNAL_EDITOR_APP,
   DEFAULT_MCP_CONFIG,
+  STORAGE_CODEX_USAGE_CONFIG,
+  STORAGE_CONSTITUTION,
   STORAGE_AI_LANGUAGE,
   STORAGE_EDITOR_APP,
   STORAGE_MCP_CONFIG,
@@ -19,6 +22,7 @@ import {
   STORAGE_WORKER_RETRY_INTERVAL_SECONDS,
   STORAGE_WORKER_RETRY_MAX_ATTEMPTS
 } from "./constants";
+import { DEFAULT_CODEX_USAGE_CONFIG, normalizeCodexUsageConfig } from "./codex-usage";
 import { normalizeProjects } from "./utils";
 
 const INITIAL_PROJECTS: Project[] = [];
@@ -134,5 +138,25 @@ export function loadWorkerRetryConfig(): WorkerRetryConfig {
     return { intervalSeconds, maxAttempts };
   } catch {
     return DEFAULT_WORKER_RETRY_CONFIG;
+  }
+}
+
+export function loadConstitution(): string {
+  try {
+    const raw = localStorage.getItem(STORAGE_CONSTITUTION);
+    return typeof raw === "string" ? raw : "";
+  } catch {
+    return "";
+  }
+}
+
+export function loadCodexUsageConfig(): CodexUsageConfig {
+  try {
+    const raw = localStorage.getItem(STORAGE_CODEX_USAGE_CONFIG);
+    if (!raw) return DEFAULT_CODEX_USAGE_CONFIG;
+    const parsed = JSON.parse(raw) as unknown;
+    return normalizeCodexUsageConfig(parsed);
+  } catch {
+    return DEFAULT_CODEX_USAGE_CONFIG;
   }
 }

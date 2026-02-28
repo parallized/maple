@@ -19,6 +19,7 @@ tokio = { version = "1", features = ["net"] }
 chrono = "0.4"
 base64 = "0.22"
 dirs = "6"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
 [features]
 default = ["custom-protocol"]

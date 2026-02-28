@@ -83,11 +83,13 @@ description: "Run /maple workflow for Maple development tasks."
 
 When user asks `/maple`:
 1. Work in the current working directory (do NOT cd elsewhere).
+   - If ~/.maple/constitution.md exists, read it first and follow the rules during execution.
 2. Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
 3. Always run typecheck/build verification before marking done.
    - IMPORTANT: Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts), e.g. `pnpm dev`, `tauri dev`, `vite dev`, or commands with `--watch`.
    - Prefer one-shot commands (typecheck/build/test). Every command must exit on its own; add an explicit timeout or pick a safer alternative when unsure.
 4. For each task, call `submit_task_report` to set `进行中` when execution starts, then set `已完成` / `已阻塞` / `需要更多信息` when execution ends.
+   - If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办).
 5. Before ending, call `query_project_todos` and ensure no `待办` / `队列中` / `进行中` task remains.
 6. Call `finish_worker` as the final MCP call.
 7. Output `mcp_decision` with status, comment, and tags.
@@ -116,10 +118,12 @@ function Install-Claude {
 Run Maple workflow in the current working directory:
 
 1. Use Maple MCP tools (query_project_todos, query_recent_context) to get tasks
+   - If ~/.maple/constitution.md exists, read it first and follow the rules during execution.
 2. Implement the requested changes in the current project
 3. Run typecheck/build before finishing
    - Do NOT start long-lived dev/watch processes (they block the workflow). Prefer one-shot verification commands.
 4. For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish
+   - If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办)
 5. Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains
 6. Call finish_worker as the final MCP call
 7. Output mcp_decision with status, comment, and tags
@@ -153,8 +157,10 @@ function Install-iFlow {
 Work in the current working directory (do NOT cd elsewhere).
 Use Maple MCP tools to query tasks and submit results.
 Run typecheck/build before finishing.
+If ~/.maple/constitution.md exists, read it first and follow the rules during execution.
 Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
 For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
+If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办).
 Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
 Call finish_worker as the final MCP call.
 Output mcp_decision with status, comment, and tags.
@@ -183,8 +189,10 @@ Maple execution skill:
 - execute tasks end-to-end
 - use Maple MCP + local skills first
 - run typecheck/build before completion
+- if ~/.maple/constitution.md exists, read it first and follow the rules during execution
 - avoid long-lived dev/watch commands that never exit; prefer one-shot verification commands
 - use submit_task_report to mark each task as 进行中 at start, then settle to 已完成 / 已阻塞 / 需要更多信息
+- If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办)
 - call query_project_todos before ending, and keep no 待办 / 队列中 / 进行中 tasks
 - call finish_worker as the final MCP call
 - keep Maple on the standalone execution path
@@ -194,6 +202,48 @@ Maple execution skill:
   Write-Host "[maple-installer] iFlow setup done."
   Write-Host "[maple-installer] MCP registered as HTTP server at $McpUrl"
   Write-Host "[maple-installer] Assets written to $workflowPath and $skillPath"
+}
+
+function Install-Gemini {
+  Write-Step "Installing Maple MCP for Gemini CLI"
+  if (-not (Try-GetCommandPath "gemini")) {
+    Write-Warning "[maple-installer] gemini not found; skipped."
+    Write-Host "[maple-installer] Install Gemini CLI with: npm install -g @google/gemini-cli"
+    return
+  }
+
+  try { & gemini mcp remove maple --scope user *> $null } catch { }
+  & gemini mcp add --transport http --scope user maple $McpUrl | Out-Null
+
+  Write-Step "Installing local /maple command for Gemini CLI"
+  $home = Get-UserHome
+  $commandPath = Join-Path $home ".gemini/commands/maple.toml"
+  Write-TextFile -Path $commandPath -Content @"
+# Command: maple
+# Description: Run Maple workflow in the current working directory
+# Version: 1
+
+description = "Run Maple workflow in the current working directory"
+
+prompt = """
+Work in the current working directory (do NOT cd elsewhere).
+If ~/.maple/constitution.md exists, read it first and follow the rules during execution.
+Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
+Run typecheck/build before finishing.
+Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
+For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
+If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办).
+Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
+Call finish_worker as the final MCP call.
+Output mcp_decision with status, comment, and tags.
+"""
+"@
+
+  Write-Host ""
+  Write-Host "[maple-installer] Gemini setup done."
+  Write-Host "[maple-installer] MCP registered as HTTP server at $McpUrl"
+  Write-Host "[maple-installer] Command written to $commandPath"
+  Write-Host "[maple-installer] Restart Gemini CLI session and run /maple"
 }
 
 function Install-Windsurf {
@@ -245,6 +295,7 @@ function Install-Windsurf {
    - 必须产出 `mcp_decision.status`、`mcp_decision.comment`、`mcp_decision.tags[]`。
    - 缺少 `mcp_decision` 时，不得标记完成，统一标记为阻塞并说明原因。
 5. 对每条任务调用 `submit_task_report`：开始执行先更新为 `进行中`，结束后再更新为 `已完成` / `已阻塞` / `需要更多信息`。
+   - 若需要更多信息：在报告中附带一个 `maple-needs-info` JSON 表单块（Maple 会在执行报告中渲染；用户填写后点击“填写完毕”，任务将回到 `待办`）。
 6. 结束前必须再次调用 `query_project_todos`，确认不存在 `待办` / `队列中` / `进行中` 任务。
 7. 仅在第 6 步满足后，调用 `finish_worker`（必须作为最后一个 MCP 调用）。
 8. 输出本轮执行汇总（已完成 / 需更多信息 / 已阻塞 / 剩余）。
@@ -259,9 +310,10 @@ function Install-Windsurf {
   Write-Host "[maple-installer] Restart Windsurf to load updated MCP config."
 }
 
-Write-Host "[maple-install] Installing maple MCP + skills for Codex / Claude / iFlow / Windsurf..."
+Write-Host "[maple-install] Installing maple MCP + skills for Codex / Claude / iFlow / Gemini / Windsurf..."
 Install-Codex
 Install-Claude
 Install-iFlow
+Install-Gemini
 Install-Windsurf
 Write-Host "[maple-install] Done."

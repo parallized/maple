@@ -3,6 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "[maple-install] Installing maple MCP + skills for Codex / Claude / iFlow / Windsurf..."
+echo "[maple-install] Installing maple MCP + skills for Codex / Claude / iFlow / Gemini / Windsurf..."
 bash "${ROOT_DIR}/scripts/installers/install-maple-all.sh"
 echo "[maple-install] Done."

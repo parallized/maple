@@ -4,11 +4,6 @@ import { WORKER_KINDS } from "./constants";
 import { normalizeTagCatalog } from "./tag-catalog";
 import { isWslMntPath, wslMntPathToWindowsPath } from "./wsl-path";
 
-export function bumpPatch(version: string): string {
-  const [major, minor, patch] = version.split(".").map((part) => Number(part));
-  return `${major}.${minor}.${patch + 1}`;
-}
-
 export function parseArgs(value: string): string[] {
   return value
     .split(/\s+/)
@@ -21,8 +16,7 @@ export function deriveProjectName(path: string): string {
   return segments[segments.length - 1] ?? "新项目";
 }
 
-export function createTask(taskTitle: string, projectVersion: string, status: TaskStatus = "待办"): Task {
-  const nextVersion = bumpPatch(projectVersion);
+export function createTask(taskTitle: string, status: TaskStatus = "待办"): Task {
   const now = new Date().toISOString();
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -32,7 +26,6 @@ export function createTask(taskTitle: string, projectVersion: string, status: Ta
     status,
     needsConfirmation: false,
     tags: [],
-    version: nextVersion,
     createdAt: now,
     updatedAt: now,
     reports: [],

@@ -216,13 +216,6 @@ export function BoardView({
                 Worker {WORKER_KINDS.find((w) => w.kind === boardProject.workerKind)?.label ?? "未分配"}
               </span>
             </div>
-            <div 
-              className="flex items-center gap-2 text-[11.5px] text-muted"
-              style={{ "--worker-color": WORKER_KINDS.find(w => w.kind === boardProject.workerKind)?.color ?? "var(--color-primary)" } as React.CSSProperties}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-(--worker-color) opacity-40" />
-              <span className="opacity-80">Version {boardProject.version}</span>
-            </div>
             <div className="flex items-center gap-2 text-[11px] text-muted">
               <span className="w-1.5 h-1.5 rounded-full bg-(--color-base-content) opacity-20" />
               <span className="truncate opacity-60" title={boardProject.directory}>

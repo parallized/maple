@@ -173,7 +173,6 @@ struct Task {
     #[serde(rename = "targetWorkerKind", default, skip_serializing_if = "Option::is_none")]
     target_worker_kind: Option<String>,
     tags: Vec<String>,
-    version: String,
     #[serde(rename = "createdAt")]
     created_at: String,
     #[serde(rename = "updatedAt")]
@@ -203,7 +202,6 @@ struct TagDefinition {
 struct Project {
     id: String,
     name: String,
-    version: String,
     directory: String,
     #[serde(rename = "workerKind", skip_serializing_if = "Option::is_none")]
     worker_kind: Option<String>,
@@ -650,7 +648,6 @@ fn tool_query_task_details(args: &Value) -> Value {
         format!("任务：{}  (id: {})", task.title, task.id),
         format!("状态：{}", task.status),
         format!("标签：{}", tags),
-        format!("版本：{}", task.version),
         format!("更新时间：{}", task.updated_at),
         String::new(),
         "详情：".to_string(),

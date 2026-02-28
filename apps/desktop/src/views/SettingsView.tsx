@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { FadeContent } from "../components/ReactBits";
 import { WorkerConfigCard, type WorkerProbe } from "../components/WorkerConfigCard";
+import type { CodexUsageConfig } from "../lib/codex-usage";
+import { extractCodexUsageQuota, formatCodexUsageAmount } from "../lib/codex-usage";
 import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage } from "../lib/constants";
 import type { DetailMode, McpServerStatus, WorkerKind } from "../domain";
 import { hasTauriRuntime } from "../lib/utils";
@@ -16,6 +18,8 @@ type SettingsViewProps = {
   uiLanguage: UiLanguage;
   aiLanguage: AiLanguage;
   externalEditorApp: ExternalEditorApp;
+  constitution: string;
+  codexUsageConfig: CodexUsageConfig;
   workerAvailability: Array<{
     kind: WorkerKind;
     label: string;
@@ -28,6 +32,8 @@ type SettingsViewProps = {
   onUiLanguageChange: (language: UiLanguage) => void;
   onAiLanguageChange: (language: AiLanguage) => void;
   onExternalEditorAppChange: (app: ExternalEditorApp) => void;
+  onSaveConstitution: (next: string) => Promise<void> | void;
+  onSaveCodexUsageConfig: (next: CodexUsageConfig) => Promise<void> | void;
   onDetailModeChange: (mode: DetailMode) => void;
   workerRetryIntervalSeconds: number;
   workerRetryMaxAttempts: number;
@@ -45,6 +51,8 @@ export function SettingsView({
   uiLanguage,
   aiLanguage,
   externalEditorApp,
+  constitution,
+  codexUsageConfig,
   workerAvailability,
   installProbes,
   onRestartMcpServer,
@@ -52,6 +60,8 @@ export function SettingsView({
   onUiLanguageChange,
   onAiLanguageChange,
   onExternalEditorAppChange,
+  onSaveConstitution,
+  onSaveCodexUsageConfig,
   onDetailModeChange,
   workerRetryIntervalSeconds,
   workerRetryMaxAttempts,
@@ -65,14 +75,127 @@ export function SettingsView({
 
   type InstallMeta = { skillsVersion: number | null; installedAt: string | null; latestSkillsVersion: number };
   const [installMeta, setInstallMeta] = useState<InstallMeta | null>(null);
+  const [constitutionDraft, setConstitutionDraft] = useState<string>(() => constitution);
+  const [constitutionSaving, setConstitutionSaving] = useState(false);
+  const [codexUsageDraft, setCodexUsageDraft] = useState<CodexUsageConfig>(() => codexUsageConfig);
+  const [codexUsageSaving, setCodexUsageSaving] = useState(false);
+  const [codexUsageQuerying, setCodexUsageQuerying] = useState(false);
+  const [codexUsageQueryError, setCodexUsageQueryError] = useState("");
+  const [codexUsageFetchedAt, setCodexUsageFetchedAt] = useState<string | null>(null);
+  const [codexUsageHttpStatus, setCodexUsageHttpStatus] = useState<number | null>(null);
+  const [codexUsageQuota, setCodexUsageQuota] = useState<ReturnType<typeof extractCodexUsageQuota> | null>(null);
 
   useEffect(() => {
     if (!isTauri) return;
     invoke<InstallMeta>("get_install_meta").then(setInstallMeta).catch(() => {});
   }, [isTauri]);
 
+  useEffect(() => {
+    setConstitutionDraft(constitution);
+  }, [constitution]);
+
+  useEffect(() => {
+    setCodexUsageDraft(codexUsageConfig);
+  }, [codexUsageConfig]);
+
   const installedWorkers = workerAvailability.filter((w) => w.available);
   const uninstalledWorkers = workerAvailability.filter((w) => !w.available);
+  const constitutionDirty = constitutionDraft !== constitution;
+  const codexUsageDirty =
+    codexUsageDraft.baseUrl.trim() !== codexUsageConfig.baseUrl.trim()
+    || codexUsageDraft.apiKey.trim() !== codexUsageConfig.apiKey.trim();
+
+  async function handleSaveConstitution() {
+    if (!constitutionDirty || constitutionSaving) return;
+    try {
+      setConstitutionSaving(true);
+      await Promise.resolve(onSaveConstitution(constitutionDraft));
+    } finally {
+      setConstitutionSaving(false);
+    }
+  }
+
+  async function handleSaveCodexUsage() {
+    if (!codexUsageDirty || codexUsageSaving) return;
+    try {
+      setCodexUsageSaving(true);
+      await Promise.resolve(onSaveCodexUsageConfig({
+        baseUrl: codexUsageDraft.baseUrl.trim(),
+        apiKey: codexUsageDraft.apiKey.trim(),
+      }));
+    } finally {
+      setCodexUsageSaving(false);
+    }
+  }
+
+  type CodexUsageHttpResult = {
+    ok: boolean;
+    status: number;
+    body: unknown | null;
+    text: string | null;
+  };
+
+  function formatCodexUsageError(error: unknown): string {
+    if (typeof error === "string") return error;
+    if (error instanceof Error) return error.message;
+    if (error && typeof error === "object" && "message" in error) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) return message;
+    }
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== "{}") return serialized;
+    } catch {
+    }
+    return String(error);
+  }
+
+  async function handleQueryCodexUsage() {
+    if (!isTauri || codexUsageQuerying) return;
+
+    const baseUrl = codexUsageDraft.baseUrl.trim();
+    const apiKey = codexUsageDraft.apiKey.trim();
+    if (!baseUrl || !apiKey) {
+      setCodexUsageQueryError(t("è¯·å…ˆå¡«å†™ Base URL å’Œ API Keyã€‚", "Please fill Base URL and API key first."));
+      return;
+    }
+
+    setCodexUsageQuerying(true);
+    setCodexUsageQueryError("");
+
+    try {
+      const response = await invoke<CodexUsageHttpResult>("query_codex_usage", {
+        baseUrl,
+        apiKey,
+      });
+      setCodexUsageHttpStatus(Number.isFinite(response?.status) ? response.status : null);
+
+      if (!response || typeof response !== "object") {
+        setCodexUsageQuota(null);
+        setCodexUsageQueryError(t("è¿”å›žæ ¼å¼ä¸æ­£ç¡®ã€‚", "Invalid response."));
+        return;
+      }
+
+      if (!response.body) {
+        setCodexUsageQuota(null);
+        setCodexUsageQueryError(
+          response.text?.trim()
+            ? t(`æœåŠ¡è¿”å›žéž JSONï¼š${response.text.trim()}`, `Non-JSON response: ${response.text.trim()}`)
+            : t("æœåŠ¡è¿”å›žä¸ºç©ºã€‚", "Empty response.")
+        );
+        return;
+      }
+
+      const quota = extractCodexUsageQuota(response.body);
+      setCodexUsageQuota(quota);
+      setCodexUsageFetchedAt(new Date().toISOString());
+    } catch (error) {
+      setCodexUsageQuota(null);
+      setCodexUsageQueryError(formatCodexUsageError(error));
+    } finally {
+      setCodexUsageQuerying(false);
+    }
+  }
 
   return (
     <FadeContent duration={300}>
@@ -174,6 +297,53 @@ export function SettingsView({
           <p className="text-xs text-muted mt-2 m-0">
             {t("AI 语言用于引导 Worker 输出报告的结论与标签。", "AI language guides Worker output (conclusion and tags).")}
           </p>
+        </div>
+
+        <div className="ui-card p-4 mt-3">
+          <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+            <Icon icon="mingcute:book-2-line" />
+            {t("宪法", "Constitution")}
+          </h3>
+          <p className="text-xs text-muted mt-2 m-0">
+            {t(
+              "为 Worker 提供全局执行规则。保存后，Worker 会在开始执行前读取 ~/.maple/constitution.md。",
+              "Global rules for Workers. After saving, Workers read ~/.maple/constitution.md before execution."
+            )}
+          </p>
+
+          <textarea
+            className="ui-textarea mt-3"
+            rows={7}
+            value={constitutionDraft}
+            placeholder={t(
+              "例如：优先一次性命令；不要启动需要手动停止的进程；提交前必须通过类型检查与构建。",
+              "Example: prefer one-shot commands; avoid long-running processes; run typecheck/build before marking done."
+            )}
+            onChange={(event) => setConstitutionDraft(event.currentTarget.value)}
+          />
+
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm ui-btn--outline gap-1"
+              disabled={!constitutionDirty || constitutionSaving}
+              onClick={() => void handleSaveConstitution()}
+            >
+              <Icon icon="mingcute:save-line" className="text-sm" />
+              {constitutionSaving ? t("保存中…", "Saving…") : t("保存", "Save")}
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm ui-btn--ghost"
+              disabled={constitutionSaving || constitutionDraft.length === 0}
+              onClick={() => setConstitutionDraft("")}
+            >
+              {t("清空", "Clear")}
+            </button>
+            <span className="text-xs text-muted ml-auto tabular-nums opacity-70">
+              {constitutionDraft.length.toLocaleString()}
+            </span>
+          </div>
         </div>
 
         <div className="ui-card p-4 mt-3">
@@ -295,6 +465,137 @@ export function SettingsView({
             <p className="text-sm mt-2" style={{ color: "var(--color-error, #d47049)" }}>
               {mcpStartupError}
             </p>
+          ) : null}
+        </div>
+
+        <div className="ui-card p-4 mt-3">
+          <h3 className="flex items-center gap-1.5 m-0 font-semibold">
+            <Icon icon="mingcute:wallet-3-line" />
+            {t("余额查询", "Balance")}
+          </h3>
+          <p className="text-xs text-muted mt-2 m-0">
+            {t(
+              "可选：用于查询 Codex 账户的余额/额度（GET /codex/v1/usage）。不会影响 Worker 执行，只用于展示。",
+              "Optional: query Codex balance/quota (GET /codex/v1/usage). This only affects display, not Worker execution."
+            )}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm">{t("Base URL", "Base URL")}</span>
+              <input
+                type="text"
+                className="ui-input font-mono"
+                value={codexUsageDraft.baseUrl}
+                placeholder="http://localhost:8080"
+                onChange={(event) => setCodexUsageDraft((prev) => ({ ...prev, baseUrl: event.currentTarget.value }))}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm">{t("API Key", "API Key")}</span>
+              <input
+                type="password"
+                className="ui-input font-mono"
+                value={codexUsageDraft.apiKey}
+                placeholder="sk-..."
+                onChange={(event) => setCodexUsageDraft((prev) => ({ ...prev, apiKey: event.currentTarget.value }))}
+              />
+            </label>
+          </div>
+
+          <div className="flex items-center gap-2 mt-3 flex-wrap">
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm ui-btn--outline gap-1"
+              disabled={!codexUsageDirty || codexUsageSaving}
+              onClick={() => void handleSaveCodexUsage()}
+            >
+              <Icon icon="mingcute:save-line" className="text-sm" />
+              {codexUsageSaving ? t("保存中…", "Saving…") : t("保存", "Save")}
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm ui-btn--ghost"
+              disabled={codexUsageSaving || (codexUsageDraft.baseUrl.length === 0 && codexUsageDraft.apiKey.length === 0)}
+              onClick={() => setCodexUsageDraft({ baseUrl: "", apiKey: "" })}
+            >
+              {t("清除", "Clear")}
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm ui-btn--accent gap-1"
+              disabled={!isTauri || codexUsageQuerying || !codexUsageDraft.baseUrl.trim() || !codexUsageDraft.apiKey.trim()}
+              onClick={() => void handleQueryCodexUsage()}
+              title={!isTauri ? t("仅桌面端可用", "Desktop only") : undefined}
+            >
+              <Icon
+                icon={codexUsageQuerying ? "mingcute:loading-3-line" : "mingcute:search-2-line"}
+                className={`text-[16px] ${codexUsageQuerying ? "animate-spin opacity-80" : ""}`.trim()}
+              />
+              {codexUsageQuerying ? t("查询中…", "Querying…") : t("查询余额", "Query")}
+            </button>
+
+            <span className="text-xs text-muted ml-auto tabular-nums opacity-70">
+              {codexUsageHttpStatus != null ? `HTTP ${codexUsageHttpStatus}` : ""}
+            </span>
+          </div>
+
+          {codexUsageQueryError ? (
+            <div className="mt-2 rounded-[10px] border border-[color-mix(in_srgb,var(--color-error)_35%,transparent)] bg-[color-mix(in_srgb,var(--color-error)_7%,transparent)] px-3 py-2">
+              <div className="flex items-center gap-2 text-[12px] font-sans text-(--color-base-content)">
+                <Icon icon="mingcute:warning-line" className="text-[16px]" />
+                <span>{t("查询失败", "Query failed")}</span>
+              </div>
+              <div className="mt-1 text-[11px] font-mono text-(--color-base-content) opacity-80 whitespace-pre-wrap break-words">
+                {codexUsageQueryError}
+              </div>
+            </div>
+          ) : null}
+
+          {codexUsageQuota ? (
+            <div className="mt-3 rounded-[12px] border border-[color-mix(in_srgb,var(--color-base-300)_45%,transparent)] bg-(--color-base-100) px-3 py-2.5">
+              {codexUsageQuota.isValid ? (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[12px] font-sans font-semibold text-(--color-base-content)">
+                      {codexUsageQuota.planName}
+                    </div>
+                    <span className="ui-badge ui-badge--success text-[10px]">
+                      {t("可用", "Available")}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[14px] font-sans font-semibold text-(--color-base-content) tabular-nums">
+                    {t("剩余", "Remaining")}:{" "}
+                    {codexUsageQuota.remaining == null
+                      ? t("—", "—")
+                      : formatCodexUsageAmount(codexUsageQuota.remaining, codexUsageQuota.unit)}
+                  </div>
+                  <div className="mt-1 text-[11px] text-muted font-sans opacity-80 whitespace-pre-wrap break-words">
+                    {codexUsageQuota.extra}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[12px] font-sans font-semibold text-(--color-base-content)">
+                      {t("暂无可用额度", "No available quota")}
+                    </div>
+                    <span className="ui-badge ui-badge--warning text-[10px]">
+                      {codexUsageQuota.invalidCode}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-muted font-sans opacity-80 whitespace-pre-wrap break-words">
+                    {codexUsageQuota.invalidMessage}
+                  </div>
+                </>
+              )}
+
+              {codexUsageFetchedAt ? (
+                <div className="mt-2 text-[10px] text-muted font-sans opacity-60">
+                  {t("更新时间", "Updated")}: {new Date(codexUsageFetchedAt).toLocaleString()}
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </div>
 

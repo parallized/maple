@@ -8,6 +8,7 @@ import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { resolveTagIconMeta } from "../lib/task-icons";
 import { renderTaskMarkdown } from "../lib/task-markdown";
+import { buildNeedsInfoAppendixMarkdown, parseNeedsInfoFormFromReport } from "../lib/needs-info-form";
 import { getTimeLevel, relativeTimeZh } from "../lib/utils";
 import { InlineTaskInput } from "./InlineTaskInput";
 import { TaskDetailsEditor } from "./TaskDetailsEditor";
@@ -144,6 +145,80 @@ export function TaskDetailPanel({
     }
   }, [activeReportId, reports]);
 
+  const activeReport = useMemo(() => {
+    if (!activeReportId) return null;
+    return reports.find((report) => report.id === activeReportId) ?? null;
+  }, [activeReportId, reports]);
+
+  const activeNeedsInfoForm = useMemo(() => {
+    if (!activeReport) return null;
+    return parseNeedsInfoFormFromReport(activeReport.content);
+  }, [activeReport]);
+
+  const [needsInfoValuesByReportId, setNeedsInfoValuesByReportId] = useState<Record<string, Record<string, string>>>({});
+  const [needsInfoErrorsByReportId, setNeedsInfoErrorsByReportId] = useState<Record<string, Record<string, string>>>({});
+  const [needsInfoSubmitting, setNeedsInfoSubmitting] = useState(false);
+
+  function updateNeedsInfoValue(reportId: string, fieldId: string, value: string) {
+    setNeedsInfoValuesByReportId((prev) => ({
+      ...prev,
+      [reportId]: {
+        ...(prev[reportId] ?? {}),
+        [fieldId]: value,
+      },
+    }));
+
+    setNeedsInfoErrorsByReportId((prev) => {
+      const current = prev[reportId] ?? {};
+      if (!current[fieldId]) return prev;
+      const next = { ...current };
+      delete next[fieldId];
+      return { ...prev, [reportId]: next };
+    });
+  }
+
+  async function handleNeedsInfoDone() {
+    if (needsInfoSubmitting) return;
+
+    // Fallback: when there's no structured form in the report, keep the old behavior.
+    if (!activeReport || !activeNeedsInfoForm) {
+      onSetAsTodo?.();
+      return;
+    }
+
+    const schema = activeNeedsInfoForm.schema;
+    const reportId = activeReport.id;
+    const values = needsInfoValuesByReportId[reportId] ?? {};
+
+    const fieldErrors: Record<string, string> = {};
+    for (const field of schema.fields) {
+      if (!field.required) continue;
+      const v = (values[field.id] ?? "").trim();
+      if (!v) {
+        fieldErrors[field.id] = "必填";
+      }
+    }
+
+    if (Object.keys(fieldErrors).length > 0) {
+      setNeedsInfoErrorsByReportId((prev) => ({ ...prev, [reportId]: fieldErrors }));
+      return;
+    }
+
+    const appendix = buildNeedsInfoAppendixMarkdown(schema, values, new Date());
+    const currentDetails = task.details ?? "";
+    const nextDetails = currentDetails.trim()
+      ? `${currentDetails.trimEnd()}\n\n${appendix}`
+      : appendix;
+
+    try {
+      setNeedsInfoSubmitting(true);
+      onUpdateDetails?.(nextDetails, undefined);
+      onSetAsTodo?.();
+    } finally {
+      setNeedsInfoSubmitting(false);
+    }
+  }
+
   const primaryAction =
     task.status === "待办" && typeof onMarkAsDone === "function"
       ? {
@@ -157,13 +232,13 @@ export function TaskDetailPanel({
         }
       : task.status === "需要更多信息" && typeof onSetAsTodo === "function"
         ? {
-            label: "已补充信息",
-            ariaLabel: "已补充信息并设为待办",
-            title: "将任务设为待办，以便继续执行",
-            icon: "mingcute:time-line",
+            label: "填写完毕",
+            ariaLabel: "填写完毕并设为待办",
+            title: "将补充信息写入详情，并把任务设为待办以继续执行",
+            icon: "mingcute:check-line",
             className:
               "ui-btn ui-btn--sm rounded-full border-(--color-base-300) bg-transparent hover:bg-primary/5 hover:border-primary/30 hover:text-primary text-muted transition-all duration-300 gap-1.5 px-4",
-            onClick: onSetAsTodo,
+            onClick: () => void handleNeedsInfoDone(),
           }
         : task.status === "已阻塞" && typeof onSetAsRework === "function"
           ? {
@@ -330,16 +405,6 @@ export function TaskDetailPanel({
               ) : null}
             </div>
           </div>
-
-          <div className="flex items-center gap-4 h-9">
-            <span className="text-muted text-[13px] flex items-center gap-2 font-medium min-w-[60px]">
-              <Icon icon="mingcute:version-line" className="text-[15px] opacity-60" />
-              版本
-            </span>
-            <div className="flex items-center text-[13px] text-primary">
-              {task.version ? <span className="ui-badge ui-badge--sm">{task.version}</span> : <span className="text-muted opacity-40">未指定</span>}
-            </div>
-          </div>
         </motion.div>
 
         <motion.div 
@@ -452,7 +517,18 @@ export function TaskDetailPanel({
               <div className="relative">
                 <AnimatePresence mode="wait">
                   {reports.filter(r => r.id === activeReportId).map((report) => {
-                    const parsed = parseTaskReport(report.content);
+                    const needsInfo = task.status === "需要更多信息"
+                      ? parseNeedsInfoFormFromReport(report.content)
+                      : null;
+                    const reportContent = needsInfo?.contentWithoutSchema ?? report.content;
+                    const parsed = parseTaskReport(reportContent);
+                    const schema = needsInfo?.schema ?? null;
+                    const values = needsInfoValuesByReportId[report.id] ?? {};
+                    const errors = needsInfoErrorsByReportId[report.id] ?? {};
+                    const canFill = task.status === "需要更多信息"
+                      && Boolean(schema)
+                      && typeof onUpdateDetails === "function"
+                      && typeof onSetAsTodo === "function";
                     return (
                       <motion.article 
                         key={report.id}
@@ -467,9 +543,100 @@ export function TaskDetailPanel({
                             {renderAuthorIcon(report.author, 14)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            {parsed ? renderTaskMarkdown(parsed.description) : renderTaskMarkdown(report.content)}
+                            {parsed ? renderTaskMarkdown(parsed.description) : renderTaskMarkdown(reportContent)}
                           </div>
                         </div>
+
+                        {task.status === "需要更多信息" ? (
+                          schema ? (
+                            <div className="mt-3 rounded-[12px] border border-[color-mix(in_srgb,var(--color-base-300)_45%,transparent)] bg-(--color-base-100) px-3 py-2.5">
+                              <div className="flex items-center gap-2 text-[12px] font-sans font-semibold text-(--color-base-content)">
+                                <Icon icon="mingcute:edit-2-line" className="text-[16px] opacity-80" />
+                                <span>补充信息</span>
+                              </div>
+
+                              <div className="mt-2 flex flex-col gap-2">
+                                {schema.fields.map((field) => {
+                                  const currentValue = values[field.id] ?? "";
+                                  const fieldError = errors[field.id] ?? "";
+                                  const label = field.required ? `${field.label} *` : field.label;
+
+                                  return (
+                                    <label key={field.id} className="flex flex-col gap-1.5">
+                                      <span className="text-[12px] font-sans text-(--color-base-content) opacity-85">
+                                        {label}
+                                      </span>
+
+                                      {field.type === "textarea" ? (
+                                        <textarea
+                                          className="ui-textarea font-sans"
+                                          rows={3}
+                                          value={currentValue}
+                                          placeholder={field.placeholder ?? ""}
+                                          onChange={(event) => updateNeedsInfoValue(report.id, field.id, event.currentTarget.value)}
+                                        />
+                                      ) : field.type === "select" && Array.isArray(field.options) && field.options.length > 0 ? (
+                                        <select
+                                          className="ui-input font-sans"
+                                          value={currentValue}
+                                          onChange={(event) => updateNeedsInfoValue(report.id, field.id, event.currentTarget.value)}
+                                        >
+                                          <option value="">请选择</option>
+                                          {field.options.map((opt) => (
+                                            <option key={opt.value} value={opt.value}>
+                                              {opt.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          className="ui-input font-sans"
+                                          value={currentValue}
+                                          placeholder={field.placeholder ?? ""}
+                                          onChange={(event) => updateNeedsInfoValue(report.id, field.id, event.currentTarget.value)}
+                                        />
+                                      )}
+
+                                      {fieldError ? (
+                                        <span className="text-[11px] font-sans text-[color:var(--color-error)]">
+                                          {fieldError}
+                                        </span>
+                                      ) : null}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="flex items-center gap-2 mt-3">
+                                <button
+                                  type="button"
+                                  className="ui-btn ui-btn--sm ui-btn--accent gap-1"
+                                  disabled={!canFill || needsInfoSubmitting}
+                                  onClick={() => void handleNeedsInfoDone()}
+                                  title={!canFill ? "当前视图不可写入详情" : undefined}
+                                >
+                                  <Icon
+                                    icon={needsInfoSubmitting ? "mingcute:loading-3-line" : "mingcute:check-line"}
+                                    className={`text-[16px] ${needsInfoSubmitting ? "animate-spin opacity-80" : ""}`.trim()}
+                                  />
+                                  填写完毕
+                                </button>
+
+                                <span className="text-xs text-muted ml-auto opacity-70">
+                                  {schema.fields.some((field) => field.required) ? "带 * 为必填" : ""}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-3 rounded-[12px] border border-[color-mix(in_srgb,var(--color-base-300)_45%,transparent)] bg-(--color-base-100) px-3 py-2.5">
+                              <div className="flex items-center gap-2 text-[12px] font-sans text-muted">
+                                <Icon icon="mingcute:information-line" className="text-[16px] opacity-80" />
+                                <span>此报告未包含可解析的表单。请在「详情」补充信息后，点击「填写完毕」。</span>
+                              </div>
+                            </div>
+                          )
+                        ) : null}
                       </motion.article>
                     );
                   })}

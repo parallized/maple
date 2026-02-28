@@ -3,6 +3,7 @@
 mod mcp_http;
 mod maple_fs;
 mod installer;
+mod codex_usage;
 mod maple_protocol;
 mod tray_status;
 mod process_utils;
@@ -101,6 +102,16 @@ async fn install_mcp_skills(
   tauri::async_runtime::spawn_blocking(move || installer::install_mcp_and_skills_with_events(input, Some(emitter)))
     .await
     .map_err(|_| "安装线程异常退出".to_string())?
+}
+
+#[tauri::command]
+async fn query_codex_usage(
+  base_url: String,
+  api_key: String,
+) -> Result<codex_usage::CodexUsageHttpResult, String> {
+  tauri::async_runtime::spawn_blocking(move || codex_usage::query_codex_usage(base_url, api_key))
+    .await
+    .map_err(|_| "余额查询线程异常退出".to_string())?
 }
 
 #[tauri::command]
@@ -766,6 +777,10 @@ fn maple_home_dir() -> Result<PathBuf, String> {
   maple_fs::maple_home_dir()
 }
 
+fn constitution_path() -> Result<PathBuf, String> {
+  Ok(maple_home_dir()?.join("constitution.md"))
+}
+
 fn asset_dir() -> Result<PathBuf, String> {
   maple_fs::asset_dir()
 }
@@ -790,6 +805,59 @@ fn read_state_file() -> Result<String, String> {
     return Ok("[]".to_string());
   }
   std::fs::read_to_string(&path).map_err(|e| format!("读取状态文件失败: {e}"))
+}
+
+#[tauri::command]
+fn read_constitution_file() -> Result<String, String> {
+  let path = constitution_path()?;
+  if !path.exists() {
+    return Ok("".to_string());
+  }
+  std::fs::read_to_string(&path).map_err(|e| format!("读取宪法文件失败: {e}"))
+}
+
+#[cfg(target_os = "windows")]
+fn sync_constitution_to_wsl(content: &str) {
+  let encoded = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
+  let script = format!(
+    "set -e; mkdir -p \"$HOME/.maple\"; printf '%s' '{}' | base64 -d > \"$HOME/.maple/constitution.md\"",
+    encoded
+  );
+
+  let output = Command::new("wsl")
+    .args(["-e", "sh", "-lc", &script])
+    .output();
+
+  match output {
+    Ok(out) => {
+      if !out.status.success() {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        eprintln!(
+          "failed to sync constitution to WSL (exit: {:?})\n{}\n{}",
+          out.status.code(),
+          stdout.trim(),
+          stderr.trim()
+        );
+      }
+    }
+    Err(error) => {
+      eprintln!("failed to sync constitution to WSL: {error}");
+    }
+  }
+}
+
+#[tauri::command]
+fn write_constitution_file(content: String) -> Result<bool, String> {
+  let path = constitution_path()?;
+  let dir = path.parent().ok_or_else(|| "无效的宪法文件路径（缺少父目录）".to_string())?;
+  std::fs::create_dir_all(dir).map_err(|e| format!("创建 .maple 目录失败: {e}"))?;
+  std::fs::write(&path, content.as_bytes()).map_err(|e| format!("写入宪法文件失败: {e}"))?;
+
+  #[cfg(target_os = "windows")]
+  sync_constitution_to_wsl(&content);
+
+  Ok(true)
 }
 
 #[tauri::command]
@@ -943,6 +1011,9 @@ fn main() {
       mcp_server_status,
       write_state_file,
       read_state_file,
+      read_constitution_file,
+      write_constitution_file,
+      query_codex_usage,
       save_asset_file,
       get_asset_file_path,
       read_asset_file_base64,

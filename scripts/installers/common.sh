@@ -29,11 +29,13 @@ description: "Run /maple workflow for Maple development tasks."
 
 When user asks \`/maple\`:
 1. Work in the current working directory (do NOT cd elsewhere).
+   - If \`~/.maple/constitution.md\` exists, read it first and follow the rules during execution.
 2. Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
 3. Always run typecheck/build verification before marking done.
    - IMPORTANT: Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts), e.g. \`pnpm dev\`, \`tauri dev\`, \`vite dev\`, or commands with \`--watch\`.
    - Prefer one-shot commands (typecheck/build/test). Every command must exit on its own; add an explicit timeout or pick a safer alternative when unsure.
 4. For each task, call \`submit_task_report\` to set \`进行中\` when execution starts, then set \`已完成\` / \`已阻塞\` / \`需要更多信息\` when execution ends.
+   - If requirements are missing: use \`需要更多信息\` and include a \`\`\`maple-needs-info\`\`\` JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to \`待办\`).
 5. Before ending, call \`query_project_todos\` and ensure no \`待办\` / \`队列中\` / \`进行中\` task remains.
 6. Call \`finish_worker\` as the final MCP call.
 7. Output \`mcp_decision\` with status, comment, and tags.
@@ -47,13 +49,40 @@ write_claude_command() {
 Run Maple workflow in the current working directory:
 
 1. Use Maple MCP tools (query_project_todos, query_recent_context) to get tasks
+   - If \`~/.maple/constitution.md\` exists, read it first and follow the rules during execution.
 2. Implement the requested changes in the current project
 3. Run typecheck/build before finishing
    - Do NOT start long-lived dev/watch processes (they block the workflow). Prefer one-shot verification commands.
 4. For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish
+   - If requirements are missing: use 需要更多信息 and include a ```maple-needs-info``` JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办)
 5. Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains
 6. Call finish_worker as the final MCP call
 7. Output mcp_decision with status, comment, and tags
+EOF
+}
+
+write_gemini_command() {
+  local command_dir="${HOME}/.gemini/commands"
+  mkdir -p "$command_dir"
+  cat > "${command_dir}/maple.toml" <<'EOF'
+# Command: maple
+# Description: Run Maple workflow in the current working directory
+# Version: 1
+
+description = "Run Maple workflow in the current working directory"
+
+prompt = """
+Work in the current working directory (do NOT cd elsewhere).
+If `~/.maple/constitution.md` exists, read it first and follow the rules during execution.
+Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
+Run typecheck/build before finishing.
+Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
+For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
+If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办).
+Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
+Call finish_worker as the final MCP call.
+Output mcp_decision with status, comment, and tags.
+"""
 EOF
 }
 
@@ -68,8 +97,10 @@ write_iflow_user_assets() {
 Work in the current working directory (do NOT cd elsewhere).
 Use Maple MCP tools to query tasks and submit results.
 Run typecheck/build before finishing.
+If \`~/.maple/constitution.md\` exists, read it first and follow the rules during execution.
 Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
 For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
+If requirements are missing: use 需要更多信息 and include a ```maple-needs-info``` JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办).
 Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
 Call finish_worker as the final MCP call.
 Output mcp_decision with status, comment, and tags.
@@ -96,8 +127,10 @@ Maple execution skill:
 - execute tasks end-to-end
 - use Maple MCP + local skills first
 - run typecheck/build before completion
+- if \`~/.maple/constitution.md\` exists, read it first and follow the rules during execution
 - avoid long-lived dev/watch commands that never exit; prefer one-shot verification commands
 - use submit_task_report to mark each task as 进行中 at start, then settle to 已完成 / 已阻塞 / 需要更多信息
+- If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办)
 - call query_project_todos before ending, and keep no 待办 / 队列中 / 进行中 tasks
 - call finish_worker as the final MCP call
 - keep Maple on the standalone execution path
@@ -113,17 +146,19 @@ write_windsurf_workflow() {
 当用户输入 \`/maple\` 时，按以下流程执行：
 
 1. 在当前项目根目录执行，使用 Maple MCP + Maple Skills 作为唯一执行链路。
-2. 先调用 Maple MCP 查询能力获取任务与上下文：
+2. 若存在 \`~/.maple/constitution.md\`，先读取并遵循其中规则。
+3. 先调用 Maple MCP 查询能力获取任务与上下文：
    - \`query_project_todos\`：拉取当前项目未完成任务（按更新时间倒序）。
    - \`query_recent_context\`：拉取近期报告与 Worker 日志上下文（可按关键词过滤）。
-3. 对每条任务执行端到端实现：代码修改、类型检查、构建校验。
-4. 仅通过 Maple Skills 的 MCP 决策输出决定任务结果：
+4. 对每条任务执行端到端实现：代码修改、类型检查、构建校验。
+5. 仅通过 Maple Skills 的 MCP 决策输出决定任务结果：
    - 必须产出 \`mcp_decision.status\`、\`mcp_decision.comment\`、\`mcp_decision.tags[]\`。
    - 缺少 \`mcp_decision\` 时，不得标记完成，统一标记为阻塞并说明原因。
-5. 对每条任务调用 \`submit_task_report\`：开始执行先更新为 \`进行中\`，结束后再更新为 \`已完成\` / \`已阻塞\` / \`需要更多信息\`。
-6. 结束前必须再次调用 \`query_project_todos\`，确认不存在 \`待办\` / \`队列中\` / \`进行中\` 任务。
-7. 仅在第 6 步满足后，调用 \`finish_worker\`（必须作为最后一个 MCP 调用）。
-8. 输出本轮执行汇总（已完成 / 需更多信息 / 已阻塞 / 剩余）。
+6. 对每条任务调用 \`submit_task_report\`：开始执行先更新为 \`进行中\`，结束后再更新为 \`已完成\` / \`已阻塞\` / \`需要更多信息\`。
+   - 若需要更多信息：在报告中附带一个 \`maple-needs-info\` JSON 表单块（Maple 会在执行报告中渲染；用户填写后点击“填写完毕”，任务将回到 \`待办\`）。
+7. 结束前必须再次调用 \`query_project_todos\`，确认不存在 \`待办\` / \`队列中\` / \`进行中\` 任务。
+8. 仅在第 7 步满足后，调用 \`finish_worker\`（必须作为最后一个 MCP 调用）。
+9. 输出本轮执行汇总（已完成 / 需更多信息 / 已阻塞 / 剩余）。
 
 输出语言默认使用中文，除非用户明确要求其他语言。
 EOF

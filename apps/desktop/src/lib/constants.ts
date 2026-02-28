@@ -8,6 +8,8 @@ export const STORAGE_AI_LANGUAGE = "maple.desktop.ai-language";
 export const STORAGE_EDITOR_APP = "maple.desktop.editor-app";
 export const STORAGE_WORKER_RETRY_INTERVAL_SECONDS = "maple.desktop.worker-retry-interval-seconds";
 export const STORAGE_WORKER_RETRY_MAX_ATTEMPTS = "maple.desktop.worker-retry-max-attempts";
+export const STORAGE_CONSTITUTION = "maple.desktop.constitution";
+export const STORAGE_CODEX_USAGE_CONFIG = "maple.desktop.codex-usage-config";
 
 export type ThemeMode = "system" | "light" | "dark";
 export type UiLanguage = "zh" | "en";

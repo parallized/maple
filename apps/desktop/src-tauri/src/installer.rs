@@ -12,7 +12,7 @@ use crate::process_utils;
 use chrono::Utc;
 
 const MAPLE_MCP_URL: &str = "http://localhost:45819/mcp";
-const SKILLS_VERSION: u32 = 1;
+const SKILLS_VERSION: u32 = 3;
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -20,9 +20,13 @@ pub struct InstallMcpSkillsOptions {
   pub codex: bool,
   pub claude: bool,
   pub iflow: bool,
+  #[serde(default)]
+  pub gemini: bool,
   pub wsl_codex: bool,
   pub wsl_claude: bool,
   pub wsl_iflow: bool,
+  #[serde(default)]
+  pub wsl_gemini: bool,
   pub windsurf: bool,
   pub install_id: Option<String>,
 }
@@ -33,9 +37,11 @@ impl Default for InstallMcpSkillsOptions {
       codex: true,
       claude: true,
       iflow: true,
+      gemini: true,
       wsl_codex: false,
       wsl_claude: false,
       wsl_iflow: false,
+      wsl_gemini: false,
       windsurf: true,
       install_id: None,
     }
@@ -422,6 +428,41 @@ fn is_iflow_installed_native(home: &Path) -> bool {
     && home.join(".iflow").join("commands").join("maple.toml").exists()
 }
 
+fn gemini_settings_has_maple_server(settings_path: &Path) -> bool {
+  let Ok(raw) = fs::read_to_string(settings_path) else {
+    return false;
+  };
+  let trimmed = raw.trim();
+  if trimmed.is_empty() {
+    return false;
+  }
+
+  let Ok(root) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+    return false;
+  };
+
+  let servers = root.get("mcpServers").and_then(|v| v.as_object());
+  let Some(servers) = servers else {
+    return false;
+  };
+
+  let Some(maple) = servers.get("maple") else {
+    return false;
+  };
+  if maple.get("httpUrl").and_then(|v| v.as_str()).is_some() {
+    return true;
+  }
+  if maple.get("url").and_then(|v| v.as_str()).is_some() {
+    return true;
+  }
+  false
+}
+
+fn is_gemini_installed_native(home: &Path) -> bool {
+  home.join(".gemini").join("commands").join("maple.toml").exists()
+    && gemini_settings_has_maple_server(&home.join(".gemini").join("settings.json"))
+}
+
 fn is_codex_installed_wsl() -> bool {
   #[cfg(target_os = "windows")]
   {
@@ -452,6 +493,19 @@ fn is_iflow_installed_wsl() -> bool {
     wsl_home_file_exists(".iflow/workflows/maple.md").unwrap_or(false)
       && wsl_home_file_exists(".iflow/skills/maple/SKILL.md").unwrap_or(false)
       && wsl_home_file_exists(".iflow/commands/maple.toml").unwrap_or(false)
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  {
+    false
+  }
+}
+
+fn is_gemini_installed_wsl() -> bool {
+  #[cfg(target_os = "windows")]
+  {
+    wsl_home_file_exists(".gemini/commands/maple.toml").unwrap_or(false)
+      && wsl_home_file_exists(".gemini/settings.json").unwrap_or(false)
   }
 
   #[cfg(not(target_os = "windows"))]
@@ -495,13 +549,15 @@ pub fn probe_install_targets() -> Result<Vec<InstallTargetProbe>, String> {
   let mut npm_native: Option<bool> = None;
   let mut npm_wsl: Option<bool> = None;
 
-  let order: [(&str, &str); 6] = [
+  let order: [(&str, &str); 8] = [
     ("codex", "native"),
     ("claude", "native"),
     ("iflow", "native"),
+    ("gemini", "native"),
     ("wsl:codex", "wsl"),
     ("wsl:claude", "wsl"),
     ("wsl:iflow", "wsl"),
+    ("wsl:gemini", "wsl"),
   ];
 
   let mut probes: Vec<InstallTargetProbe> = Vec::with_capacity(order.len());
@@ -524,9 +580,11 @@ pub fn probe_install_targets() -> Result<Vec<InstallTargetProbe>, String> {
       "codex" => (detect_cli_native("codex"), is_codex_installed_native(&home)),
       "claude" => (detect_cli_native("claude"), is_claude_installed_native(&home)),
       "iflow" => (detect_cli_native("iflow"), is_iflow_installed_native(&home)),
+      "gemini" => (detect_cli_native("gemini"), is_gemini_installed_native(&home)),
       "wsl:codex" => (detect_cli_wsl("codex"), is_codex_installed_wsl()),
       "wsl:claude" => (detect_cli_wsl("claude"), is_claude_installed_wsl()),
       "wsl:iflow" => (detect_cli_wsl("iflow"), is_iflow_installed_wsl()),
+      "wsl:gemini" => (detect_cli_wsl("gemini"), is_gemini_installed_wsl()),
       _ => (false, false),
     };
 
@@ -645,6 +703,7 @@ description: "Run /maple workflow for Maple development tasks."
 
 When user asks `/maple`:
 1. Work in the current working directory (do NOT cd elsewhere).
+   - If `~/.maple/constitution.md` exists, read it first and follow the rules during execution.
 2. Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
    - For routing, call `query_project_todos` / `finish_worker` with `worker_kind: "codex"`.
 3. Always run typecheck/build verification before marking done.
@@ -653,8 +712,20 @@ When user asks `/maple`:
 4. For each task, call `submit_task_report` to set `进行中` when execution starts, then set `已完成` / `已阻塞` / `需要更多信息` when execution ends.
    - Only use `已阻塞` when you hit a real error you cannot proceed (tool failure / build failure / environment issue).
    - If requirements are missing and you need to ask questions, use `需要更多信息` instead, and:
-      a) call `update_task_details` to write the question list + plan list into the task detail page
-     b) call `submit_task_report` to record the same questions + plan list for traceability
+      a) call `submit_task_report` to record a complete question list (ask all missing requirements at once)
+      b) include a JSON code block with language `maple-needs-info` to define the interactive form fields, e.g.
+         ```maple-needs-info
+         {
+           "version": 1,
+           "title": "补充信息",
+           "fields": [
+             { "id": "repo", "label": "仓库地址", "type": "text", "required": true, "placeholder": "https://..." },
+             { "id": "steps", "label": "复现步骤", "type": "textarea", "required": false }
+           ]
+         }
+         ```
+      c) Do NOT use `update_task_details` for question collection — Maple UI will render this form inside the report and write user answers back into task details after they click “填写完毕”.
+      d) On the next run, re-read task details and proceed if answers are present; do not emit another `需要更多信息` unless new critical info is missing.
 5. Before ending, call `query_project_todos` and ensure no `待办` / `队列中` / `进行中` task remains.
 6. Call `finish_worker` as the final MCP call.
 7. Output `mcp_decision` with status, comment, and tags.
@@ -665,13 +736,14 @@ fn claude_command_md() -> &'static str {
   r#"Run Maple workflow in the current working directory:
 
 1. Use Maple MCP tools (query_project_todos, query_recent_context) to get tasks
-   - For routing, call query_project_todos / finish_worker with worker_kind: "claude"
+    - For routing, call query_project_todos / finish_worker with worker_kind: "claude"
+    - If `~/.maple/constitution.md` exists, read it first and follow the rules during execution.
 2. Implement the requested changes in the current project
 3. Run typecheck/build before finishing
    - Do NOT start long-lived dev/watch processes (they block the workflow). Prefer one-shot verification commands.
 4. For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish
    - Only use 已阻塞 for real errors you cannot proceed
-   - If you need user input/requirements: set 需要更多信息, then use update_task_details to write the question list + plan list into the task detail page
+   - If you need user input/requirements: set 需要更多信息, then submit_task_report with a complete question list + a `maple-needs-info` JSON form block (Maple UI renders the form in-report and writes answers back into task details after “填写完毕”)
 5. Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains
 6. Call finish_worker as the final MCP call
 7. Output mcp_decision with status, comment, and tags
@@ -682,13 +754,14 @@ fn iflow_workflow_md() -> &'static str {
   r#"/maple
 
 Work in the current working directory (do NOT cd elsewhere).
+If `~/.maple/constitution.md` exists, read it first and follow the rules during execution.
 Use Maple MCP tools to query tasks and submit results.
 Always call query_project_todos / finish_worker with worker_kind: "iflow".
 Run typecheck/build before finishing.
 Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
 For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
 Only use 已阻塞 for real errors you cannot proceed.
-If you need user input/requirements: set 需要更多信息, then call update_task_details to write the question list + plan list into the task detail page.
+If you need user input/requirements: set 需要更多信息, then submit_task_report with a complete question list + a `maple-needs-info` JSON form block (Maple UI renders the form in-report and writes answers back into task details after “填写完毕”).
 Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
 Call finish_worker as the final MCP call.
 Output mcp_decision with status, comment, and tags.
@@ -704,15 +777,38 @@ description = "Run Maple workflow in the current working directory"
 
 prompt = """
 Work in the current working directory (do NOT cd elsewhere).
+If `~/.maple/constitution.md` exists, read it first and follow the rules during execution.
 Use Maple MCP tools to query tasks and submit results.
 Always call query_project_todos / finish_worker with worker_kind: "iflow".
 Run typecheck/build before finishing.
 Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
 For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
 Only use 已阻塞 for real errors you cannot proceed.
-If you need user input/requirements: set 需要更多信息, then call update_task_details to write the question list + plan list into the task detail page.
+If you need user input/requirements: set 需要更多信息, then submit_task_report with a complete question list + a `maple-needs-info` JSON form block (Maple UI renders the form in-report and writes answers back into task details after “填写完毕”).
 Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
 Call finish_worker as the final MCP call.
+"""
+"#
+}
+
+fn gemini_command_toml() -> &'static str {
+  r#"# Command: maple
+# Description: Run Maple workflow in the current working directory
+# Version: 1
+
+description = "Run Maple workflow in the current working directory"
+
+prompt = """
+Work in the current working directory (do NOT cd elsewhere).
+If `~/.maple/constitution.md` exists, read it first and follow the rules during execution.
+Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
+Run typecheck/build before finishing.
+Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
+For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
+If requirements are missing: use 需要更多信息 and include a `maple-needs-info` JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办).
+Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
+Call finish_worker as the final MCP call.
+Output mcp_decision with status, comment, and tags.
 """
 "#
 }
@@ -728,11 +824,12 @@ description: "Run maple workflow in this repository."
 Maple execution skill:
 - execute tasks end-to-end
 - use Maple MCP + local skills first
+- if `~/.maple/constitution.md` exists, read it first and follow the rules during execution
 - run typecheck/build before completion
 - avoid long-lived dev/watch commands that never exit; prefer one-shot verification commands
 - use submit_task_report to mark each task as 进行中 at start, then settle to 已完成 / 已阻塞 / 需要更多信息
 - Only use 已阻塞 for real errors you cannot proceed
-- If requirements are missing: set 需要更多信息, then use update_task_details to write the question list + plan list into the task detail page
+- If requirements are missing: set 需要更多信息, then submit_task_report with a complete question list + a `maple-needs-info` JSON form block (Maple UI renders the form in-report and writes answers back into task details after “填写完毕”)
 - call query_project_todos before ending, and keep no 待办 / 队列中 / 进行中 tasks
 - call finish_worker as the final MCP call
 - keep Maple on the standalone execution path
@@ -1495,6 +1592,209 @@ Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
   result
 }
 
+fn install_gemini(home: &Path, emitter: &InstallEventEmitter, runtime: InstallRuntime, target_id: &str) -> InstallTargetResult {
+  let mut written_files = Vec::new();
+  let mut stdout = String::new();
+  let mut stderr = String::new();
+
+  emitter.target_state(target_id, "running");
+  let cli_detected = match runtime {
+    InstallRuntime::Native => detect_cli_native("gemini"),
+    InstallRuntime::Wsl => detect_cli_wsl("gemini"),
+  };
+  if !cli_detected {
+    let scope = if runtime == InstallRuntime::Native { "本机" } else { "WSL" };
+    emitter.log(Some(target_id), "stderr", format!("未检测到 CLI：gemini（{scope}），已跳过。\n"));
+    emitter.target_state(target_id, "success");
+    return InstallTargetResult {
+      id: target_id.to_string(),
+      runtime: Some(runtime.as_str().to_string()),
+      success: true,
+      skipped: true,
+      cli_found: Some(false),
+      written_files,
+      stdout,
+      stderr,
+      error: None,
+    };
+  }
+
+  if runtime == InstallRuntime::Native {
+    let command_path = home.join(".gemini").join("commands").join("maple.toml");
+    emitter.log(Some(target_id), "info", format!("写入 {}\n", pretty_path(&command_path)));
+    if let Err(error) = write_text_file(&command_path, gemini_command_toml()) {
+      emitter.target_state(target_id, "error");
+      emitter.log(Some(target_id), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: target_id.to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+    written_files.push(pretty_path(&command_path));
+
+    let (mut cli_found, mut registered, mut out, mut err, mut reg_error) = run_registration_commands(
+      emitter,
+      target_id,
+      "gemini",
+      vec![
+        "mcp".into(),
+        "remove".into(),
+        "--scope".into(),
+        "user".into(),
+        "maple".into(),
+      ],
+      vec![
+        "mcp".into(),
+        "add".into(),
+        "--transport".into(),
+        "http".into(),
+        "--scope".into(),
+        "user".into(),
+        "maple".into(),
+        MAPLE_MCP_URL.into(),
+      ],
+    );
+
+    if !registered {
+      let combined = format!("{out}\n{err}").to_lowercase();
+      let scope_unsupported =
+        combined.contains("--scope")
+          && (combined.contains("unknown")
+            || combined.contains("unexpected")
+            || combined.contains("unrecognized")
+            || combined.contains("found argument")
+            || combined.contains("invalid option"));
+
+      if scope_unsupported {
+        (cli_found, registered, out, err, reg_error) = run_registration_commands(
+          emitter,
+          target_id,
+          "gemini",
+          vec!["mcp".into(), "remove".into(), "maple".into()],
+          vec![
+            "mcp".into(),
+            "add".into(),
+            "--transport".into(),
+            "http".into(),
+            "maple".into(),
+            MAPLE_MCP_URL.into(),
+          ],
+        );
+      }
+    }
+
+    stdout = out;
+    stderr = err;
+
+    if cli_found == Some(false) {
+      emitter.target_state(target_id, "error");
+      return InstallTargetResult {
+        id: target_id.to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found,
+        written_files,
+        stdout,
+        stderr,
+        error: Some("未检测到 CLI：gemini（本机）".to_string()),
+      };
+    }
+
+    let result = InstallTargetResult {
+      id: target_id.to_string(),
+      runtime: Some(runtime.as_str().to_string()),
+      success: registered && reg_error.is_none(),
+      skipped: false,
+      cli_found,
+      written_files,
+      stdout,
+      stderr,
+      error: reg_error,
+    };
+    emitter.target_state(target_id, if result.success && result.error.is_none() { "success" } else { "error" });
+    return result;
+  }
+
+  match wsl_write_home_file(emitter, target_id, ".gemini/commands/maple.toml", gemini_command_toml()) {
+    Ok(path) => written_files.push(path),
+    Err(error) => {
+      emitter.target_state(target_id, "error");
+      emitter.log(Some(target_id), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: target_id.to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+  }
+
+  let (cli_found, registered, out, err, reg_error) = run_registration_commands(
+    emitter,
+    target_id,
+    "wsl",
+    vec![
+      "-e".into(),
+      "bash".into(),
+      "-lc".into(),
+      "gemini mcp remove --scope user maple".into(),
+    ],
+    vec![
+      "-e".into(),
+      "bash".into(),
+      "-lc".into(),
+      format!(
+        "gemini mcp add --transport http --scope user maple {}",
+        MAPLE_MCP_URL
+      ),
+    ],
+  );
+  stdout = out;
+  stderr = err;
+
+  if cli_found == Some(false) {
+    emitter.target_state(target_id, "error");
+    return InstallTargetResult {
+      id: target_id.to_string(),
+      runtime: Some(runtime.as_str().to_string()),
+      success: false,
+      skipped: false,
+      cli_found,
+      written_files,
+      stdout,
+      stderr,
+      error: Some("未检测到 CLI：gemini（WSL）".to_string()),
+    };
+  }
+
+  let result = InstallTargetResult {
+    id: target_id.to_string(),
+    runtime: Some(runtime.as_str().to_string()),
+    success: registered && reg_error.is_none(),
+    skipped: false,
+    cli_found,
+    written_files,
+    stdout,
+    stderr,
+    error: reg_error,
+  };
+  emitter.target_state(target_id, if result.success && result.error.is_none() { "success" } else { "error" });
+  result
+}
+
 fn install_windsurf(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetResult {
   let mut written_files = Vec::new();
 
@@ -1620,6 +1920,16 @@ pub fn install_mcp_and_skills_with_events(
   }
   if options.wsl_iflow {
     let result = install_iflow(&home, &emitter, InstallRuntime::Wsl, "wsl:iflow");
+    emitter.target_result(result.clone());
+    targets.push(result);
+  }
+  if options.gemini {
+    let result = install_gemini(&home, &emitter, InstallRuntime::Native, "gemini");
+    emitter.target_result(result.clone());
+    targets.push(result);
+  }
+  if options.wsl_gemini {
+    let result = install_gemini(&home, &emitter, InstallRuntime::Wsl, "wsl:gemini");
     emitter.target_result(result.clone());
     targets.push(result);
   }

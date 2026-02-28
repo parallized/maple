@@ -141,7 +141,6 @@ function TreeNodes({
             >
               <Icon icon="mingcute:folder-open-line" />
               <span>{project.name}</span>
-              <small>{project.version}</small>
             </button>
           </li>
         );
