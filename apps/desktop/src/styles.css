@@ -1208,6 +1208,13 @@ h3 {
   left: 0;
 }
 
+.popover-menu--portal {
+  position: static;
+  top: auto;
+  left: auto;
+  right: auto;
+}
+
 .popover-item:hover {
   border-color: transparent;
   background: var(--row-hover);

@@ -515,10 +515,6 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
                             ? "ui-badge--neutral"
                             : ""
               }`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
             >
               {task.status === "进行中" && (
                 <Icon icon="mingcute:loading-3-line" className="text-[11px] animate-spin opacity-80 mr-0.5" />
