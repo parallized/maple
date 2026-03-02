@@ -592,6 +592,23 @@ h3 {
   flex-shrink: 0;
 }
 
+.topnav-dev-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.1rem;
+  padding: 0 0.35rem;
+  border-radius: 0.3rem;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  color: color-mix(in srgb, var(--color-primary) 78%, var(--color-base-content));
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .topnav-divider {
   width: 1px;
   height: 16px;

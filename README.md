@@ -1,3 +1,4 @@
+
 # Maple
 
 Maple 是一个面向本地工程的 AI 工作台（自带 MCP & Skills）
@@ -11,6 +12,8 @@ Maple 是一个面向本地工程的 AI 工作台（自带 MCP & Skills）
 你可以在执行的过程中更方便地描述需求，以类似 Notion + Vibe-kanban + Cli 的交互体验完成 SDD 开发
 
 重要的是，每次完成都会提醒你验收（待验收的报告会打黄色标记）
+
+![detail page](docs/assets/maple.png)
 
 > 目前正处于快速迭代期，Windows 侧容易出现 BUG，可在 Q 群 1087691477 交流反馈
 

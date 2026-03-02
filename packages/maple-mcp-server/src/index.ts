@@ -153,7 +153,7 @@ function buildReportHistoryLines(reports: TaskReport[]): string[] {
 
 const server = new McpServer({
   name: "maple",
-  version: "0.1.3",
+  version: "0.1.4",
 });
 
 server.tool(

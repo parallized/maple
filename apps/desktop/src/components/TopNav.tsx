@@ -48,6 +48,7 @@ export function TopNav({
   onClose
 }: TopNavProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
+  const isDevMode = import.meta.env.DEV;
   const projectOrder = projects.map((project) => project.id);
 
   return (
@@ -55,6 +56,7 @@ export function TopNav({
       <div className="topnav-brand">
         <Icon icon="mingcute:quill-pen-ai-fill" className="text-lg" />
         <SplitText text="Maple" className="inline" delay={40} />
+        {isDevMode ? <span className="topnav-dev-badge">Dev</span> : null}
       </div>
 
       <div className="flex items-center gap-2 topnav-tabs-wrapper">
