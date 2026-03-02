@@ -179,7 +179,7 @@ export function BoardView({
             className="flex items-center justify-between gap-1 mb-2"
           >
             <div className="flex items-center gap-2 min-w-0 px-1">
-              <span className="text-[1.35rem] font-medium truncate tracking-tight text-primary">{boardProject.name}</span>
+              <span className="text-[1.35rem] font-medium truncate tracking-tight text-(--color-base-content)">{boardProject.name}</span>
             </div>
             <PopoverMenu
               label="Project Actions"
@@ -212,7 +212,7 @@ export function BoardView({
             }}
             className="flex flex-col gap-2 mt-2 px-1 mb-8"
           >
-            <div className="flex items-center gap-2 text-[12.5px] text-primary/90 font-medium">
+            <div className="flex items-center gap-2 text-[12.5px] text-(--color-base-content)/80 font-medium">
               {boardProject.workerKind ? (
                 <WorkerLogo kind={boardProject.workerKind} size={14} />
               ) : (
@@ -425,7 +425,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.18, ease: "easeOut", delay: index * 0.03 }}
+      transition={{ duration: 0.2, ease: "easeOut", delay: Math.min(index * 0.04, 0.8) }}
       className={[
         "task-row",
         task.id === selectedTaskId ? "selected" : "",
@@ -671,7 +671,7 @@ function TaskTable({
         </tr>
       </thead>
       <tbody>
-        <AnimatePresence initial={false}>
+        <AnimatePresence>
           {visibleTasks.map((task, index) => (
             <TaskRow
               key={task.id}
