@@ -1,5 +1,5 @@
 export type ViewKey = "overview" | "board" | "progress" | "settings";
-export type WorkerKind = "claude" | "codex" | "iflow";
+export type WorkerKind = "claude" | "codex" | "iflow" | "gemini" | "opencode";
 export type TaskStatus =
   | "草稿"
   | "待办"

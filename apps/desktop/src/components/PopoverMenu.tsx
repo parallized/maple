@@ -17,14 +17,15 @@ export type PopoverMenuItem =
 
 type PopoverMenuProps = {
   label: string;
-  icon: string;
+  icon?: string;
   triggerText?: string;
+  triggerNode?: ReactNode;
   items: PopoverMenuItem[];
   align?: "left" | "right";
   style?: React.CSSProperties;
 };
 
-export function PopoverMenu({ label, icon, triggerText, items, align = "right", style }: PopoverMenuProps) {
+export function PopoverMenu({ label, icon, triggerText, triggerNode, items, align = "right", style }: PopoverMenuProps) {
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -61,31 +62,44 @@ export function PopoverMenu({ label, icon, triggerText, items, align = "right", 
 
   return (
     <div ref={rootRef} className="popover" style={style}>
-      <button
-        type="button"
-        className={`ui-btn ui-btn--sm ui-btn--outline ${triggerText ? "gap-2 px-3" : "ui-icon-btn"} ${open ? "popover-trigger active" : "popover-trigger"}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={menuId}
-        onClick={() => setOpen((previous) => !previous)}
-      >
-        <Icon icon={icon} className="text-base" />
-        {triggerText ? (
-          <>
-            <span className="text-[12px] font-sans">{triggerText}</span>
-            <Icon icon="mingcute:down-line" className="text-[14px] opacity-60" />
-          </>
-        ) : label ? (
-          <span className="sr-only">{label}</span>
-        ) : null}
-      </button>
+      {triggerNode ? (
+        <div 
+          role="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={menuId}
+          onClick={() => setOpen((previous) => !previous)}
+          className="cursor-pointer"
+        >
+          {triggerNode}
+        </div>
+      ) : (
+        <button
+          type="button"
+          className={`ui-btn ui-btn--sm ui-btn--outline ${triggerText ? "gap-2 px-3" : "ui-icon-btn"} ${open ? "popover-trigger active" : "popover-trigger"}`}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={menuId}
+          onClick={() => setOpen((previous) => !previous)}
+        >
+          {icon ? <Icon icon={icon} className="text-base" /> : null}
+          {triggerText ? (
+            <>
+              <span className="text-[12px] font-sans">{triggerText}</span>
+              <Icon icon="mingcute:down-line" className="text-[14px] opacity-60" />
+            </>
+          ) : label ? (
+            <span className="sr-only">{label}</span>
+          ) : null}
+        </button>
+      )}
 
       {open ? (
         <div id={menuId} role="menu" className={align === "right" ? "popover-menu right" : "popover-menu left"}>
           {items.map((item, index) => {
             if (item.kind === "heading") {
               return (
-                <div key={`heading-${index}`} className="px-2 py-1.5 mt-1 text-muted text-xs font-medium uppercase tracking-wider" role="presentation">
+                <div key={`heading-${index}`} className="px-3 py-1.5 mt-1 text-muted text-[10.5px] font-semibold uppercase tracking-wider opacity-60" role="presentation">
                   {item.label}
                 </div>
               );
@@ -96,18 +110,19 @@ export function PopoverMenu({ label, icon, triggerText, items, align = "right", 
                 key={item.key}
                 type="button"
                 role="menuitem"
-                className="popover-item ui-btn ui-btn--sm ui-btn--ghost justify-start gap-2 w-full border border-transparent rounded-[8px] font-medium"
+                className="popover-item ui-btn ui-btn--sm ui-btn--ghost justify-start gap-2.5 w-full border border-transparent rounded-[8px] font-medium text-[13px] px-3 transition-colors"
                 disabled={item.disabled}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setOpen(false);
                   item.onSelect();
                 }}
               >
-                <span className="w-5 inline-flex justify-center" aria-hidden="true">
-                  {"iconNode" in item ? item.iconNode : <Icon icon={item.icon} />}
+                <span className="w-4 inline-flex justify-center text-[16px] opacity-70 shrink-0" aria-hidden="true">
+                  {"iconNode" in item ? item.iconNode : (item.icon ? <Icon icon={item.icon} /> : null)}
                 </span>
-                <span>{item.label}</span>
-                <span className="ml-auto w-5 inline-flex justify-end text-(--worker-color,var(--color-primary))" aria-hidden="true">
+                <span className="flex-1 truncate text-left">{item.label}</span>
+                <span className="ml-auto w-4 inline-flex justify-end text-(--worker-color,var(--color-primary)) text-[14px]" aria-hidden="true">
                   {item.checked ? <Icon icon="mingcute:check-line" /> : null}
                 </span>
               </button>

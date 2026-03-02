@@ -6,8 +6,8 @@ import { InlineTaskInput } from "../components/InlineTaskInput";
 import { PopoverMenu, type PopoverMenuItem } from "../components/PopoverMenu";
 import { ClickSpark, FadeContent, TiltedCard } from "../components/ReactBits";
 import { WorkerLogo } from "../components/WorkerLogo";
-import { type DetailMode, type Project, type TagCatalog, type Task, type WorkerKind } from "../domain";
-import { WORKER_KINDS, type ExternalEditorApp, type UiLanguage } from "../lib/constants";
+import { type DetailMode, type Project, type TagCatalog, type Task, type TaskStatus, type WorkerKind } from "../domain";
+import { EXTERNAL_EDITOR_META, WORKER_KINDS, type ExternalEditorApp, type UiLanguage } from "../lib/constants";
 import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
@@ -31,6 +31,7 @@ type BoardViewProps = {
   onRestartExecution: (projectId: string) => void;
   onAssignWorkerKind: (projectId: string, kind: WorkerKind) => void;
   onSetDetailMode: (mode: DetailMode) => void;
+  onUpdateTaskStatus: (projectId: string, taskId: string, status: TaskStatus) => void;
   onOpenConsole: () => void;
   onRemoveProject: (projectId: string) => void;
 };
@@ -72,6 +73,7 @@ export function BoardView({
   onRestartExecution,
   onAssignWorkerKind,
   onSetDetailMode,
+  onUpdateTaskStatus,
   onOpenConsole,
   onRemoveProject
 }: BoardViewProps) {
@@ -131,6 +133,9 @@ export function BoardView({
       console.error("Failed to open in editor:", err);
     }
   }, [boardProject?.directory, externalEditorApp]);
+
+  const selectedEditorMeta = EXTERNAL_EDITOR_META[externalEditorApp];
+  const openInEditorLabel = `在 ${selectedEditorMeta.label} 中打开`;
 
   const selectedTask = boardProject && selectedTaskId ? boardProject.tasks.find((task) => task.id === selectedTaskId) ?? null : null;
 
@@ -252,7 +257,7 @@ export function BoardView({
 
                 <TiltedCard 
                   className="sidebar-card-btn sidebar-card-btn--primary"
-                  onClick={isExecutingProject ? () => onRestartExecution(boardProject.id) : () => onCompletePending(boardProject.id)}
+                  onClick={() => onCompletePending(boardProject.id)}
                   rotateAmplitude={isExecutingProject ? 0 : 12}
                   scaleOnHover={isExecutingProject ? 1 : 1.02}
                 >
@@ -263,12 +268,9 @@ export function BoardView({
                         className={`mr-1.5 ${isExecutingProject ? "text-base" : "text-[14px]"} inline-block -translate-y-px`} 
                       />
                       <span>{isExecutingProject ? "执行中" : "执行待办"}</span>
-                      {isExecutingProject ? (
-                        <span className="text-[11px] font-medium text-primary/85">重新开始</span>
-                      ) : null}
                     </span>
                     <span className="sidebar-card-btn-desc text-[10.5px]">
-                      {isExecutingProject ? "已检测到执行中的任务，点击可重置并重新开始" : "运行当前项目的所有待办"}
+                      {isExecutingProject ? "正在运行项目任务…" : "运行当前项目的所有待办"}
                     </span>
                   </div>
                   <div className="sidebar-card-watermark sidebar-card-watermark--metallic">
@@ -302,8 +304,8 @@ export function BoardView({
                   className="ui-btn ui-btn--sm w-full gap-2 justify-start px-3"
                   onClick={handleOpenInEditor}
                 >
-                  <Icon icon="mingcute:code-line" className="text-base opacity-70" />
-                  在编辑器打开
+                  <Icon icon={selectedEditorMeta.icon} className="text-base opacity-70" />
+                  {openInEditorLabel}
                 </motion.button>
                 <motion.button 
                   whileTap={{ scale: 0.96 }} 
@@ -342,6 +344,7 @@ export function BoardView({
             onSelectTask={onSelectTask}
             onEditTask={onEditTask}
             onCommitTaskTitle={onCommitTaskTitle}
+            onUpdateTaskStatus={onUpdateTaskStatus}
             onDeleteTask={onDeleteTask}
             onResizeStart={handleResizeStart}
             onResizeDblClick={handleResizeDblClick}
@@ -378,6 +381,7 @@ type TaskTableProps = {
   onSelectTask: (taskId: string) => void;
   onEditTask: (taskId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
+  onUpdateTaskStatus: (projectId: string, taskId: string, status: TaskStatus) => void;
   onDeleteTask: (projectId: string, taskId: string) => void;
   onResizeStart: (col: string, e: React.MouseEvent) => void;
   onResizeDblClick: (col: string) => void;
@@ -395,6 +399,7 @@ type TaskRowProps = {
   onSelectTask: (taskId: string) => void;
   onEditTask: (taskId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
+  onUpdateTaskStatus: (projectId: string, taskId: string, status: TaskStatus) => void;
   onDeleteTask: (projectId: string, taskId: string) => void;
 };
 
@@ -409,9 +414,10 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   tagCatalog,
   onSelectTask,
   onEditTask,
-	onCommitTaskTitle,
-	onDeleteTask
-}, ref) => {
+  onCommitTaskTitle,
+  onUpdateTaskStatus,
+  onDeleteTask,
+}: TaskRowProps, ref) => {
   return (
     <motion.tr
       ref={ref}
@@ -490,28 +496,60 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
         )}
       </td>
       <td className="col-status">
-        <span
-          className={`ui-badge ${
-            task.status === "已完成"
-              ? "ui-badge--success"
-              : task.status === "已阻塞"
-                ? "ui-badge--error"
-                : task.status === "进行中"
-                  ? "ui-badge--info"
-                    : task.status === "需要更多信息"
-                      ? "ui-badge--warning"
-                    : task.status === "草稿"
-                      ? "ui-badge--draft"
-                    : task.status === "队列中" || task.status === "待办" || task.status === "待返工"
-                      ? "ui-badge--neutral"
-                      : ""
-          }`}
-        >
-          {task.status === "进行中" && (
-            <Icon icon="mingcute:loading-3-line" className="text-[11px] animate-spin opacity-80 mr-0.5" />
-          )}
-          {task.status}
-        </span>
+        <PopoverMenu
+          label="Status Selector"
+          triggerNode={
+            <div
+              className={`ui-badge cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${
+                task.status === "已完成"
+                  ? "ui-badge--success"
+                  : task.status === "已阻塞"
+                    ? "ui-badge--error"
+                    : task.status === "进行中"
+                      ? "ui-badge--info"
+                      : task.status === "需要更多信息"
+                        ? "ui-badge--warning"
+                        : task.status === "草稿"
+                          ? "ui-badge--draft"
+                          : task.status === "队列中" || task.status === "待办" || task.status === "待返工"
+                            ? "ui-badge--neutral"
+                            : ""
+              }`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              {task.status === "进行中" && (
+                <Icon icon="mingcute:loading-3-line" className="text-[11px] animate-spin opacity-80 mr-0.5" />
+              )}
+              {task.status}
+            </div>
+          }
+          align="left"
+          items={[
+            { kind: "heading", label: "修改状态" },
+            ...(["草稿", "待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"] as const).map((s) => ({
+              kind: "item" as const,
+              key: `status-${s}`,
+              label: s,
+              iconNode: (
+                <div className="flex items-center justify-center w-full h-full">
+                  <div className={`w-2 h-2 rounded-full ${
+                    s === "已完成" ? "bg-(--color-success)" :
+                    s === "已阻塞" ? "bg-(--color-error)" :
+                    s === "进行中" ? "bg-(--color-primary)" :
+                    s === "需要更多信息" ? "bg-(--color-warning)" :
+                    s === "草稿" ? "bg-(--color-secondary) opacity-50" :
+                    "bg-(--color-base-300)"
+                  }`} />
+                </div>
+              ),
+              checked: task.status === s,
+              onSelect: () => onUpdateTaskStatus(projectId, task.id, s as TaskStatus),
+            })),
+          ]}
+        />
       </td>
       <td className="col-lastMention text-[11px]">
         {(() => {
@@ -571,6 +609,7 @@ function TaskTable({
   onSelectTask,
   onEditTask,
   onCommitTaskTitle,
+  onUpdateTaskStatus,
   onDeleteTask,
   onResizeStart,
   onResizeDblClick
@@ -671,6 +710,7 @@ function TaskTable({
               onSelectTask={onSelectTask}
               onEditTask={onEditTask}
               onCommitTaskTitle={onCommitTaskTitle}
+              onUpdateTaskStatus={onUpdateTaskStatus}
               onDeleteTask={onDeleteTask}
             />
           ))}

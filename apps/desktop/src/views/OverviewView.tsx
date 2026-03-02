@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react";
-import { CountUp, CurvedLoop, FadeContent, FallingText, SpotlightCard, SplitText } from "../components/ReactBits";
+import { CountUp, FadeContent, SpotlightCard, SplitText } from "../components/ReactBits";
 import { WorkerConfigCard, type WorkerProbe } from "../components/WorkerConfigCard";
 import AnimatedList from "../components/reactbits/AnimatedList";
 import { WorkerLogo } from "../components/WorkerLogo";
@@ -78,18 +78,6 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
 
   return (
     <section className="h-full w-full flex flex-col p-4 md:p-6 lg:p-8 max-w-6xl mx-auto overflow-hidden bg-transparent relative">
-      {/* Background Falling Text */}
-      <div className="absolute inset-0 pointer-events-none opacity-[0.1] -z-10 overflow-hidden">
-        <FallingText 
-          text="MAPLE AI WORKER MAPLE MAPLE AUTOMATION AGENTIC MAPLE MAPLE WORKFLOW INTELLIGENCE INNOVATION MAPLE MAPLE AUTONOMY COGNITIVE TASK FLOW"
-          fontSize="3rem"
-          colors={["#d97757", "#f5f5f7", "#6366f1"]}
-          gravity={0.9}
-          friction={0.5}
-          restitution={0.25}
-        />
-      </div>
-
       {/* Notion-style Header */}
       <FadeContent delay={0} className="flex-none mb-4 lg:mb-6 relative z-10">
         <header>
@@ -214,8 +202,7 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
               </div>
               <div className="mt-1 mb-4 flex items-center gap-2.5 flex-1 relative z-10">
                 <span className="relative flex h-2.5 w-2.5 flex-none">
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-30 ${mcpStatus.running ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${mcpStatus.running ? 'bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.5)]'}`}></span>
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${mcpStatus.running ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.35)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.35)]'}`}></span>
                 </span>
                 <span className="text-[2rem] lg:text-[2.5rem] leading-none font-sans font-semibold tracking-tight text-(--color-base-content)">
                   {mcpStatus.running ? "Active" : "Offline"}
@@ -229,18 +216,6 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
                 </div>
               </div>
 
-              {/* Status Indicator Decoration */}
-              {mcpStatus.running && (
-                <div className="absolute -right-6 -bottom-6 opacity-[0.15] group-hover:opacity-25 transition-opacity pointer-events-none rotate-12">
-                  <CurvedLoop 
-                    text="运行中 RUNNING" 
-                    radius={60} 
-                    speed={15} 
-                    fontSize="13px" 
-                    color="var(--color-success)" 
-                  />
-                </div>
-              )}
             </div>
           </FadeContent>
         </div>

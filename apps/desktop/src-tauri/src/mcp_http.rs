@@ -434,26 +434,47 @@ fn normalize_tag_id(raw: &str) -> String {
     raw.trim().to_lowercase()
 }
 
-// Tag catalog entries are created exclusively by workers via upsert_tag_definition.
-// No hardcoded presets — icons and labels are provided by AI at task completion time.
-// ensure_tag_catalog_for_tags only registers unknown tag IDs as empty entries so
-// they appear in the catalog; workers must call upsert_tag_definition to fill them.
-fn ensure_tag_catalog_for_tags(
-    catalog: &mut BTreeMap<String, TagDefinition>,
-    tags: &[String],
-) -> bool {
-    let mut changed = false;
-    for raw_tag in tags {
-        let tag_id = normalize_tag_id(raw_tag);
+fn normalize_and_dedupe_tag_ids(args: &Value, max: usize) -> Result<Vec<String>, String> {
+    let Some(raw) = args.get("tags") else {
+        return Err("缺少参数：tags（必填，1-5 个）。".to_string());
+    };
+    let Some(list) = raw.as_array() else {
+        return Err("参数 tags 必须为数组。".to_string());
+    };
+
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for item in list {
+        let Some(value) = item.as_str() else {
+            continue;
+        };
+        let tag_id = normalize_tag_id(value);
         if tag_id.is_empty() {
             continue;
         }
-        if !catalog.contains_key(&tag_id) {
-            catalog.insert(tag_id, TagDefinition::default());
-            changed = true;
+        if seen.insert(tag_id.clone()) {
+            out.push(tag_id);
+            if out.len() >= max {
+                break;
+            }
         }
     }
-    changed
+
+    if out.is_empty() {
+        return Err("tags 不能为空，且最多 5 个。".to_string());
+    }
+    Ok(out)
+}
+
+fn find_missing_tag_definitions(
+    catalog: &BTreeMap<String, TagDefinition>,
+    tag_ids: &[String],
+) -> Vec<String> {
+    tag_ids
+        .iter()
+        .filter(|tag_id| !catalog.contains_key(tag_id.as_str()))
+        .cloned()
+        .collect()
 }
 
 fn is_valid_mingcute_icon(icon: &str) -> bool {
@@ -804,16 +825,15 @@ fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
         .unwrap_or("");
     let status = args.get("status").and_then(|v| v.as_str());
     let report_content = args.get("report").and_then(|v| v.as_str()).unwrap_or("");
-    let tags: Vec<String> = args
-        .get("tags")
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .take(5)
-                .collect()
-        })
-        .unwrap_or_default();
+    let tags = match normalize_and_dedupe_tag_ids(args, 5) {
+        Ok(tag_ids) => tag_ids,
+        Err(err) => {
+            return json!({
+                "content": [{ "type": "text", "text": err }],
+                "isError": true
+            });
+        }
+    };
 
     let mut projects = read_state();
 
@@ -841,6 +861,20 @@ fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
         .unwrap_or_default()
         .as_millis();
 
+    let missing = find_missing_tag_definitions(&target.tag_catalog, &tags);
+    if !missing.is_empty() {
+        return json!({
+            "content": [{
+                "type": "text",
+                "text": format!(
+                    "以下 Tag 尚未在 Tag Catalog 中定义，禁止提交报告：{}\n请先为每个 Tag 调用 upsert_tag_definition（icon 必须为 mingcute:*，可选填写 label.zh / label.en）。",
+                    missing.join("、")
+                )
+            }],
+            "isError": true
+        });
+    }
+
     {
         let task = &mut target.tasks[task_index];
         task.reports.push(TaskReport {
@@ -853,18 +887,10 @@ fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
         if let Some(s) = status {
             task.status = s.into();
         }
-        if !tags.is_empty() {
-            task.tags = tags.clone();
-        }
+        task.tags = tags.clone();
     }
 
     let task_snapshot = target.tasks[task_index].clone();
-    let catalog_changed = ensure_tag_catalog_for_tags(&mut target.tag_catalog, &task_snapshot.tags);
-    let catalog_snapshot = if catalog_changed {
-        Some(target.tag_catalog.clone())
-    } else {
-        None
-    };
 
     write_state(&projects);
     let _ = state.app_handle.emit(
@@ -874,15 +900,6 @@ fn tool_submit_task_report(args: &Value, state: &McpHttpState) -> Value {
             task: task_snapshot,
         },
     );
-    if let Some(tag_catalog) = catalog_snapshot {
-        let _ = state.app_handle.emit(
-            "maple://tag-catalog-updated",
-            TagCatalogUpdatedEvent {
-                project_name: target_name.clone(),
-                tag_catalog,
-            },
-        );
-    }
 
     let status_text = status
         .map(|s| format!("状态已更新为「{s}」"))
@@ -1197,7 +1214,7 @@ fn tool_definitions() -> Vec<Value> {
                     "project": { "type": "string", "description": "项目名称（模糊匹配）" },
                     "worker_kind": {
                         "type": "string",
-                        "enum": ["claude", "codex", "iflow"],
+                        "enum": ["claude", "codex", "iflow", "gemini", "opencode"],
                         "description": "可选：按 Worker kind 过滤可见任务（用于任务指定 Worker 派发）。"
                     }
                 },
@@ -1274,10 +1291,12 @@ fn tool_definitions() -> Vec<Value> {
                     "tags": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "标签列表（可选，0-5 个）。请使用中文标签（如 bug修复、前端、重构），或查阅 query_tag_catalog 获取已有标签的 label.zh。"
+                        "minItems": 1,
+                        "maxItems": 5,
+                        "description": "标签列表（必填，1-5 个）。提交报告时必须严格更新 task.tags。使用新 Tag 前，请先调用 upsert_tag_definition 创建/完善定义；若 Tag Catalog 中缺少该 Tag，submit_task_report 会报错。"
                     }
                 },
-                "required": ["project", "task_id", "report"]
+                "required": ["project", "task_id", "report", "tags"]
             }
         }),
         json!({
@@ -1316,7 +1335,7 @@ fn tool_definitions() -> Vec<Value> {
                     "project": { "type": "string", "description": "项目名称" },
                     "worker_kind": {
                         "type": "string",
-                        "enum": ["claude", "codex", "iflow"],
+                        "enum": ["claude", "codex", "iflow", "gemini", "opencode"],
                         "description": "可选：当前 Worker kind（用于按任务指定 Worker 分流 finish_worker 校验）。"
                     },
                     "summary": { "type": "string", "description": "执行总结（可选）" }

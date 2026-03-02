@@ -212,6 +212,107 @@ export function getCliInstallOptions(target: InstallTargetId, platform: InstallP
     ];
   }
 
+  if (target === "opencode") {
+    if (platform === "windows") {
+      return [
+        {
+          id: "npm-native",
+          titleZh: "本机 - npm 全局安装（推荐）",
+          titleEn: "Local - Install with npm (Recommended)",
+          command: [
+            "npm install -g opencode-ai",
+            "opencode --version",
+          ].join("\n"),
+          noteZh: "在 PowerShell / CMD 中运行。需要 Node.js 环境。",
+          noteEn: "Run in PowerShell / CMD. Requires Node.js.",
+          runtime: "native",
+        },
+        {
+          id: "npm-wsl",
+          titleZh: "WSL - npm 全局安装",
+          titleEn: "WSL - Install with npm",
+          command: [
+            "npm install -g opencode-ai",
+            "opencode --version",
+          ].join("\n"),
+          noteZh: "在 WSL 终端中运行。需要 Node.js 环境。",
+          noteEn: "Run in WSL terminal. Requires Node.js.",
+          runtime: "wsl",
+        },
+      ];
+    }
+
+    return [
+      {
+        id: "curl",
+        titleZh: "curl 一键安装（推荐）",
+        titleEn: "Install with curl (Recommended)",
+        command: [
+          "curl -fsSL https://opencode.ai/install | bash",
+          "opencode --version",
+        ].join("\n"),
+        noteZh: "安装完成后如命令未生效，请重新打开终端或刷新 PATH。",
+        noteEn: "If the command is not found after install, restart your shell or refresh PATH.",
+      },
+      {
+        id: "npm",
+        titleZh: "npm 全局安装",
+        titleEn: "Install with npm",
+        command: [
+          "npm install -g opencode-ai",
+          "opencode --version",
+        ].join("\n"),
+        noteZh: "需要 Node.js 环境。",
+        noteEn: "Requires Node.js.",
+      },
+    ];
+  }
+
+  if (target === "gemini") {
+    if (platform === "windows") {
+      return [
+        {
+          id: "npm-native",
+          titleZh: "本机 - npm 全局安装（推荐）",
+          titleEn: "Local - Install with npm (Recommended)",
+          command: [
+            "npm install -g @google/gemini-cli",
+            "gemini --version",
+          ].join("\n"),
+          noteZh: "在 PowerShell / CMD 中运行。需要 Node.js 环境。",
+          noteEn: "Run in PowerShell / CMD. Requires Node.js.",
+          runtime: "native",
+        },
+        {
+          id: "npm-wsl",
+          titleZh: "WSL - npm 全局安装",
+          titleEn: "WSL - Install with npm",
+          command: [
+            "npm install -g @google/gemini-cli",
+            "gemini --version",
+          ].join("\n"),
+          noteZh: "在 WSL 终端中运行。需要 Node.js 环境。",
+          noteEn: "Run in WSL terminal. Requires Node.js.",
+          runtime: "wsl",
+        },
+      ];
+    }
+
+    return [
+      {
+        id: "npm",
+        titleZh: "npm 全局安装（推荐）",
+        titleEn: "Install with npm (Recommended)",
+        command: [
+          "npm install -g @google/gemini-cli",
+          "gemini --version",
+        ].join("\n"),
+        noteZh: "需要 Node.js 环境。",
+        noteEn: "Requires Node.js.",
+      },
+    ];
+  }
+
   return [];
 }
 

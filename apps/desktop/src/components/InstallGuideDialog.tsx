@@ -71,6 +71,8 @@ function detectPlatform(): "windows" | "macos" | "linux" {
 function getVerifyCommand(workerKind: WorkerKind): string {
   if (workerKind === "claude") return "claude doctor";
   if (workerKind === "iflow") return "iflow --version";
+  if (workerKind === "gemini") return "gemini --version";
+  if (workerKind === "opencode") return "opencode --version";
   return "codex --version";
 }
 

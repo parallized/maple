@@ -30,7 +30,7 @@ function detectPlatform(): InstallPlatform {
   return "linux";
 }
 
-function workerKindToTargetId(kind: WorkerKind): "codex" | "claude" | "iflow" {
+function workerKindToTargetId(kind: WorkerKind): "codex" | "claude" | "iflow" | "gemini" | "opencode" {
   return kind;
 }
 

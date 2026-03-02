@@ -192,9 +192,13 @@ export function WorkerConfigCard({
         codex: false,
         claude: false,
         iflow: false,
+        gemini: false,
+        opencode: false,
         wslCodex: false,
         wslClaude: false,
         wslIflow: false,
+        wslGemini: false,
+        wslOpencode: false,
         windsurf: false,
         installId: nextInstallId,
       };
@@ -203,9 +207,13 @@ export function WorkerConfigCard({
         if (id === "codex") options.codex = true;
         else if (id === "claude") options.claude = true;
         else if (id === "iflow") options.iflow = true;
+        else if (id === "gemini") options.gemini = true;
+        else if (id === "opencode") options.opencode = true;
         else if (id === "wsl:codex") options.wslCodex = true;
         else if (id === "wsl:claude") options.wslClaude = true;
         else if (id === "wsl:iflow") options.wslIflow = true;
+        else if (id === "wsl:gemini") options.wslGemini = true;
+        else if (id === "wsl:opencode") options.wslOpencode = true;
         else if (id === "windsurf") options.windsurf = true;
       }
 

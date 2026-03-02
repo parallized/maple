@@ -519,6 +519,25 @@ h3 {
   pointer-events: none;
 }
 
+.app-bg-static {
+  background:
+    radial-gradient(
+      1200px 700px at 20% -10%,
+      color-mix(in srgb, var(--color-primary) 12%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 600px at 110% 20%,
+      color-mix(in srgb, var(--color-info) 10%, transparent),
+      transparent 65%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-base-200) 92%, transparent),
+      color-mix(in srgb, var(--color-base-100) 55%, transparent)
+    );
+}
+
 .app-bg canvas {
   border-radius: inherit;
 }
@@ -960,6 +979,16 @@ h3 {
   text-overflow: ellipsis;
 }
 
+.task-row td.col-status .ui-badge:hover {
+  filter: brightness(0.95);
+  transform: translateY(-1px);
+}
+
+.task-row td.col-status .ui-badge {
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .task-row td.col-tags {
   white-space: nowrap;
   overflow: hidden;
@@ -1161,13 +1190,13 @@ h3 {
 .popover-menu {
   position: absolute;
   top: calc(100% + 8px);
-  min-width: 220px;
+  min-width: 140px;
   padding: 0.35rem;
   border: 1px solid var(--color-base-300);
   border-radius: 12px;
   background: var(--color-base-100);
   box-shadow: 0 18px 48px rgba(32, 25, 18, 0.12);
-  z-index: 40;
+  z-index: 100;
   display: grid;
   gap: 0.25rem;
 }
@@ -1667,7 +1696,6 @@ h3 {
           transparent
         )
     );
-  animation: metallic-pulse 2.7s ease-in-out infinite;
 }
 
 .sidebar-card-watermark-icon--metallic {
@@ -1675,9 +1703,6 @@ h3 {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  animation:
-    metallic-pulse 2.7s ease-in-out infinite,
-    metallic-color-shift 4.8s ease-in-out infinite;
 }
 
 .sidebar-card-btn:hover .sidebar-card-watermark {
@@ -1691,6 +1716,18 @@ h3 {
         transparent
       )
   );
+}
+
+.sidebar-card-btn:hover .sidebar-card-watermark--metallic svg,
+.sidebar-card-btn:hover .sidebar-card-watermark--metallic .iconify,
+.sidebar-card-btn:hover .sidebar-card-watermark--metallic img {
+  animation: metallic-pulse 2.7s ease-in-out infinite;
+}
+
+.sidebar-card-btn:hover .sidebar-card-watermark-icon--metallic {
+  animation:
+    metallic-pulse 2.7s ease-in-out infinite,
+    metallic-color-shift 4.8s ease-in-out infinite;
 }
 
 @keyframes metallic-sweep {

@@ -2,6 +2,11 @@ export type WorkerExecutionPromptInput = {
   projectName: string;
   directory: string;
   taskTitle: string;
+  /**
+   * Preferred language for user-visible outputs (reports/decisions/summaries).
+   * Keep code/commands/paths as-is.
+   */
+  language?: "zh" | "en";
   workerKind?: "claude" | "codex" | "iflow" | string;
 };
 
@@ -57,7 +62,23 @@ function renderSkillChecklist(skills: MapleWorkerSkill[]): string[] {
 }
 
 export function createWorkerExecutionPrompt(input: WorkerExecutionPromptInput): string {
-  return input.workerKind === "codex" ? "$maple" : "/maple";
+  const trigger = input.workerKind === "codex" ? "$maple" : "/maple";
+  const language = input.language ?? "zh";
+
+  const languageHint =
+    language === "en"
+      ? [
+          "Preferred language: English.",
+          "Requirement: all user-visible outputs must be in English (submit_task_report.report, mcp_decision.comment, conclusion/changes/verification, and explanations/errors).",
+          "Allowed: keep code/commands/paths/identifiers unchanged."
+        ].join("\n")
+      : [
+          "偏好语言：中文（简体）。",
+          "要求：所有面向用户的输出必须使用中文（submit_task_report.report、mcp_decision.comment、conclusion/changes/verification，以及解释/报错）。",
+          "允许：代码/命令/路径/标识符保持原样。"
+        ].join("\n");
+
+  return `${trigger}\n\n${languageHint}`;
 }
 
 function normalizeList(value: unknown): string[] {

@@ -22,11 +22,15 @@ pub struct InstallMcpSkillsOptions {
   pub iflow: bool,
   #[serde(default)]
   pub gemini: bool,
+  #[serde(default)]
+  pub opencode: bool,
   pub wsl_codex: bool,
   pub wsl_claude: bool,
   pub wsl_iflow: bool,
   #[serde(default)]
   pub wsl_gemini: bool,
+  #[serde(default)]
+  pub wsl_opencode: bool,
   pub windsurf: bool,
   pub install_id: Option<String>,
 }
@@ -38,10 +42,12 @@ impl Default for InstallMcpSkillsOptions {
       claude: true,
       iflow: true,
       gemini: true,
+      opencode: true,
       wsl_codex: false,
       wsl_claude: false,
       wsl_iflow: false,
       wsl_gemini: false,
+      wsl_opencode: false,
       windsurf: true,
       install_id: None,
     }
@@ -463,6 +469,209 @@ fn is_gemini_installed_native(home: &Path) -> bool {
     && gemini_settings_has_maple_server(&home.join(".gemini").join("settings.json"))
 }
 
+fn strip_jsonc_comments(input: &str) -> String {
+  let chars: Vec<char> = input.chars().collect();
+  let mut out = String::with_capacity(chars.len());
+  let mut i = 0;
+  let mut in_string = false;
+  let mut escape = false;
+  let mut in_line_comment = false;
+  let mut in_block_comment = false;
+
+  while i < chars.len() {
+    let c = chars[i];
+    let next = chars.get(i + 1).copied();
+
+    if in_line_comment {
+      if c == '\n' {
+        in_line_comment = false;
+        out.push(c);
+      }
+      i += 1;
+      continue;
+    }
+
+    if in_block_comment {
+      if c == '*' && next == Some('/') {
+        in_block_comment = false;
+        i += 2;
+      } else {
+        i += 1;
+      }
+      continue;
+    }
+
+    if in_string {
+      out.push(c);
+      if escape {
+        escape = false;
+      } else if c == '\\' {
+        escape = true;
+      } else if c == '"' {
+        in_string = false;
+      }
+      i += 1;
+      continue;
+    }
+
+    if c == '"' {
+      in_string = true;
+      out.push(c);
+      i += 1;
+      continue;
+    }
+
+    if c == '/' && next == Some('/') {
+      in_line_comment = true;
+      i += 2;
+      continue;
+    }
+
+    if c == '/' && next == Some('*') {
+      in_block_comment = true;
+      i += 2;
+      continue;
+    }
+
+    out.push(c);
+    i += 1;
+  }
+
+  out
+}
+
+fn strip_jsonc_trailing_commas(input: &str) -> String {
+  let chars: Vec<char> = input.chars().collect();
+  let mut out = String::with_capacity(chars.len());
+  let mut i = 0;
+  let mut in_string = false;
+  let mut escape = false;
+
+  while i < chars.len() {
+    let c = chars[i];
+
+    if in_string {
+      out.push(c);
+      if escape {
+        escape = false;
+      } else if c == '\\' {
+        escape = true;
+      } else if c == '"' {
+        in_string = false;
+      }
+      i += 1;
+      continue;
+    }
+
+    if c == '"' {
+      in_string = true;
+      out.push(c);
+      i += 1;
+      continue;
+    }
+
+    if c == ',' {
+      let mut j = i + 1;
+      while j < chars.len() && chars[j].is_whitespace() {
+        j += 1;
+      }
+      if j < chars.len() && (chars[j] == '}' || chars[j] == ']') {
+        i += 1;
+        continue;
+      }
+    }
+
+    out.push(c);
+    i += 1;
+  }
+
+  out
+}
+
+fn parse_json_or_jsonc_value(input: &str) -> Option<serde_json::Value> {
+  let trimmed = input.trim();
+  if trimmed.is_empty() {
+    return None;
+  }
+  if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
+    return Some(parsed);
+  }
+  let stripped = strip_jsonc_trailing_commas(&strip_jsonc_comments(trimmed));
+  serde_json::from_str::<serde_json::Value>(stripped.trim()).ok()
+}
+
+fn opencode_config_has_maple_server(root: &serde_json::Value) -> bool {
+  let Some(mcp) = root.get("mcp").and_then(|v| v.as_object()) else {
+    return false;
+  };
+  let Some(maple) = mcp.get("maple") else {
+    return false;
+  };
+  maple.get("url").and_then(|v| v.as_str()).is_some()
+}
+
+fn opencode_config_has_maple_command(root: &serde_json::Value) -> bool {
+  let Some(cmd) = root.get("command").and_then(|v| v.as_object()) else {
+    return false;
+  };
+  let Some(maple) = cmd.get("maple") else {
+    return false;
+  };
+  if maple.is_string() {
+    return true;
+  }
+  maple.get("template").and_then(|v| v.as_str()).is_some() || maple.is_object()
+}
+
+fn read_opencode_config_value(path: &Path) -> Option<serde_json::Value> {
+  let Ok(raw) = fs::read_to_string(path) else {
+    return None;
+  };
+  parse_json_or_jsonc_value(&raw)
+}
+
+fn is_opencode_installed_native(home: &Path) -> bool {
+  let config_dir = home.join(".config").join("opencode");
+  let candidates = [
+    config_dir.join("opencode.json"),
+    config_dir.join("opencode.jsonc"),
+  ];
+
+  for candidate in candidates {
+    if !candidate.exists() {
+      continue;
+    }
+    if let Some(root) = read_opencode_config_value(&candidate) {
+      if opencode_config_has_maple_server(&root) && opencode_config_has_maple_command(&root) {
+        return true;
+      }
+    }
+  }
+  false
+}
+
+fn is_opencode_installed_wsl() -> bool {
+  #[cfg(target_os = "windows")]
+  {
+    for rel in [".config/opencode/opencode.json", ".config/opencode/opencode.jsonc"] {
+      let Ok(Some(raw)) = wsl_read_home_file(rel) else {
+        continue;
+      };
+      if let Some(root) = parse_json_or_jsonc_value(&raw) {
+        if opencode_config_has_maple_server(&root) && opencode_config_has_maple_command(&root) {
+          return true;
+        }
+      }
+    }
+    false
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  {
+    false
+  }
+}
+
 fn is_codex_installed_wsl() -> bool {
   #[cfg(target_os = "windows")]
   {
@@ -549,15 +758,17 @@ pub fn probe_install_targets() -> Result<Vec<InstallTargetProbe>, String> {
   let mut npm_native: Option<bool> = None;
   let mut npm_wsl: Option<bool> = None;
 
-  let order: [(&str, &str); 8] = [
+  let order: [(&str, &str); 10] = [
     ("codex", "native"),
     ("claude", "native"),
     ("iflow", "native"),
     ("gemini", "native"),
+    ("opencode", "native"),
     ("wsl:codex", "wsl"),
     ("wsl:claude", "wsl"),
     ("wsl:iflow", "wsl"),
     ("wsl:gemini", "wsl"),
+    ("wsl:opencode", "wsl"),
   ];
 
   let mut probes: Vec<InstallTargetProbe> = Vec::with_capacity(order.len());
@@ -581,10 +792,12 @@ pub fn probe_install_targets() -> Result<Vec<InstallTargetProbe>, String> {
       "claude" => (detect_cli_native("claude"), is_claude_installed_native(&home)),
       "iflow" => (detect_cli_native("iflow"), is_iflow_installed_native(&home)),
       "gemini" => (detect_cli_native("gemini"), is_gemini_installed_native(&home)),
+      "opencode" => (detect_cli_native("opencode"), is_opencode_installed_native(&home)),
       "wsl:codex" => (detect_cli_wsl("codex"), is_codex_installed_wsl()),
       "wsl:claude" => (detect_cli_wsl("claude"), is_claude_installed_wsl()),
       "wsl:iflow" => (detect_cli_wsl("iflow"), is_iflow_installed_wsl()),
       "wsl:gemini" => (detect_cli_wsl("gemini"), is_gemini_installed_wsl()),
+      "wsl:opencode" => (detect_cli_wsl("opencode"), is_opencode_installed_wsl()),
       _ => (false, false),
     };
 
@@ -617,6 +830,26 @@ fn normalize_home_relative_path(path: &str) -> Result<String, String> {
     .trim_start_matches("~/")
     .trim_start_matches('/')
     .to_string())
+}
+
+fn wsl_read_home_file(path: &str) -> Result<Option<String>, String> {
+  let rel = normalize_home_relative_path(path)?;
+  let script = format!("set -e; if [ -f \"$HOME/{rel}\" ]; then cat \"$HOME/{rel}\"; fi");
+  let args = vec!["-e".to_string(), "sh".to_string(), "-lc".to_string(), script];
+  match run_cli("wsl", &args, None) {
+    Ok(out) => {
+      if !out.success {
+        return Ok(None);
+      }
+      let text = out.stdout;
+      if text.trim().is_empty() {
+        Ok(None)
+      } else {
+        Ok(Some(text))
+      }
+    }
+    Err(error) => Err(error),
+  }
 }
 
 fn wsl_write_home_file(
@@ -802,6 +1035,7 @@ prompt = """
 Work in the current working directory (do NOT cd elsewhere).
 If `~/.maple/constitution.md` exists, read it first and follow the rules during execution.
 Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
+For routing, call `query_project_todos` / `finish_worker` with `worker_kind: "gemini"`.
 Run typecheck/build before finishing.
 Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
 For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
@@ -1795,6 +2029,209 @@ fn install_gemini(home: &Path, emitter: &InstallEventEmitter, runtime: InstallRu
   result
 }
 
+fn opencode_maple_command_template() -> String {
+  [
+    "Run Maple workflow in the current working directory:",
+    "",
+    "1. Work in the current working directory (do NOT cd elsewhere).",
+    "   - If `~/.maple/constitution.md` exists, read it first and follow the rules during execution.",
+    "2. Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.",
+    "   - For routing, call `query_project_todos` / `finish_worker` with `worker_kind: \"opencode\"`.",
+    "3. Always run typecheck/build verification before marking done.",
+    "   - IMPORTANT: Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts).",
+    "   - Prefer one-shot commands (typecheck/build/test). Every command must exit on its own.",
+    "4. For each task, call `submit_task_report` to drive status transitions: set `进行中` at start, then settle to `已完成` / `已阻塞` / `需要更多信息`.",
+    "   - `submit_task_report.tags` MUST be provided (1-5 tags). Tags must be Chinese labels.",
+    "   - Before using any tag, call `upsert_tag_definition` to create/confirm its definition (icon must be `mingcute:*`, with zh/en labels).",
+    "5. Before ending, call `query_project_todos` and ensure no `待办` / `队列中` / `进行中` task remains.",
+    "6. Call `finish_worker` as the final MCP call.",
+    "7. Output `mcp_decision` with status, comment, and tags.",
+  ]
+  .join("\n")
+}
+
+fn apply_opencode_maple_config(root: &mut serde_json::Value) {
+  if !root.is_object() {
+    *root = json!({});
+  }
+  let obj = root.as_object_mut().unwrap();
+
+  let mcp = obj.entry("mcp").or_insert_with(|| json!({}));
+  if !mcp.is_object() {
+    *mcp = json!({});
+  }
+  mcp.as_object_mut().unwrap().insert(
+    "maple".to_string(),
+    json!({
+      "type": "remote",
+      "url": MAPLE_MCP_URL,
+      "enabled": true
+    }),
+  );
+
+  let command = obj.entry("command").or_insert_with(|| json!({}));
+  if !command.is_object() {
+    *command = json!({});
+  }
+  let command_obj = command.as_object_mut().unwrap();
+  if !command_obj.contains_key("maple") {
+    command_obj.insert(
+      "maple".to_string(),
+      json!({
+        "description": "Run Maple workflow",
+        "template": opencode_maple_command_template()
+      }),
+    );
+  }
+}
+
+fn install_opencode(home: &Path, emitter: &InstallEventEmitter, runtime: InstallRuntime, target_id: &str) -> InstallTargetResult {
+  let mut written_files = Vec::new();
+  let stdout = String::new();
+  let stderr = String::new();
+
+  emitter.target_state(target_id, "running");
+  let cli_detected = match runtime {
+    InstallRuntime::Native => detect_cli_native("opencode"),
+    InstallRuntime::Wsl => detect_cli_wsl("opencode"),
+  };
+  if !cli_detected {
+    let scope = if runtime == InstallRuntime::Native { "本机" } else { "WSL" };
+    emitter.log(Some(target_id), "stderr", format!("未检测到 CLI：opencode（{scope}），已跳过。\n"));
+    emitter.target_state(target_id, "success");
+    return InstallTargetResult {
+      id: target_id.to_string(),
+      runtime: Some(runtime.as_str().to_string()),
+      success: true,
+      skipped: true,
+      cli_found: Some(false),
+      written_files,
+      stdout,
+      stderr,
+      error: None,
+    };
+  }
+
+  if runtime == InstallRuntime::Native {
+    let config_dir = home.join(".config").join("opencode");
+    let json_path = config_dir.join("opencode.json");
+    let jsonc_path = config_dir.join("opencode.jsonc");
+    let config_path = if jsonc_path.exists() { jsonc_path } else { json_path };
+
+    let mut root = serde_json::Value::Object(Default::default());
+    if config_path.exists() {
+      if let Ok(raw) = fs::read_to_string(&config_path) {
+        if let Some(parsed) = parse_json_or_jsonc_value(&raw) {
+          root = parsed;
+        }
+      }
+    }
+
+    apply_opencode_maple_config(&mut root);
+
+    let json_text = serde_json::to_string_pretty(&root).unwrap_or_else(|_| "{\n}\n".to_string());
+    emitter.log(Some(target_id), "info", format!("写入 {}\n", pretty_path(&config_path)));
+    if let Err(error) = write_text_file(&config_path, &(json_text + "\n")) {
+      emitter.target_state(target_id, "error");
+      emitter.log(Some(target_id), "stderr", format!("{error}\n"));
+      return InstallTargetResult {
+        id: target_id.to_string(),
+        runtime: Some(runtime.as_str().to_string()),
+        success: false,
+        skipped: false,
+        cli_found: Some(true),
+        written_files,
+        stdout,
+        stderr,
+        error: Some(error),
+      };
+    }
+    written_files.push(pretty_path(&config_path));
+
+    let result = InstallTargetResult {
+      id: target_id.to_string(),
+      runtime: Some(runtime.as_str().to_string()),
+      success: true,
+      skipped: false,
+      cli_found: Some(true),
+      written_files,
+      stdout,
+      stderr,
+      error: None,
+    };
+    emitter.target_state(target_id, "success");
+    return result;
+  }
+
+  #[cfg(target_os = "windows")]
+  {
+    let json_rel = ".config/opencode/opencode.json";
+    let jsonc_rel = ".config/opencode/opencode.jsonc";
+    let use_jsonc = wsl_home_file_exists(jsonc_rel).unwrap_or(false);
+    let config_rel = if use_jsonc { jsonc_rel } else { json_rel };
+
+    let mut root = serde_json::Value::Object(Default::default());
+    if let Ok(Some(raw)) = wsl_read_home_file(config_rel) {
+      if let Some(parsed) = parse_json_or_jsonc_value(&raw) {
+        root = parsed;
+      }
+    }
+    apply_opencode_maple_config(&mut root);
+
+    let json_text = serde_json::to_string_pretty(&root).unwrap_or_else(|_| "{\n}\n".to_string()) + "\n";
+    match wsl_write_home_file(emitter, target_id, config_rel, &json_text) {
+      Ok(path) => written_files.push(path),
+      Err(error) => {
+        emitter.target_state(target_id, "error");
+        emitter.log(Some(target_id), "stderr", format!("{error}\n"));
+        return InstallTargetResult {
+          id: target_id.to_string(),
+          runtime: Some(runtime.as_str().to_string()),
+          success: false,
+          skipped: false,
+          cli_found: Some(true),
+          written_files,
+          stdout,
+          stderr,
+          error: Some(error),
+        };
+      }
+    }
+
+    let result = InstallTargetResult {
+      id: target_id.to_string(),
+      runtime: Some(runtime.as_str().to_string()),
+      success: true,
+      skipped: false,
+      cli_found: Some(true),
+      written_files,
+      stdout,
+      stderr,
+      error: None,
+    };
+    emitter.target_state(target_id, "success");
+    return result;
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  {
+    let _ = home;
+    let result = InstallTargetResult {
+      id: target_id.to_string(),
+      runtime: Some(runtime.as_str().to_string()),
+      success: false,
+      skipped: false,
+      cli_found: Some(true),
+      written_files,
+      stdout,
+      stderr,
+      error: Some("WSL install is only supported on Windows.".to_string()),
+    };
+    emitter.target_state(target_id, "error");
+    result
+  }
+}
+
 fn install_windsurf(home: &Path, emitter: &InstallEventEmitter) -> InstallTargetResult {
   let mut written_files = Vec::new();
 
@@ -1863,6 +2300,7 @@ fn install_windsurf(home: &Path, emitter: &InstallEventEmitter) -> InstallTarget
   result
 }
 
+#[allow(dead_code)]
 pub fn install_mcp_and_skills(options: InstallMcpSkillsOptions) -> Result<InstallMcpSkillsReport, String> {
   install_mcp_and_skills_with_events(options, None)
 }
@@ -1930,6 +2368,16 @@ pub fn install_mcp_and_skills_with_events(
   }
   if options.wsl_gemini {
     let result = install_gemini(&home, &emitter, InstallRuntime::Wsl, "wsl:gemini");
+    emitter.target_result(result.clone());
+    targets.push(result);
+  }
+  if options.opencode {
+    let result = install_opencode(&home, &emitter, InstallRuntime::Native, "opencode");
+    emitter.target_result(result.clone());
+    targets.push(result);
+  }
+  if options.wsl_opencode {
+    let result = install_opencode(&home, &emitter, InstallRuntime::Wsl, "wsl:opencode");
     emitter.target_result(result.clone());
     targets.push(result);
   }

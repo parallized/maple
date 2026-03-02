@@ -10,7 +10,8 @@
       "Bash(head:*)",
       "Bash(tail:*)",
       "mcp__maple__finish_worker",
-      "mcp__maple__read_asset_image"
+      "mcp__maple__read_asset_image",
+      "mcp__maple__query_tag_catalog"
     ]
   }
 }

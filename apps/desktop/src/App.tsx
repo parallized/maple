@@ -14,7 +14,7 @@ import { TaskDetailPanel } from "./components/TaskDetailPanel";
 import { ToastLayer } from "./components/ToastLayer";
 import { WorkerPickerModal } from "./components/WorkerPickerModal";
 import { WorkerConsoleModal } from "./components/WorkerConsoleModal";
-import ColorBends from "./components/reactbits/ColorBends";
+import { AppBackground } from "./components/AppBackground";
 import { OverviewView } from "./views/OverviewView";
 import { BoardView } from "./views/BoardView";
 import { SettingsView } from "./views/SettingsView";
@@ -22,7 +22,6 @@ import { SettingsView } from "./views/SettingsView";
 import {
   DEFAULT_WORKER_CONFIGS,
   STORAGE_AI_LANGUAGE,
-  STORAGE_CODEX_USAGE_CONFIG,
   STORAGE_CONSTITUTION,
   STORAGE_EDITOR_APP,
   STORAGE_PROJECTS,
@@ -33,7 +32,6 @@ import {
   WORKER_KINDS
 } from "./lib/constants";
 import type { AiLanguage, ExternalEditorApp, ThemeMode, UiLanguage, WorkerRetryConfig } from "./lib/constants";
-import type { CodexUsageConfig } from "./lib/codex-usage";
 import {
   hasTauriRuntime,
   applyTheme,
@@ -49,7 +47,6 @@ import { normalizeTagsForAiLanguage } from "./lib/tag-language";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
 import {
   loadAiLanguage,
-  loadCodexUsageConfig,
   loadConstitution,
   loadExternalEditorApp,
   loadProjects,
@@ -70,6 +67,7 @@ import type {
   McpServerStatus,
   Project,
   Task,
+  TaskStatus,
   ViewKey,
   WorkerCommandResult,
   WorkerConfig,
@@ -99,6 +97,8 @@ const PROMPT_PLACEMENT_BY_KIND: Record<WorkerKind, PromptPlacementStrategy> = {
   claude: { flag: "--print", mode: "append_tail" },
   codex: { flag: "e", mode: "append_tail" },
   iflow: { flag: "-p", mode: "after_flag" },
+  gemini: { flag: "-p", mode: "after_flag" },
+  opencode: { flag: "run", mode: "append_tail" },
 };
 
 const PERMISSION_OPTION_PATTERN = /\[(?:y\/n|Y\/n|y\/N)\]|\((?:yes\/no|y\/n)\)|\b(?:yes\/no|y\/n)\b/i;
@@ -144,13 +144,13 @@ export function App() {
   const [aiLanguage, setAiLanguage] = useState<AiLanguage>(() => loadAiLanguage());
   const [externalEditorApp, setExternalEditorApp] = useState<ExternalEditorApp>(() => loadExternalEditorApp());
   const [constitution, setConstitution] = useState<string>(() => loadConstitution());
-  const [codexUsageConfig, setCodexUsageConfig] = useState<CodexUsageConfig>(() => loadCodexUsageConfig());
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => cloneDefaultWorkerConfigs());
-  const [workerRuntimeByKind, setWorkerRuntimeByKind] = useState<Record<WorkerKind, WorkerRuntime>>(() => ({
-    claude: "unknown",
-    codex: "unknown",
-    iflow: "unknown",
-  }));
+  const [workerRuntimeByKind, setWorkerRuntimeByKind] = useState<Record<WorkerKind, WorkerRuntime>>(() =>
+    WORKER_KINDS.reduce((acc, worker) => {
+      acc[worker.kind] = "unknown";
+      return acc;
+    }, {} as Record<WorkerKind, WorkerRuntime>)
+  );
   const [installProbes, setInstallProbes] = useState<Partial<Record<InstallTargetId, WorkerProbe>>>({});
   const [installProbeToken, setInstallProbeToken] = useState(0);
   const [mcpStatus, setMcpStatus] = useState<McpServerStatus>({ running: false, pid: null, command: "" });
@@ -370,7 +370,6 @@ export function App() {
   useEffect(() => { localStorage.setItem(STORAGE_AI_LANGUAGE, aiLanguage); }, [aiLanguage]);
   useEffect(() => { localStorage.setItem(STORAGE_EDITOR_APP, externalEditorApp); }, [externalEditorApp]);
   useEffect(() => { localStorage.setItem(STORAGE_CONSTITUTION, constitution); }, [constitution]);
-  useEffect(() => { localStorage.setItem(STORAGE_CODEX_USAGE_CONFIG, JSON.stringify(codexUsageConfig)); }, [codexUsageConfig]);
   useEffect(() => {
     localStorage.setItem(STORAGE_WORKER_RETRY_INTERVAL_SECONDS, String(workerRetryConfig.intervalSeconds));
     localStorage.setItem(STORAGE_WORKER_RETRY_MAX_ATTEMPTS, String(workerRetryConfig.maxAttempts));
@@ -445,11 +444,6 @@ export function App() {
     } catch {
       setNotice(failedText);
     }
-  }
-
-  async function saveCodexUsageConfig(next: CodexUsageConfig): Promise<void> {
-    setCodexUsageConfig(next);
-    setNotice(uiLanguage === "en" ? "Balance config saved." : "ä½™é¢æŸ¥è¯¢é…ç½®å·²ä¿å­˜ã€‚");
   }
 
   useEffect(() => {
@@ -803,6 +797,7 @@ export function App() {
       projectName: project.name,
       directory: project.directory,
       taskTitle: task.title,
+      language: effectiveAiLanguage,
       workerKind: kind ?? undefined
     });
 
@@ -1447,18 +1442,7 @@ export function App() {
   // ── Render ──
   return (
     <div className={`app-root${windowMaximized ? " maximized" : ""}`}>
-      <ColorBends
-        className="app-bg"
-        colors={["#f2723c", "#ff9a5c", "#1c1c1e", "#2c2c2e"]}
-        speed={0.08}
-        noise={0.06}
-        scale={1.2}
-        frequency={0.8}
-        warpStrength={0.6}
-        mouseInfluence={0.3}
-        parallax={0.2}
-        transparent={false}
-      />
+      <AppBackground />
       <div className="shell">
         <TopNav
           isTauri={isTauri}
@@ -1528,6 +1512,7 @@ export function App() {
                     onAddTask={addTask}
                     onAddDraftTask={addDraftTask}
                     onCommitTaskTitle={commitTaskTitle}
+                    onUpdateTaskStatus={(projectId, taskId, status) => updateTask(projectId, taskId, (t) => ({ ...t, status: status as TaskStatus }))}
                     onDeleteTask={deleteTask}
                     onSelectTask={selectTask}
                     onEditTask={setEditingTaskId}
@@ -1559,7 +1544,6 @@ export function App() {
                     aiLanguage={aiLanguage}
                     externalEditorApp={externalEditorApp}
                     constitution={constitution}
-                    codexUsageConfig={codexUsageConfig}
                     workerAvailability={workerAvailability}
                     installProbes={installProbes}
                     onRestartMcpServer={() => void restartMcpServer()}
@@ -1568,7 +1552,6 @@ export function App() {
                     onAiLanguageChange={setAiLanguage}
                     onExternalEditorAppChange={setExternalEditorApp}
                     onSaveConstitution={(next) => void saveConstitution(next)}
-                    onSaveCodexUsageConfig={(next) => void saveCodexUsageConfig(next)}
                     onDetailModeChange={setDetailMode}
                     workerRetryIntervalSeconds={workerRetryConfig.intervalSeconds}
                     workerRetryMaxAttempts={workerRetryConfig.maxAttempts}
@@ -1661,7 +1644,7 @@ export function App() {
 	                ...t,
 	                targetWorkerKind: kind ?? undefined,
 	              }))}
-	              onRestartExecution={() => void restartProjectExecution(boardProject.id)}
+	              onUpdateTaskStatus={(status) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, status: status as TaskStatus }))}
 	              onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
 	            />
           </aside>

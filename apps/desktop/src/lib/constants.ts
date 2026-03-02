@@ -22,6 +22,28 @@ export type ExternalEditorApp =
   | "windsurf"
   | "visual_studio";
 
+export type ExternalEditorOption = {
+  value: ExternalEditorApp;
+  label: string;
+  icon: string;
+};
+
+export const EXTERNAL_EDITOR_OPTIONS: ExternalEditorOption[] = [
+  { value: "vscode", label: "VS Code", icon: "mingcute:vscode-line" },
+  { value: "cursor", label: "Cursor", icon: "mingcute:cursor-3-line" },
+  { value: "windsurf", label: "Windsurf", icon: "mingcute:wind-line" },
+  { value: "visual_studio", label: "Visual Studio", icon: "mingcute:windows-line" },
+  { value: "github_desktop", label: "GitHub Desktop", icon: "mingcute:github-line" },
+];
+
+export const EXTERNAL_EDITOR_META: Record<ExternalEditorApp, { label: string; icon: string }> = {
+  vscode: { label: "VS Code", icon: "mingcute:vscode-line" },
+  cursor: { label: "Cursor", icon: "mingcute:cursor-3-line" },
+  windsurf: { label: "Windsurf", icon: "mingcute:wind-line" },
+  visual_studio: { label: "Visual Studio", icon: "mingcute:windows-line" },
+  github_desktop: { label: "GitHub Desktop", icon: "mingcute:github-line" },
+};
+
 export type WorkerRetryConfig = {
   intervalSeconds: number;
   maxAttempts: number;
@@ -41,6 +63,8 @@ export const WORKER_KINDS: {
   { kind: "claude", label: "Claude", color: "#d97757" },
   { kind: "codex", label: "Codex", color: "#ffffff" },
   { kind: "iflow", label: "iFlow", color: "#a855f7" },
+  { kind: "gemini", label: "Gemini", color: "#60a5fa" },
+  { kind: "opencode", label: "OpenCode", color: "#34d399" },
 ];
 
 export const DEFAULT_WORKER_CONFIGS: Record<WorkerKind, WorkerConfig> = {
@@ -61,6 +85,20 @@ export const DEFAULT_WORKER_CONFIGS: Record<WorkerKind, WorkerConfig> = {
   iflow: {
     executable: "iflow",
     runArgs: "-p --yolo --stream --debug",
+    consoleArgs: "",
+    probeArgs: "--version",
+    dangerMode: false,
+  },
+  gemini: {
+    executable: "gemini",
+    runArgs: "-p",
+    consoleArgs: "",
+    probeArgs: "--version",
+    dangerMode: false,
+  },
+  opencode: {
+    executable: "opencode",
+    runArgs: "run --format default",
     consoleArgs: "",
     probeArgs: "--version",
     dangerMode: false,

@@ -1,7 +1,7 @@
 import { Icon } from "@iconify/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import type { TagCatalog, Task, WorkerKind } from "../domain";
+import type { TagCatalog, Task, TaskStatus, WorkerKind } from "../domain";
 import type { UiLanguage } from "../lib/constants";
 import { WORKER_KINDS } from "../lib/constants";
 import { formatTagLabel } from "../lib/tag-label";
@@ -26,6 +26,7 @@ type TaskDetailPanelProps = {
   onReworkToDraft?: () => void;
   onSetAsRework?: () => void;
   onSetAsTodo?: () => void;
+  onUpdateTaskStatus?: (status: TaskStatus) => void;
   onUpdateTargetWorkerKind?: (kind: WorkerKind | null) => void;
   onRestartExecution?: () => void;
   onClose?: () => void;
@@ -105,6 +106,8 @@ function renderAuthorIcon(author: string, size = 14) {
   if (normalized === "claude") return <WorkerLogo kind="claude" size={size} />;
   if (normalized === "codex") return <WorkerLogo kind="codex" size={size} />;
   if (normalized === "iflow") return <WorkerLogo kind="iflow" size={size} />;
+  if (normalized === "gemini") return <WorkerLogo kind="gemini" size={size} />;
+  if (normalized === "opencode") return <WorkerLogo kind="opencode" size={size} />;
   if (normalized === "mcp") return <Icon icon="mingcute:server-line" className="opacity-80" style={{ fontSize: size }} />;
   return <Icon icon="mingcute:paper-line" className="opacity-60" style={{ fontSize: size }} />;
 }
@@ -120,6 +123,7 @@ export function TaskDetailPanel({
   onReworkToDraft,
   onSetAsRework,
   onSetAsTodo,
+  onUpdateTaskStatus,
   onUpdateTargetWorkerKind,
   onRestartExecution,
   onClose,
@@ -387,22 +391,40 @@ export function TaskDetailPanel({
               状态
             </span>
             <div className="flex items-center">
-              <span className={`ui-badge ui-badge--sm ${reportBadgeClass(task.status)}`}>
-                {task.status === "进行中" && (
-                  <Icon icon="mingcute:loading-3-line" className="text-[11px] animate-spin opacity-80 mr-0.5" />
-                )}
-                {task.status}
-              </span>
-              {task.status === "进行中" && onRestartExecution ? (
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--xs ui-btn--ghost ml-2 px-2 text-[11px] text-primary"
-                  onClick={onRestartExecution}
-                  title="重置进行中任务并重新开始执行"
-                >
-                  重新开始
-                </button>
-              ) : null}
+              <PopoverMenu
+                label="Status Selector"
+                triggerNode={
+                  <span className={`ui-badge ui-badge--sm cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${reportBadgeClass(task.status)}`}>
+                    {task.status === "进行中" && (
+                      <Icon icon="mingcute:loading-3-line" className="text-[11px] animate-spin opacity-80 mr-0.5" />
+                    )}
+                    {task.status}
+                  </span>
+                }
+                align="left"
+                items={[
+                  { kind: "heading", label: "修改状态" },
+                  ...(["草稿", "待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"] as const).map((s) => ({
+                    kind: "item" as const,
+                    key: `status-${s}`,
+                    label: s,
+                    iconNode: (
+                      <div className="flex items-center justify-center w-full h-full">
+                        <div className={`w-2 h-2 rounded-full ${
+                          s === "已完成" ? "bg-(--color-success)" :
+                          s === "已阻塞" ? "bg-(--color-error)" :
+                          s === "进行中" ? "bg-(--color-primary)" :
+                          s === "需要更多信息" ? "bg-(--color-warning)" :
+                          s === "草稿" ? "bg-(--color-secondary) opacity-50" :
+                          "bg-(--color-base-300)"
+                        }`} />
+                      </div>
+                    ),
+                    checked: task.status === s,
+                    onSelect: () => onUpdateTaskStatus?.(s as TaskStatus),
+                  })),
+                ]}
+              />
             </div>
           </div>
         </motion.div>

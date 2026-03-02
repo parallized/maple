@@ -5,7 +5,7 @@ export type WorkerIdInfo = {
   projectId: string | null;
 };
 
-const WORKER_KINDS: WorkerKind[] = ["claude", "codex", "iflow"];
+const WORKER_KINDS: WorkerKind[] = ["claude", "codex", "iflow", "gemini", "opencode"];
 
 export function buildWorkerId(kind: WorkerKind, projectId?: string | null): string {
   const normalizedProjectId = (projectId ?? "").trim();

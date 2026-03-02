@@ -189,6 +189,8 @@ export function McpSkillsInstallCard({
           next["wsl:codex"] = false;
           next["wsl:claude"] = false;
           next["wsl:iflow"] = false;
+          next["wsl:gemini"] = false;
+          next["wsl:opencode"] = false;
         }
 
         // Do not override Windsurf selection based on probing.
@@ -228,8 +230,8 @@ export function McpSkillsInstallCard({
       : "";
 
   const probeIds: InstallTargetId[] = isWindows
-    ? ["codex", "claude", "iflow", "wsl:codex", "wsl:claude", "wsl:iflow"]
-    : ["codex", "claude", "iflow"];
+    ? ["codex", "claude", "iflow", "gemini", "opencode", "wsl:codex", "wsl:claude", "wsl:iflow", "wsl:gemini", "wsl:opencode"]
+    : ["codex", "claude", "iflow", "gemini", "opencode"];
   const detectedLabels = probeIds.filter((id) => Boolean(probeById[id]?.cliFound)).map((id) => formatInstallTargetLabel(id));
 
   const detectedSummary =
@@ -322,8 +324,8 @@ export function McpSkillsInstallCard({
 
               <div className="flex flex-wrap gap-1.5">
                 {(isWindows
-                  ? (["codex", "claude", "iflow", "wsl:codex", "wsl:claude", "wsl:iflow", "windsurf"] as const)
-                  : (["codex", "claude", "iflow", "windsurf"] as const)
+                  ? (["codex", "claude", "iflow", "gemini", "opencode", "wsl:codex", "wsl:claude", "wsl:iflow", "wsl:gemini", "wsl:opencode", "windsurf"] as const)
+                  : (["codex", "claude", "iflow", "gemini", "opencode", "windsurf"] as const)
                 ).map((id) => {
                   const probe = probeById[id];
                   const selectable = id === "windsurf" ? true : Boolean(probe?.cliFound);
@@ -371,8 +373,8 @@ export function McpSkillsInstallCard({
               <div className="flex items-center justify-between gap-2">
                 <p className="m-0 text-[11px] text-muted font-sans opacity-80">
                   {t(
-                    "将写入全局配置目录（~/.codex、~/.claude、~/.iflow、~/.codeium）。Windows 上支持分别配置本机与 WSL：会写入对应的 home 目录，并在对应环境内注册 MCP。",
-                    "Writes to global config directories (~/.codex, ~/.claude, ~/.iflow, ~/.codeium). On Windows, Maple can configure both Local and WSL: it writes to the corresponding home directory and registers MCP in that runtime."
+                    "将写入全局配置目录（~/.codex、~/.claude、~/.iflow、~/.gemini、~/.config/opencode、~/.codeium）。Windows 上支持分别配置本机与 WSL：会写入对应的 home 目录，并在对应环境内注册 MCP。",
+                    "Writes to global config directories (~/.codex, ~/.claude, ~/.iflow, ~/.gemini, ~/.config/opencode, ~/.codeium). On Windows, Maple can configure both Local and WSL: it writes to the corresponding home directory and registers MCP in that runtime."
                   )}
                 </p>
                 <div className="flex items-center gap-2 flex-none">
@@ -410,9 +412,13 @@ export function McpSkillsInstallCard({
                             codex: targets.codex,
                             claude: targets.claude,
                             iflow: targets.iflow,
+                            gemini: targets.gemini,
+                            opencode: targets.opencode,
                             wslCodex: targets["wsl:codex"],
                             wslClaude: targets["wsl:claude"],
                             wslIflow: targets["wsl:iflow"],
+                            wslGemini: targets["wsl:gemini"],
+                            wslOpencode: targets["wsl:opencode"],
                             windsurf: targets.windsurf,
                             installId: nextInstallId
                           }

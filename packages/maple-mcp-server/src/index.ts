@@ -94,186 +94,23 @@ function normalizeTagId(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function hasCjk(value: string): boolean {
-  return /[\u3400-\u9FFF]/.test(value);
-}
-
-function hasLatin(value: string): boolean {
-  return /[A-Za-z]/.test(value);
-}
-
-type TagPreset = {
-  zh: string;
-  en: string;
-  icon: string;
-};
-
-const TAG_PRESETS: Record<string, TagPreset> = {
-  mcp: { zh: "MCP", en: "MCP", icon: "mingcute:server-line" },
-  verify: { zh: "验证", en: "Verify", icon: "mingcute:check-line" },
-  verified: { zh: "已验证", en: "Verified", icon: "mingcute:check-line" },
-  ui: { zh: "UI", en: "UI", icon: "mingcute:palette-line" },
-  fix: { zh: "修复", en: "Fix", icon: "mingcute:shield-line" },
-  i18n: { zh: "多语言", en: "i18n", icon: "mingcute:translate-line" },
-  tag: { zh: "标签", en: "Tag", icon: "mingcute:tag-line" },
-  icon: { zh: "图标", en: "Icon", icon: "mingcute:tag-line" },
-  image: { zh: "图片", en: "Image", icon: "mingcute:layers-line" },
-  editor: { zh: "编辑器", en: "Editor", icon: "mingcute:code-line" },
-  desktop: { zh: "桌面端", en: "Desktop", icon: "mingcute:computer-line" },
-  ci: { zh: "CI", en: "CI", icon: "mingcute:settings-3-line" },
-  release: { zh: "发布", en: "Release", icon: "mingcute:settings-3-line" },
-  research: { zh: "调研", en: "Research", icon: "mingcute:search-line" },
-  blocknote: { zh: "BlockNote", en: "BlockNote", icon: "mingcute:layers-line" },
-  hapi: { zh: "Hapi", en: "Hapi", icon: "mingcute:server-line" },
-  interactive: { zh: "交互", en: "Interactive", icon: "mingcute:palette-line" },
-  "area:build": { zh: "构建", en: "Build", icon: "mingcute:settings-3-line" },
-  "area:tags": { zh: "标签", en: "Tags", icon: "mingcute:tag-line" },
-  "area:research": { zh: "调研", en: "Research", icon: "mingcute:search-line" },
-};
-
-const AREA_VALUE_PRESETS: Record<string, TagPreset> = {
-  core: { zh: "核心", en: "Core", icon: "mingcute:layout-grid-line" },
-  ui: { zh: "UI", en: "UI", icon: "mingcute:palette-line" },
-  "task-detail": { zh: "详情", en: "Detail", icon: "mingcute:layout-right-line" },
-  markdown: { zh: "Markdown", en: "Markdown", icon: "mingcute:layers-line" },
-  worker: { zh: "执行器", en: "Worker", icon: "mingcute:ai-line" },
-  mcp: { zh: "MCP", en: "MCP", icon: "mingcute:server-line" },
-  xterm: { zh: "终端", en: "Terminal", icon: "mingcute:terminal-box-line" },
-  i18n: { zh: "多语言", en: "i18n", icon: "mingcute:translate-line" },
-  build: { zh: "构建", en: "Build", icon: "mingcute:settings-3-line" },
-  tags: { zh: "标签", en: "Tags", icon: "mingcute:tag-line" },
-  research: { zh: "调研", en: "Research", icon: "mingcute:search-line" },
-};
-
-function inferTagPreset(tagId: string): TagPreset | null {
-  if (TAG_PRESETS[tagId]) return TAG_PRESETS[tagId];
-  if (tagId.startsWith("area:")) {
-    const area = tagId.slice("area:".length);
-    if (!area) return null;
-    return AREA_VALUE_PRESETS[area] ?? null;
-  }
-  return null;
-}
-
-function buildAutoTagDefinition(rawTag: string): TagDefinition {
-  const raw = rawTag.trim();
-  const tagId = normalizeTagId(raw);
-  const preset = inferTagPreset(tagId);
-  const label: NonNullable<TagDefinition["label"]> = {};
-
-  if (preset) {
-    label.zh = preset.zh;
-    label.en = preset.en;
-  }
-
-  if (!label.zh && raw && hasCjk(raw)) {
-    label.zh = raw;
-  }
-  if (!label.en && raw && hasLatin(raw)) {
-    label.en = raw;
-  }
-  if (!label.zh && raw) {
-    label.zh = raw;
-  }
-  if (!label.en && label.zh && hasLatin(label.zh)) {
-    label.en = label.zh;
-  }
-
-  return {
-    icon: preset?.icon ?? "mingcute:tag-line",
-    ...(Object.keys(label).length > 0 ? { label } : {}),
-  };
-}
-
-function ensureTagCatalogForTags(catalog: TagCatalog, tags: string[]): boolean {
-  let changed = false;
-  for (const rawTag of tags) {
-    const tagId = normalizeTagId(rawTag);
-    if (!tagId) continue;
-
-    const existing = catalog[tagId] ?? {};
-    const inferred = buildAutoTagDefinition(rawTag);
-    const next: TagDefinition = { ...existing };
-
-    if (!next.icon && inferred.icon) {
-      next.icon = inferred.icon;
-    }
-
-    const nextLabel: NonNullable<TagDefinition["label"]> = { ...(existing.label ?? {}) };
-    if (!nextLabel.zh && inferred.label?.zh) nextLabel.zh = inferred.label.zh;
-    if (!nextLabel.en && inferred.label?.en) nextLabel.en = inferred.label.en;
-    if (Object.keys(nextLabel).length > 0) {
-      next.label = nextLabel;
-    }
-
-    const entryChanged =
-      !catalog[tagId]
-      || (existing.icon ?? "") !== (next.icon ?? "")
-      || (existing.label?.zh ?? "") !== (next.label?.zh ?? "")
-      || (existing.label?.en ?? "") !== (next.label?.en ?? "");
-
-    if (entryChanged) {
-      catalog[tagId] = next;
-      changed = true;
-    }
-  }
-
-  return changed;
-}
-
-function normalizeAndDedupeTags(tags: string[], max = 5): string[] {
+function normalizeAndDedupeTagIds(tags: string[], max = 5): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const rawTag of tags) {
-    const trimmed = rawTag.trim();
-    if (!trimmed) continue;
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(trimmed);
+    const tagId = normalizeTagId(rawTag);
+    if (!tagId) continue;
+    if (seen.has(tagId)) continue;
+    seen.add(tagId);
+    out.push(tagId);
     if (out.length >= max) break;
   }
   return out;
 }
 
-function inferTagsFromReport(status: TaskStatus, report: string): string[] {
-  const source = report.toLowerCase();
-  const inferred: string[] = [];
-
-  inferred.push("mcp");
-
-  if (
-    /typecheck|build|cargo check|验证|校验|构建|编译|bundle|msi|wix/.test(source)
-  ) {
-    inferred.push("verify");
-    inferred.push("area:build");
-  }
-  if (/修复|fix|bug|报错|错误|异常|failed|failure/.test(source)) {
-    inferred.push("fix");
-  }
-  if (/标签|tag|tag catalog|tag_catalog/.test(source)) {
-    inferred.push("tag");
-    inferred.push("area:tags");
-  }
-  if (/图标|icon|image|图片/.test(source)) {
-    inferred.push("icon");
-  }
-  if (/调研|research/.test(source)) {
-    inferred.push("research");
-    inferred.push("area:research");
-  }
-  if (/titlebar|窗口|拖拽|ui|界面|样式|按钮|侧边栏/.test(source)) {
-    inferred.push("ui");
-    inferred.push("area:ui");
-  }
-  if (/mcp|submit_task_report|finish_worker|query_project_todos/.test(source)) {
-    inferred.push("area:mcp");
-  }
-
-  if (status === "已阻塞") inferred.push("fix");
-  if (status === "需要更多信息") inferred.push("research");
-
-  return normalizeAndDedupeTags(inferred, 5);
+function validateTagsDefined(catalog: TagCatalog | undefined, tagIds: string[]): string[] {
+  const source = catalog ?? {};
+  return tagIds.filter((tagId) => !source[tagId]);
 }
 
 function isValidMingcuteIcon(icon: string): boolean {
@@ -465,7 +302,11 @@ server.tool(
     task_id: z.string().describe("任务 ID"),
     status: z.enum(["草稿", "待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"]).optional().describe("新状态（可选）"),
     report: z.string().describe("报告内容"),
-    tags: z.array(z.string()).optional().describe("标签列表（可选，0-5 个）"),
+    tags: z
+      .array(z.string())
+      .min(1)
+      .max(5)
+      .describe("标签列表（必填，1-5 个）。提交报告时必须严格更新 task.tags。使用新 Tag 前，请先调用 upsert_tag_definition 创建/完善定义。"),
   },
   async ({ project, task_id, status, report, tags }) => {
     const projects = readState();
@@ -496,14 +337,29 @@ server.tool(
     task.reports.push(newReport);
     task.updatedAt = now;
     if (status) task.status = status;
-    const normalizedInputTags = normalizeAndDedupeTags(tags ?? [], 5);
-    if (normalizedInputTags.length > 0) {
-      task.tags = normalizedInputTags;
-    } else if (task.tags.length === 0) {
-      task.tags = inferTagsFromReport(task.status, report);
+    const normalizedInputTags = normalizeAndDedupeTagIds(tags, 5);
+    if (normalizedInputTags.length === 0) {
+      return {
+        content: [{ type: "text" as const, text: "tags 不能为空，且最多 5 个。请提供 1-5 个 Tag，并在提交报告时严格更新 task.tags。" }],
+        isError: true,
+      };
     }
-    target.tagCatalog ??= {};
-    ensureTagCatalogForTags(target.tagCatalog, task.tags);
+
+    const missing = validateTagsDefined(target.tagCatalog, normalizedInputTags);
+    if (missing.length > 0) {
+      return {
+        content: [{
+          type: "text" as const,
+          text: [
+            `以下 Tag 尚未在 Tag Catalog 中定义，禁止提交报告：${missing.join("、")}`,
+            "请先为每个 Tag 调用 upsert_tag_definition（icon 必须为 mingcute:*，可选填写 label.zh / label.en）。",
+          ].join("\n"),
+        }],
+        isError: true,
+      };
+    }
+
+    task.tags = normalizedInputTags;
 
     writeState(projects);
 

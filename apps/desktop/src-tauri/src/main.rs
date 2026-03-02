@@ -526,6 +526,7 @@ fn open_in_editor(path: String, app: Option<String>) -> Result<bool, String> {
       "cursor" => Command::new("cursor"),
       "windsurf" => Command::new("windsurf"),
       "visual_studio" => Command::new("devenv"),
+      "github_desktop" => Command::new("github"),
       _ => Command::new("explorer"),
     };
     cmd.arg(&target);
@@ -538,6 +539,7 @@ fn open_in_editor(path: String, app: Option<String>) -> Result<bool, String> {
       "vscode" => Command::new("code"),
       "cursor" => Command::new("cursor"),
       "windsurf" => Command::new("windsurf"),
+      "github_desktop" => Command::new("github-desktop"),
       _ => Command::new("xdg-open"),
     };
     cmd.arg(&target);
