@@ -6,6 +6,7 @@ import { WorkerLogo } from "../components/WorkerLogo";
 import type { McpServerStatus, WorkerKind } from "../domain";
 import type { UiLanguage } from "../lib/constants";
 import type { InstallTargetId } from "../lib/install-targets";
+import { statusColorVar, statusDotClass } from "../lib/status-colors";
 import { Group } from "@visx/group";
 import { Pie } from "@visx/shape";
 import { motion } from "framer-motion";
@@ -57,8 +58,8 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
   const allWorkers = workerAvailability;
 
   const pieData: StatusData[] = [
-    { label: "已完成", value: metrics.statusDistribution["已完成"] || 0, color: "var(--color-success)" },
-    { label: "进行中", value: metrics.statusDistribution["进行中"] || 0, color: "var(--color-info)" },
+    { label: "已完成", value: metrics.statusDistribution["已完成"] || 0, color: statusColorVar("已完成") },
+    { label: "进行中", value: metrics.statusDistribution["进行中"] || 0, color: statusColorVar("进行中") },
     {
       label: "待处理",
       value:
@@ -66,10 +67,10 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
         (metrics.statusDistribution["队列中"] || 0) +
         (metrics.statusDistribution["待返工"] || 0) +
         (metrics.statusDistribution["草稿"] || 0),
-      color: "var(--color-secondary)",
+      color: statusColorVar("待办"),
     },
-    { label: "需信息", value: metrics.statusDistribution["需要更多信息"] || 0, color: "var(--color-warning)" },
-    { label: "已阻塞", value: metrics.statusDistribution["已阻塞"] || 0, color: "var(--color-error)" },
+    { label: "需信息", value: metrics.statusDistribution["需要更多信息"] || 0, color: statusColorVar("需要更多信息") },
+    { label: "已阻塞", value: metrics.statusDistribution["已阻塞"] || 0, color: statusColorVar("已阻塞") },
   ].filter((d) => d.value > 0);
 
   const totalTasks = metrics.allCount;
@@ -147,21 +148,21 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
                 <div className="flex flex-col gap-2 flex-1 min-w-0">
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <div className="w-2 h-2 rounded-full bg-(--color-success) flex-none" />
+                      <div className={`w-2 h-2 rounded-full ${statusDotClass("已完成")} flex-none`} />
                       <span className="text-[11px] lg:text-[12px] text-muted truncate">已完成</span>
                       <span className="text-[11px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
                         {metrics.completedCount}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <div className="w-2 h-2 rounded-full bg-(--color-info) flex-none" />
+                      <div className={`w-2 h-2 rounded-full ${statusDotClass("进行中")} flex-none`} />
                       <span className="text-[11px] lg:text-[12px] text-muted truncate">进行中</span>
                       <span className="text-[11px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
                         {metrics.statusDistribution["进行中"] || 0}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <div className="w-2 h-2 rounded-full bg-(--color-secondary) flex-none opacity-60" />
+                      <div className={`w-2 h-2 rounded-full ${statusDotClass("待办")} flex-none`} />
                       <span className="text-[11px] lg:text-[12px] text-muted truncate">待处理</span>
                       <span className="text-[11px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
                         {(metrics.statusDistribution["待办"] || 0) +
@@ -171,7 +172,7 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <div className="w-2 h-2 rounded-full bg-(--color-warning) flex-none" />
+                      <div className={`w-2 h-2 rounded-full ${statusDotClass("需要更多信息")} flex-none`} />
                       <span className="text-[11px] lg:text-[12px] text-muted truncate">需信息</span>
                       <span className="text-[11px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
                         {metrics.statusDistribution["需要更多信息"] || 0}
@@ -264,8 +265,8 @@ export function OverviewView({ uiLanguage, metrics, mcpStatus, workerAvailabilit
                 </h3>
               </div>
               <div className="flex gap-3 lg:gap-4 text-[11px] lg:text-[12px] font-sans text-muted">
-                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-(--color-info) opacity-80"></span>{metrics.runningCount} 运行</span>
-                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-(--color-secondary) opacity-80"></span>{metrics.pending} 待办</span>
+                <span className="flex items-center gap-1.5"><span className={`w-1.5 h-1.5 rounded-full ${statusDotClass("进行中")} opacity-80`}></span>{metrics.runningCount} 运行</span>
+                <span className="flex items-center gap-1.5"><span className={`w-1.5 h-1.5 rounded-full ${statusDotClass("待办")} opacity-80`}></span>{metrics.pending} 待办</span>
                 <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-current opacity-30"></span>{metrics.projectCount} 项目</span>
               </div>
             </div>

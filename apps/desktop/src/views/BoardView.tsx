@@ -11,6 +11,7 @@ import { EXTERNAL_EDITOR_META, WORKER_KINDS, type ExternalEditorApp, type UiLang
 import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
+import { statusBadgeClass, statusDotClass } from "../lib/status-colors";
 import { getLastMentionTime, getTimeLevel, relativeTimeZh } from "../lib/utils";
 
 type BoardViewProps = {
@@ -500,21 +501,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           label="Status Selector"
           triggerNode={
             <div
-              className={`ui-badge cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${
-                task.status === "已完成"
-                  ? "ui-badge--success"
-                  : task.status === "已阻塞"
-                    ? "ui-badge--error"
-                    : task.status === "进行中"
-                      ? "ui-badge--info"
-                      : task.status === "需要更多信息"
-                        ? "ui-badge--warning"
-                        : task.status === "草稿"
-                          ? "ui-badge--draft"
-                          : task.status === "队列中" || task.status === "待办" || task.status === "待返工"
-                            ? "ui-badge--neutral"
-                            : ""
-              }`}
+              className={`ui-badge cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${statusBadgeClass(task.status)}`}
             >
               {task.status === "进行中" && (
                 <Icon icon="mingcute:loading-3-line" className="text-[11px] animate-spin opacity-80 mr-0.5" />
@@ -531,14 +518,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
               label: s,
               iconNode: (
                 <div className="flex items-center justify-center w-full h-full">
-                  <div className={`w-2 h-2 rounded-full ${
-                    s === "已完成" ? "bg-(--color-success)" :
-                    s === "已阻塞" ? "bg-(--color-error)" :
-                    s === "进行中" ? "bg-(--color-primary)" :
-                    s === "需要更多信息" ? "bg-(--color-warning)" :
-                    s === "草稿" ? "bg-(--color-secondary) opacity-50" :
-                    "bg-(--color-base-300)"
-                  }`} />
+                  <div className={`w-2 h-2 rounded-full ${statusDotClass(s)}`} />
                 </div>
               ),
               checked: task.status === s,

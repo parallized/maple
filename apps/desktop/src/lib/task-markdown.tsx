@@ -13,7 +13,8 @@ type MarkdownBlock =
   | { kind: "list"; ordered: boolean; items: MarkdownListItem[] }
   | { kind: "quote"; lines: string[] }
   | { kind: "code"; language: string; code: string }
-  | { kind: "image"; alt: string; src: string };
+  | { kind: "image"; alt: string; src: string }
+  | { kind: "table"; headers: string[]; rows: string[][] };
 
 function parseImageLine(line: string): { alt: string; src: string } | null {
   const match = line.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)$/);
@@ -26,6 +27,14 @@ function parseImageLine(line: string): { alt: string; src: string } | null {
 
 function isSafeUrl(url: string): boolean {
   return /^https?:\/\//i.test(url.trim());
+}
+
+function parseTableRow(line: string): string[] {
+  return line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+}
+
+function isTableSeparator(line: string): boolean {
+  return /^\|[\s:|-]+\|$/.test(line.trim());
 }
 
 function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
@@ -84,6 +93,21 @@ function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       continue;
     }
 
+    // Table: header row starting with |, followed by separator row |---|
+    if (/^\|.+\|/.test(line) && index + 1 < lines.length && isTableSeparator((lines[index + 1] ?? "").trimEnd())) {
+      const headers = parseTableRow(line);
+      index += 2; // skip header + separator
+      const rows: string[][] = [];
+      while (index < lines.length) {
+        const current = (lines[index] ?? "").trimEnd();
+        if (!/^\|.+\|/.test(current)) break;
+        rows.push(parseTableRow(current));
+        index += 1;
+      }
+      blocks.push({ kind: "table", headers, rows });
+      continue;
+    }
+
     const unorderedMatch = line.match(/^[-*+]\s+(.+)$/);
     const orderedMatch = line.match(/^\d+\.\s+(.+)$/);
     if (unorderedMatch || orderedMatch) {
@@ -124,6 +148,7 @@ function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         || /^[-*+]\s+/.test(current)
         || /^\d+\.\s+/.test(current)
         || parseImageLine(current.trim()) !== null
+        || (/^\|.+\|/.test(current) && index + 1 < lines.length && isTableSeparator((lines[index + 1] ?? "").trimEnd()))
       ) {
         break;
       }
@@ -310,6 +335,41 @@ export function renderTaskMarkdown(markdown: string, emptyText = "无"): ReactNo
             <p key={`image-text-${blockIndex}`} className="m-0 text-muted text-[13px]">
               {block.alt || block.src}
             </p>
+          );
+        }
+
+        if (block.kind === "table") {
+          return (
+            <div key={`table-${blockIndex}`} className="overflow-x-auto rounded-lg border border-(--color-base-300)">
+              <table className="w-full text-[13px] border-collapse">
+                <thead>
+                  <tr className="bg-(--color-base-200)/50">
+                    {block.headers.map((header, colIndex) => (
+                      <th
+                        key={`th-${blockIndex}-${colIndex}`}
+                        className="px-3 py-1.5 text-left font-semibold text-(--color-base-content) border-b border-(--color-base-300)"
+                      >
+                        {renderInlineMarkdown(header)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {block.rows.map((row, rowIndex) => (
+                    <tr key={`tr-${blockIndex}-${rowIndex}`} className="border-b border-(--color-base-300)/50 last:border-b-0">
+                      {row.map((cell, colIndex) => (
+                        <td
+                          key={`td-${blockIndex}-${rowIndex}-${colIndex}`}
+                          className="px-3 py-1.5 text-(--color-base-content)/85"
+                        >
+                          {renderInlineMarkdown(cell)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           );
         }
 

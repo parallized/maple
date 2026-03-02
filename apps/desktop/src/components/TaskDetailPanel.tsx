@@ -9,6 +9,7 @@ import { buildTagBadgeStyle } from "../lib/tag-style";
 import { resolveTagIconMeta } from "../lib/task-icons";
 import { renderTaskMarkdown } from "../lib/task-markdown";
 import { buildNeedsInfoAppendixMarkdown, parseNeedsInfoFormFromReport } from "../lib/needs-info-form";
+import { statusBadgeClass, statusDotClass } from "../lib/status-colors";
 import { getTimeLevel, relativeTimeZh } from "../lib/utils";
 import { InlineTaskInput } from "./InlineTaskInput";
 import { TaskDetailsEditor } from "./TaskDetailsEditor";
@@ -89,16 +90,6 @@ function parseTaskReport(content: string): ParsedTaskReport | null {
   const rest = detailLines.slice(labelIndex + 1).join("\n").trim();
   const description = [labelRemainder, rest].filter(Boolean).join("\n").trim();
   return { status, description };
-}
-
-function reportBadgeClass(status: string): string {
-  if (status.includes("已完成")) return "ui-badge--success";
-  if (status.includes("已阻塞")) return "ui-badge--error";
-  if (status.includes("进行中")) return "ui-badge--info";
-  if (status.includes("需要更多信息")) return "ui-badge--warning";
-  if (status.includes("草稿")) return "ui-badge--draft";
-  if (status.includes("队列中") || status.includes("待办") || status.includes("待返工")) return "ui-badge--neutral";
-  return "";
 }
 
 function renderAuthorIcon(author: string, size = 14) {
@@ -394,7 +385,7 @@ export function TaskDetailPanel({
               <PopoverMenu
                 label="Status Selector"
                 triggerNode={
-                  <span className={`ui-badge ui-badge--sm cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${reportBadgeClass(task.status)}`}>
+                  <span className={`ui-badge ui-badge--sm cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${statusBadgeClass(task.status)}`}>
                     {task.status === "进行中" && (
                       <Icon icon="mingcute:loading-3-line" className="text-[11px] animate-spin opacity-80 mr-0.5" />
                     )}
@@ -410,14 +401,7 @@ export function TaskDetailPanel({
                     label: s,
                     iconNode: (
                       <div className="flex items-center justify-center w-full h-full">
-                        <div className={`w-2 h-2 rounded-full ${
-                          s === "已完成" ? "bg-(--color-success)" :
-                          s === "已阻塞" ? "bg-(--color-error)" :
-                          s === "进行中" ? "bg-(--color-primary)" :
-                          s === "需要更多信息" ? "bg-(--color-warning)" :
-                          s === "草稿" ? "bg-(--color-secondary) opacity-50" :
-                          "bg-(--color-base-300)"
-                        }`} />
+                        <div className={`w-2 h-2 rounded-full ${statusDotClass(s)}`} />
                       </div>
                     ),
                     checked: task.status === s,

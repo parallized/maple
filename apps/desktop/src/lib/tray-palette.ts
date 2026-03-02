@@ -22,4 +22,3 @@ export function buildTrayTaskPalette(): TrayTaskPalette {
     attention: warning,
   };
 }
-
