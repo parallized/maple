@@ -41,7 +41,6 @@ import {
   createTaskReport,
   normalizeProjects
 } from "./lib/utils";
-import { windowsPathToWslMntPath } from "./lib/wsl-path";
 import { collectTokenUsage } from "./lib/token-usage";
 import { normalizeTagsForAiLanguage } from "./lib/tag-language";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
@@ -86,7 +85,7 @@ function areTagListsEqual(a: string[], b: string[]): boolean {
   return true;
 }
 
-type WorkerRuntime = "unknown" | "native" | "wsl" | "missing";
+type WorkerRuntime = "unknown" | "native" | "missing";
 
 type PromptPlacementStrategy = {
   flag: string;
@@ -832,13 +831,6 @@ export function App() {
       || message.includes("not found");
   }
 
-  function isLikelyWslCliNotFound(result: WorkerCommandResult): boolean {
-    if (result.code === 9009) return true; // wsl.exe not found
-    if (result.code === 127) return true;
-    const message = `${result.stderr}\n${result.stdout}`.toLowerCase();
-    return message.includes("command not found") || message.includes("not found");
-  }
-
   async function resolveWorkerRuntime(kind: WorkerKind, config: WorkerConfig): Promise<WorkerRuntime> {
     const existing = workerRuntimeByKind[kind];
     if (existing !== "unknown") return existing;
@@ -872,35 +864,8 @@ export function App() {
       }
     }
 
-    if (!isWindows) {
-      setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "missing" }));
-      return "missing";
-    }
-
-    try {
-      // Use "bash -lic" to source ~/.bashrc so that nvm-managed binaries are on PATH.
-      const probeCommand = [config.executable, ...probeArgs].map(quoteShellArg).join(" ");
-      const wslProbeArgs = ["-e", "bash", "-lic", probeCommand];
-      const wslProbe = await invoke<WorkerCommandResult>("probe_worker", { executable: "wsl", args: wslProbeArgs, cwd: "" });
-      if (wslProbe.success || !isLikelyWslCliNotFound(wslProbe)) {
-        setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "wsl" }));
-        return "wsl";
-      }
-    } catch (error) {
-      console.warn("WSL probe failed:", error);
-    }
-
     setWorkerRuntimeByKind((prev) => ({ ...prev, [kind]: "missing" }));
     return "missing";
-  }
-
-  function buildWslRunArgs(cliExecutable: string, cliArgs: string[], windowsCwd: string): string[] | null {
-    const wslCwd = windowsPathToWslMntPath(windowsCwd);
-    if (!wslCwd) return null;
-    // Use "bash -lic" instead of "sh -lc" so that ~/.bashrc is sourced
-    // (nvm and other version managers are configured there, not ~/.profile).
-    const command = `cd ${quoteShellArg(wslCwd)} && exec ${[cliExecutable, ...cliArgs].map(quoteShellArg).join(" ")}`;
-    return ["-e", "bash", "-lic", command];
   }
 
   // ── Task CRUD ──
@@ -1216,21 +1181,6 @@ export function App() {
   ): Promise<WorkerCommandResult> {
     if (!isTauri) return { success: false, code: null, stdout: "", stderr: "当前环境无法执行 Worker CLI。" };
     const runPayload = payload ?? buildWorkerRunPayload(workerId, config, task, project);
-    if (runtime === "wsl") {
-      if (!isWindows) return { success: false, code: null, stdout: "", stderr: "当前平台不支持 WSL 执行。" };
-      const wslArgs = buildWslRunArgs(config.executable, runPayload.args, project.directory);
-      if (!wslArgs) {
-        return { success: false, code: null, stdout: "", stderr: `无法将项目目录转换为 WSL 路径：${project.directory}` };
-      }
-      return invoke<WorkerCommandResult>("run_worker", {
-        workerId,
-        taskTitle: task.title,
-        executable: "wsl",
-        args: wslArgs,
-        prompt: runPayload.prompt,
-        cwd: project.directory
-      });
-    }
     return invoke<WorkerCommandResult>("run_worker", {
       workerId,
       taskTitle: task.title,
@@ -1273,11 +1223,7 @@ export function App() {
 
       const runtime = await resolveWorkerRuntime(kind, config);
       if (runtime === "missing") {
-        setNotice(`${label} CLI 未检测到，请先安装或配置（Windows/WSL）。`);
-        return;
-      }
-      if (runtime === "wsl" && !windowsPathToWslMntPath(project.directory)) {
-        setNotice(`项目目录无法转换为 WSL 路径，请使用 Windows 盘符目录：${project.directory}`);
+        setNotice(`${label} CLI 未检测到，请先安装或配置。`);
         return;
       }
 
@@ -1308,10 +1254,7 @@ export function App() {
         }
         try {
           const payload = buildWorkerRunPayload(workerId, config, task, project);
-          const wslArgs = runtime === "wsl" ? buildWslRunArgs(config.executable, payload.args, project.directory) : null;
-          const commandExecutable = runtime === "wsl" ? "wsl" : config.executable;
-          const commandArgs = runtime === "wsl" ? (wslArgs ?? ["-e", config.executable, ...payload.args]) : payload.args;
-          appendWorkerLog(workerId, `\n$ ${formatCommandForLog(commandExecutable, commandArgs)}\n`);
+          appendWorkerLog(workerId, `\n$ ${formatCommandForLog(config.executable, payload.args)}\n`);
           const beforeLen = workerLogsRef.current[workerId]?.length ?? 0;
           const result = await runWorkerCommand(runtime, workerId, config, task, project, payload);
           const afterLen = workerLogsRef.current[workerId]?.length ?? 0;

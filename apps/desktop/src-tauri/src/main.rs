@@ -18,6 +18,8 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri::State;
 
+const ENABLE_WSL_CONSTITUTION_SYNC: bool = false;
+
 #[derive(Serialize)]
 struct WorkerCommandResult {
   success: bool,
@@ -857,7 +859,9 @@ fn write_constitution_file(content: String) -> Result<bool, String> {
   std::fs::write(&path, content.as_bytes()).map_err(|e| format!("写入宪法文件失败: {e}"))?;
 
   #[cfg(target_os = "windows")]
-  sync_constitution_to_wsl(&content);
+  if ENABLE_WSL_CONSTITUTION_SYNC {
+    sync_constitution_to_wsl(&content);
+  }
 
   Ok(true)
 }

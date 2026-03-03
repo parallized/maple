@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { copyTextToClipboard } from "../lib/clipboard";
 import type { UiLanguage } from "../lib/constants";
+import { ENABLE_WSL_INTEGRATION } from "../lib/runtime-flags";
 import { hasTauriRuntime } from "../lib/utils";
 import { INSTALL_TARGETS, type InstallTargetId, formatInstallTargetIcon, formatInstallTargetLabel } from "../lib/install-targets";
 import { InstallTaskWindow, type InstallTargetResult, type InstallTargetState } from "./InstallTaskWindow";
@@ -88,6 +89,7 @@ export function McpSkillsInstallCard({
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const isTauri = hasTauriRuntime();
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
+  const supportsWslRuntime = ENABLE_WSL_INTEGRATION && isWindows;
   const [open, setOpen] = useState(defaultOpen);
   const [platform, setPlatform] = useState<InstallPlatform>(() => detectPlatform());
   const [copied, setCopied] = useState(false);
@@ -185,7 +187,7 @@ export function McpSkillsInstallCard({
           }
         }
 
-        if (!isWindows) {
+        if (!supportsWslRuntime) {
           next["wsl:codex"] = false;
           next["wsl:claude"] = false;
           next["wsl:iflow"] = false;
@@ -229,7 +231,7 @@ export function McpSkillsInstallCard({
       ? t(`将安装：${installTargetHintLabels.join("、")}`, `Will install: ${installTargetHintLabels.join(", ")}`)
       : "";
 
-  const probeIds: InstallTargetId[] = isWindows
+  const probeIds: InstallTargetId[] = supportsWslRuntime
     ? ["codex", "claude", "iflow", "gemini", "opencode", "wsl:codex", "wsl:claude", "wsl:iflow", "wsl:gemini", "wsl:opencode"]
     : ["codex", "claude", "iflow", "gemini", "opencode"];
   const detectedLabels = probeIds.filter((id) => Boolean(probeById[id]?.cliFound)).map((id) => formatInstallTargetLabel(id));
@@ -323,7 +325,7 @@ export function McpSkillsInstallCard({
               </div>
 
               <div className="flex flex-wrap gap-1.5">
-                {(isWindows
+                {(supportsWslRuntime
                   ? (["codex", "claude", "iflow", "gemini", "opencode", "wsl:codex", "wsl:claude", "wsl:iflow", "wsl:gemini", "wsl:opencode", "windsurf"] as const)
                   : (["codex", "claude", "iflow", "gemini", "opencode", "windsurf"] as const)
                 ).map((id) => {
@@ -372,10 +374,15 @@ export function McpSkillsInstallCard({
 
               <div className="flex items-center justify-between gap-2">
                 <p className="m-0 text-[11px] text-muted font-sans opacity-80">
-                  {t(
-                    "将写入全局配置目录（~/.codex、~/.claude、~/.iflow、~/.gemini、~/.config/opencode、~/.codeium）。Windows 上支持分别配置本机与 WSL：会写入对应的 home 目录，并在对应环境内注册 MCP。",
-                    "Writes to global config directories (~/.codex, ~/.claude, ~/.iflow, ~/.gemini, ~/.config/opencode, ~/.codeium). On Windows, Maple can configure both Local and WSL: it writes to the corresponding home directory and registers MCP in that runtime."
-                  )}
+                  {supportsWslRuntime
+                    ? t(
+                        "将写入全局配置目录（~/.codex、~/.claude、~/.iflow、~/.gemini、~/.config/opencode、~/.codeium）。Windows 上支持分别配置本机与 WSL：会写入对应的 home 目录，并在对应环境内注册 MCP。",
+                        "Writes to global config directories (~/.codex, ~/.claude, ~/.iflow, ~/.gemini, ~/.config/opencode, ~/.codeium). On Windows, Maple can configure both Local and WSL: it writes to the corresponding home directory and registers MCP in that runtime."
+                      )
+                    : t(
+                        "将写入全局配置目录（~/.codex、~/.claude、~/.iflow、~/.gemini、~/.config/opencode、~/.codeium）。当前仅配置本机环境（Local）。",
+                        "Writes to global config directories (~/.codex, ~/.claude, ~/.iflow, ~/.gemini, ~/.config/opencode, ~/.codeium). Only Local runtime is configured for now."
+                      )}
                 </p>
                 <div className="flex items-center gap-2 flex-none">
                   {canReopenInstallWindow ? (
@@ -414,11 +421,11 @@ export function McpSkillsInstallCard({
                             iflow: targets.iflow,
                             gemini: targets.gemini,
                             opencode: targets.opencode,
-                            wslCodex: targets["wsl:codex"],
-                            wslClaude: targets["wsl:claude"],
-                            wslIflow: targets["wsl:iflow"],
-                            wslGemini: targets["wsl:gemini"],
-                            wslOpencode: targets["wsl:opencode"],
+                            wslCodex: supportsWslRuntime && targets["wsl:codex"],
+                            wslClaude: supportsWslRuntime && targets["wsl:claude"],
+                            wslIflow: supportsWslRuntime && targets["wsl:iflow"],
+                            wslGemini: supportsWslRuntime && targets["wsl:gemini"],
+                            wslOpencode: supportsWslRuntime && targets["wsl:opencode"],
                             windsurf: targets.windsurf,
                             installId: nextInstallId
                           }

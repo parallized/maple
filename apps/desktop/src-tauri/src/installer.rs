@@ -13,6 +13,11 @@ use chrono::Utc;
 
 const MAPLE_MCP_URL: &str = "http://localhost:45819/mcp";
 const SKILLS_VERSION: u32 = 3;
+const ENABLE_WSL_INTEGRATION: bool = false;
+
+fn should_enable_wsl_integration() -> bool {
+  ENABLE_WSL_INTEGRATION && cfg!(target_os = "windows")
+}
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -758,7 +763,14 @@ pub fn probe_install_targets() -> Result<Vec<InstallTargetProbe>, String> {
   let mut npm_native: Option<bool> = None;
   let mut npm_wsl: Option<bool> = None;
 
-  let order: [(&str, &str); 10] = [
+  const NATIVE_ORDER: [(&str, &str); 5] = [
+    ("codex", "native"),
+    ("claude", "native"),
+    ("iflow", "native"),
+    ("gemini", "native"),
+    ("opencode", "native"),
+  ];
+  const FULL_ORDER: [(&str, &str); 10] = [
     ("codex", "native"),
     ("claude", "native"),
     ("iflow", "native"),
@@ -770,10 +782,15 @@ pub fn probe_install_targets() -> Result<Vec<InstallTargetProbe>, String> {
     ("wsl:gemini", "wsl"),
     ("wsl:opencode", "wsl"),
   ];
+  let order = if should_enable_wsl_integration() {
+    &FULL_ORDER[..]
+  } else {
+    &NATIVE_ORDER[..]
+  };
 
   let mut probes: Vec<InstallTargetProbe> = Vec::with_capacity(order.len());
 
-  for (id, runtime) in order {
+  for &(id, runtime) in order {
     if let Some(cached) = cache.get(id) {
       if cache_ok(cached) {
         probes.push(cached.clone());
@@ -2336,7 +2353,7 @@ pub fn install_mcp_and_skills_with_events(
     emitter.target_result(result.clone());
     targets.push(result);
   }
-  if options.wsl_codex {
+  if should_enable_wsl_integration() && options.wsl_codex {
     let result = install_codex(&home, &emitter, InstallRuntime::Wsl, "wsl:codex");
     emitter.target_result(result.clone());
     targets.push(result);
@@ -2346,7 +2363,7 @@ pub fn install_mcp_and_skills_with_events(
     emitter.target_result(result.clone());
     targets.push(result);
   }
-  if options.wsl_claude {
+  if should_enable_wsl_integration() && options.wsl_claude {
     let result = install_claude(&home, &emitter, InstallRuntime::Wsl, "wsl:claude");
     emitter.target_result(result.clone());
     targets.push(result);
@@ -2356,7 +2373,7 @@ pub fn install_mcp_and_skills_with_events(
     emitter.target_result(result.clone());
     targets.push(result);
   }
-  if options.wsl_iflow {
+  if should_enable_wsl_integration() && options.wsl_iflow {
     let result = install_iflow(&home, &emitter, InstallRuntime::Wsl, "wsl:iflow");
     emitter.target_result(result.clone());
     targets.push(result);
@@ -2366,7 +2383,7 @@ pub fn install_mcp_and_skills_with_events(
     emitter.target_result(result.clone());
     targets.push(result);
   }
-  if options.wsl_gemini {
+  if should_enable_wsl_integration() && options.wsl_gemini {
     let result = install_gemini(&home, &emitter, InstallRuntime::Wsl, "wsl:gemini");
     emitter.target_result(result.clone());
     targets.push(result);
@@ -2376,7 +2393,7 @@ pub fn install_mcp_and_skills_with_events(
     emitter.target_result(result.clone());
     targets.push(result);
   }
-  if options.wsl_opencode {
+  if should_enable_wsl_integration() && options.wsl_opencode {
     let result = install_opencode(&home, &emitter, InstallRuntime::Wsl, "wsl:opencode");
     emitter.target_result(result.clone());
     targets.push(result);

@@ -10,6 +10,7 @@ import type { WorkerKind } from "../domain";
 import type { UiLanguage } from "../lib/constants";
 import type { InstallTargetId } from "../lib/install-targets";
 import { INSTALL_TARGETS, formatInstallTargetLabel } from "../lib/install-targets";
+import { ENABLE_WSL_INTEGRATION } from "../lib/runtime-flags";
 import { hasTauriRuntime } from "../lib/utils";
 
 export type WorkerProbe = {
@@ -92,6 +93,7 @@ export function WorkerConfigCard({
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const isTauri = hasTauriRuntime();
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
+  const supportsWslRuntime = ENABLE_WSL_INTEGRATION && isWindows;
 
   const [installing, setInstalling] = useState(false);
   const [installWindowOpen, setInstallWindowOpen] = useState(false);
@@ -250,7 +252,7 @@ export function WorkerConfigCard({
     },
   ];
 
-  if (isWindows) {
+  if (supportsWslRuntime) {
     runtimeRows.push({
       id: wslTargetId,
       runtime: "wsl",

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type { WorkerKind } from "../domain";
 import { WORKER_KINDS } from "../lib/constants";
+import { ENABLE_WSL_INTEGRATION } from "../lib/runtime-flags";
 import { hasTauriRuntime } from "../lib/utils";
 import { WorkerLogo } from "./WorkerLogo";
 
@@ -21,6 +22,8 @@ type InstallTargetProbe = {
 
 export function WorkerPickerModal({ onSelect, onClose }: WorkerPickerModalProps) {
   const isTauri = hasTauriRuntime();
+  const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
+  const supportsWslRuntime = ENABLE_WSL_INTEGRATION && isWindows;
   const [loading, setLoading] = useState(isTauri);
   const [probeError, setProbeError] = useState("");
   const [probeById, setProbeById] = useState<Record<string, InstallTargetProbe>>({});
@@ -63,13 +66,13 @@ export function WorkerPickerModal({ onSelect, onClose }: WorkerPickerModalProps)
         const native = probeById[item.kind];
         const wsl = probeById[`wsl:${item.kind}`];
         const nativeReady = Boolean(native?.cliFound) && Boolean(native?.installed);
-        const wslReady = Boolean(wsl?.cliFound) && Boolean(wsl?.installed);
+        const wslReady = supportsWslRuntime && Boolean(wsl?.cliFound) && Boolean(wsl?.installed);
         if (!nativeReady && !wslReady) return null;
         const hint = !nativeReady && wslReady ? "WSL" : "";
         return { ...item, hint };
       })
       .filter(Boolean) as Array<{ kind: WorkerKind; label: string; color: string; hint: string }>;
-  }, [isTauri, probeById]);
+  }, [isTauri, probeById, supportsWslRuntime]);
 
   return (
     <div className="ui-modal" role="dialog" aria-modal="true" aria-label="选择 Worker">
