@@ -78,6 +78,13 @@ export function createWorkerExecutionPrompt(input: WorkerExecutionPromptInput): 
           "允许：代码/命令/路径/标识符保持原样。"
         ].join("\n");
 
+  // Gemini CLI resolves /maple via ~/.gemini/commands/maple.toml, so the
+  // prompt passed to `-p` must be the bare trigger only (no extra text that
+  // would cause the shell to quote the value).
+  if (input.workerKind === "gemini") {
+    return trigger;
+  }
+
   return `${trigger}\n\n${languageHint}`;
 }
 

@@ -91,7 +91,7 @@ export const DEFAULT_WORKER_CONFIGS: Record<WorkerKind, WorkerConfig> = {
   },
   gemini: {
     executable: "gemini",
-    runArgs: "-p --output-format json --yolo --allow-all",
+    runArgs: "-p --output-format json --approval-mode=yolo",
     consoleArgs: "",
     probeArgs: "--version",
     dangerMode: false,
