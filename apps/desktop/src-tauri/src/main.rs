@@ -694,6 +694,19 @@ fn run_command_stream(
   })
 }
 
+/// Noise patterns produced by node-pty's conpty helper on Windows.
+/// The helper crashes with "AttachConsole failed" when the parent process
+/// has no real console (e.g. CREATE_NO_WINDOW).  The crash is non-fatal
+/// for the main CLI process, so we silently discard these chunks.
+const CONPTY_NOISE: &[&str] = &[
+  "conpty_console_list_agent",
+  "AttachConsole failed",
+];
+
+fn is_conpty_noise(text: &str) -> bool {
+  CONPTY_NOISE.iter().any(|pat| text.contains(pat))
+}
+
 fn stream_chunks<R: Read>(
   window: tauri::Window,
   worker_id: String,
@@ -709,6 +722,9 @@ fn stream_chunks<R: Read>(
       Ok(0) => break,
       Ok(size) => {
         let chunk = String::from_utf8_lossy(&buffer[..size]).to_string();
+        if is_conpty_noise(&chunk) {
+          continue;
+        }
         out.push_str(&chunk);
         let _ = window.emit(
           "maple://worker-log",
@@ -742,6 +758,9 @@ fn stream_chunks_app<R: Read>(
       Ok(0) => break,
       Ok(size) => {
         let chunk = String::from_utf8_lossy(&buffer[..size]).to_string();
+        if is_conpty_noise(&chunk) {
+          continue;
+        }
         out.push_str(&chunk);
         let _ = app_handle.emit(
           "maple://worker-log",
