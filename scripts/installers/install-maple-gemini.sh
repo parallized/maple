@@ -12,14 +12,13 @@ if ! command -v gemini >/dev/null 2>&1; then
 fi
 
 gemini mcp remove maple --scope user >/dev/null 2>&1 || true
-gemini mcp add --transport http --scope user maple "${MAPLE_MCP_URL}"
+gemini mcp add --scope user maple node "${PWD}/packages/maple-mcp-server/dist/index.js"
 
 print_step "Installing local /maple command for Gemini CLI"
 write_gemini_command
 
 echo
 echo "[maple-installer] Gemini setup done."
-echo "[maple-installer] MCP registered as HTTP server at ${MAPLE_MCP_URL}"
+echo "[maple-installer] MCP registered as stdio server via node ${PWD}/packages/maple-mcp-server/dist/index.js"
 echo "[maple-installer] Command written to ~/.gemini/commands/maple.toml"
 echo "[maple-installer] Restart Gemini CLI session and run /maple"
-

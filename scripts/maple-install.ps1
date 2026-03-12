@@ -213,7 +213,9 @@ function Install-Gemini {
   }
 
   try { & gemini mcp remove maple --scope user *> $null } catch { }
-  & gemini mcp add --transport http --scope user maple $McpUrl | Out-Null
+  $mapleRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+  $mcpServerEntry = Join-Path $mapleRoot "packages/maple-mcp-server/dist/index.js"
+  & gemini mcp add --scope user maple node $mcpServerEntry | Out-Null
 
   Write-Step "Installing local /maple command for Gemini CLI"
   $home = Get-UserHome
@@ -241,7 +243,7 @@ Output mcp_decision with status, comment, and tags.
 
   Write-Host ""
   Write-Host "[maple-installer] Gemini setup done."
-  Write-Host "[maple-installer] MCP registered as HTTP server at $McpUrl"
+  Write-Host "[maple-installer] MCP registered as stdio server via node $mcpServerEntry"
   Write-Host "[maple-installer] Command written to $commandPath"
   Write-Host "[maple-installer] Restart Gemini CLI session and run /maple"
 }

@@ -5,6 +5,7 @@ import { parseMapleAssetUrl } from "./maple-assets";
 type MarkdownListItem = {
   text: string;
   checked: boolean | null;
+  children: MarkdownListItem[];
 };
 
 type MarkdownBlock =
@@ -119,19 +120,29 @@ function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         const itemMatch = current.match(matcher);
         if (!itemMatch) break;
         const content = (itemMatch[1] ?? "").trim();
+        const item: MarkdownListItem = { checked: null, text: content, children: [] };
         if (!ordered) {
           const taskMatch = content.match(/^\[( |x|X)\]\s+(.+)$/);
           if (taskMatch) {
-            items.push({
-              checked: taskMatch[1]?.toLowerCase() === "x",
-              text: taskMatch[2] ?? ""
-            });
-            index += 1;
-            continue;
+            item.checked = taskMatch[1]?.toLowerCase() === "x";
+            item.text = taskMatch[2] ?? "";
           }
         }
-        items.push({ checked: null, text: content });
+        items.push(item);
         index += 1;
+
+        while (index < lines.length) {
+          const subLine = (lines[index] ?? "").trimEnd();
+          const subMatch = subLine.match(/^\s+([-*+]|\d+\.)\s+(.+)$/);
+          if (subMatch) {
+            item.children.push({ checked: null, text: (subMatch[2] ?? "").trim(), children: [] });
+            index += 1;
+          } else if (/^\s+\S/.test(subLine)) {
+            index += 1;
+          } else {
+            break;
+          }
+        }
       }
       blocks.push({ kind: "list", ordered, items });
       continue;
@@ -262,6 +273,13 @@ export function renderTaskMarkdown(markdown: string, emptyText = "无"): ReactNo
                     <span className={item.checked ? "opacity-65 line-through" : ""}>
                       {renderInlineMarkdown(item.text)}
                     </span>
+                    {item.children.length > 0 && (
+                      <ul className="list-disc pl-5 space-y-1 mt-1">
+                        {item.children.map((child, childIndex) => (
+                          <li key={`${blockIndex}-${itemIndex}-${childIndex}`}>{renderInlineMarkdown(child.text)}</li>
+                        ))}
+                      </ul>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -272,7 +290,16 @@ export function renderTaskMarkdown(markdown: string, emptyText = "无"): ReactNo
           return (
             <ListTag key={`list-${blockIndex}`} className={`${block.ordered ? "list-decimal" : "list-disc"} pl-5 space-y-1`}>
               {block.items.map((item, itemIndex) => (
-                <li key={`${blockIndex}-${itemIndex}`}>{renderInlineMarkdown(item.text)}</li>
+                <li key={`${blockIndex}-${itemIndex}`}>
+                  {renderInlineMarkdown(item.text)}
+                  {item.children.length > 0 && (
+                    <ul className="list-disc pl-5 space-y-1 mt-1">
+                      {item.children.map((child, childIndex) => (
+                        <li key={`${blockIndex}-${itemIndex}-${childIndex}`}>{renderInlineMarkdown(child.text)}</li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
               ))}
             </ListTag>
           );

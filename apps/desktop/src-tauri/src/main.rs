@@ -523,15 +523,17 @@ fn open_in_editor(path: String, app: Option<String>) -> Result<bool, String> {
 
   #[cfg(target_os = "windows")]
   let mut command = {
-    let mut cmd = match app_key.as_str() {
-      "vscode" => Command::new("code"),
-      "cursor" => Command::new("cursor"),
-      "windsurf" => Command::new("windsurf"),
-      "visual_studio" => Command::new("devenv"),
-      "github_desktop" => Command::new("github"),
-      _ => Command::new("explorer"),
+    let editor_cmd = match app_key.as_str() {
+      "vscode" => "code",
+      "cursor" => "cursor",
+      "windsurf" => "windsurf",
+      "visual_studio" => "devenv",
+      "github_desktop" => "github",
+      _ => "explorer",
     };
-    cmd.arg(&target);
+    let mut cmd = Command::new("cmd");
+    cmd.arg("/D").arg("/C").arg(editor_cmd).arg(&target);
+    process_utils::apply_no_window(&mut cmd);
     cmd
   };
 

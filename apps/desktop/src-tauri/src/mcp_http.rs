@@ -1,6 +1,6 @@
 use axum::{
     extract::State as AxumState,
-    http::StatusCode,
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     routing::post,
     Json, Router,
@@ -19,6 +19,8 @@ use crate::maple_fs;
 
 const MCP_PORT: u16 = 45819;
 const MCP_IMAGE_MAX_BYTES: usize = 3 * 1024 * 1024;
+const MCP_SESSION_ID: &str = "maple-http-session";
+const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
 
 fn mime_from_extension(ext: &str) -> &'static str {
     let normalized = ext.trim().to_lowercase();
@@ -1137,6 +1139,7 @@ fn tool_finish_worker(args: &Value, state: &McpHttpState) -> Value {
 
 async fn handle_mcp_post(
     AxumState(state): AxumState<Arc<McpHttpState>>,
+    headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
     let id = body.get("id").cloned();
@@ -1145,15 +1148,39 @@ async fn handle_mcp_post(
         .and_then(|v| v.as_str())
         .unwrap_or("");
     let params = body.get("params").cloned().unwrap_or(json!({}));
+    let header_session_id = headers
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
 
     // Notification (no id) → 202 Accepted
     if id.is_none() || id.as_ref() == Some(&Value::Null) {
-        return (StatusCode::ACCEPTED, Json(json!(null)));
+        return (
+            StatusCode::ACCEPTED,
+            mcp_response_headers(false),
+            Json(json!(null)),
+        );
+    }
+
+    if method != "initialize" && header_session_id != Some(MCP_SESSION_ID) {
+        return (
+            StatusCode::BAD_REQUEST,
+            mcp_response_headers(false),
+            Json(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32000,
+                    "message": "Bad Request: Mcp-Session-Id header is required"
+                }
+            })),
+        );
     }
 
     let result = match method {
         "initialize" => json!({
-            "protocolVersion": "2025-03-26",
+            "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": { "tools": {} },
             "serverInfo": { "name": "maple", "version": "0.1.4" }
         }),
@@ -1188,6 +1215,7 @@ async fn handle_mcp_post(
         _ => {
             return (
                 StatusCode::OK,
+                mcp_response_headers(false),
                 Json(json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -1199,8 +1227,67 @@ async fn handle_mcp_post(
 
     (
         StatusCode::OK,
+        mcp_response_headers(method == "initialize"),
         Json(json!({ "jsonrpc": "2.0", "id": id, "result": result })),
     )
+}
+
+async fn handle_mcp_get() -> impl IntoResponse {
+    method_not_allowed_response()
+}
+
+async fn handle_mcp_delete(headers: HeaderMap) -> impl IntoResponse {
+    let header_session_id = headers
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+
+    if header_session_id != Some(MCP_SESSION_ID) {
+        return (
+            StatusCode::BAD_REQUEST,
+            mcp_response_headers(false),
+            Json(json!({
+                "jsonrpc": "2.0",
+                "id": Value::Null,
+                "error": {
+                    "code": -32000,
+                    "message": "Bad Request: Mcp-Session-Id header is required"
+                }
+            })),
+        );
+    }
+
+    method_not_allowed_response()
+}
+
+fn method_not_allowed_response() -> (StatusCode, HeaderMap, Json<Value>) {
+    let mut headers = mcp_response_headers(false);
+    headers.insert("allow", HeaderValue::from_static("POST, DELETE, GET"));
+    (
+        StatusCode::METHOD_NOT_ALLOWED,
+        headers,
+        Json(json!({
+            "jsonrpc": "2.0",
+            "id": Value::Null,
+            "error": {
+                "code": -32000,
+                "message": "Method not allowed."
+            }
+        })),
+    )
+}
+
+fn mcp_response_headers(include_session_id: bool) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "mcp-protocol-version",
+        HeaderValue::from_static(MCP_PROTOCOL_VERSION),
+    );
+    if include_session_id {
+        headers.insert("mcp-session-id", HeaderValue::from_static(MCP_SESSION_ID));
+    }
+    headers
 }
 
 fn tool_definitions() -> Vec<Value> {
@@ -1352,7 +1439,7 @@ pub fn start(app_handle: tauri::AppHandle) {
     let state = Arc::new(McpHttpState { app_handle });
     tauri::async_runtime::spawn(async move {
         let app = Router::new()
-            .route("/mcp", post(handle_mcp_post))
+            .route("/mcp", post(handle_mcp_post).get(handle_mcp_get).delete(handle_mcp_delete))
             .with_state(state);
 
         match tokio::net::TcpListener::bind(format!("127.0.0.1:{MCP_PORT}")).await {

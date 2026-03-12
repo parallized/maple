@@ -13,9 +13,11 @@ Maple 是一个面向本地工程的 AI 工作台（自带 MCP & Skills）
 
 重要的是，每次完成都会提醒你验收（待验收的报告会打黄色标记）
 
-![detail page](docs/assets/maple.png)
+<video src="docs/assets/video.mp4" controls width="100%">
+  您的浏览器不支持视频播放。
+</video>
 
-> 目前正处于快速迭代期，Windows 侧容易出现 BUG，可在 Q 群 1087691477 交流反馈
+> 目前正处于快速迭代期，容易出现 BUG，可在 Q 群 1087691477 交流反馈
 
 ![detail page](docs/assets/summary.png)
 ![detail page](docs/assets/detail-page.png)
