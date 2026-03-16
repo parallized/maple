@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react";
-import { motion, AnimatePresence, Reorder } from "framer-motion";
+import { motion, Reorder } from "framer-motion";
 import { WorkerLogo } from "./WorkerLogo";
 import { SplitText } from "./ReactBits";
 import type { ViewKey } from "../domain";
@@ -81,7 +81,6 @@ export function TopNav({
             onReorder={onReorderProjects}
             className="flex items-center gap-2"
           >
-            <AnimatePresence>
               {projects.map((project, index) => {
               const active = view === "board" && boardProjectId === project.id;
               const confirmCount = project.tasks.filter((t) => t.status === "已完成" && t.needsConfirmation).length;
@@ -105,6 +104,7 @@ export function TopNav({
                     key={project.id}
                     value={project.id}
                     className="flex"
+                    style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
                     whileDrag={{
                       scale: 1.03,
                       y: -2,
@@ -113,9 +113,7 @@ export function TopNav({
                     }}
                   >
                     <motion.button
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0, transition: { delay: index * 0.05 } }}
-                      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
+                      animate={{ opacity: 1, x: 0 }}
                       transition={{ type: "spring", stiffness: 400, damping: 30 }}
                       type="button"
                       className={`topnav-tab ${active ? "active" : ""}`}
@@ -146,7 +144,6 @@ export function TopNav({
                   </Reorder.Item>
                 );
               })}
-            </AnimatePresence>
           </Reorder.Group>
           <motion.button
             whileHover={{ scale: 1.05 }}
