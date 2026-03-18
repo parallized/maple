@@ -1257,7 +1257,7 @@ async fn handle_mcp_post(
             json!({
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": { "tools": {} },
-                "serverInfo": { "name": "maple", "version": "0.1.4" }
+                "serverInfo": { "name": "maple", "version": "0.1.5" }
             })
         }
 

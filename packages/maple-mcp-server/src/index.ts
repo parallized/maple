@@ -166,7 +166,7 @@ function findLatestExecutionSummary(reports: TaskReport[]): string | null {
 
 const server = new McpServer({
   name: "maple",
-  version: "0.1.4",
+  version: "0.1.5",
 });
 
 server.tool(
