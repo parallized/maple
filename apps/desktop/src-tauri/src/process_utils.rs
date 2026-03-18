@@ -1,5 +1,35 @@
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+fn is_codex_executable(executable: &str) -> bool {
+  let trimmed = executable.trim().trim_matches('"').trim_matches('\'');
+  if trimmed.is_empty() {
+    return false;
+  }
+
+  let lower = trimmed.to_ascii_lowercase();
+  let file_name = lower
+    .rsplit(['\\', '/'])
+    .next()
+    .unwrap_or(lower.as_str());
+
+  matches!(file_name, "codex" | "codex.exe" | "codex.cmd" | "codex.bat")
+}
+
+#[cfg(target_os = "windows")]
+fn apply_utf8_env(command: &mut Command) {
+  command
+    .env("PYTHONUTF8", "1")
+    .env("PYTHONIOENCODING", "UTF-8")
+    .env("LANG", "en_US.UTF-8")
+    .env("LC_ALL", "en_US.UTF-8");
+}
+
+#[cfg(target_os = "windows")]
+fn escape_powershell_single_quoted(value: &str) -> String {
+  value.replace("'", "''")
+}
+
 pub fn build_cli_command(executable: &str, args: &[String]) -> Command {
   #[cfg(target_os = "windows")]
   {
@@ -8,6 +38,32 @@ pub fn build_cli_command(executable: &str, args: &[String]) -> Command {
     if lower == "wsl" || lower.ends_with("\\wsl.exe") || lower.ends_with("/wsl.exe") {
       let mut command = Command::new(trimmed);
       command.args(args);
+      apply_utf8_env(&mut command);
+      apply_no_window(&mut command);
+      return command;
+    }
+
+    if is_codex_executable(executable) {
+      let script = std::iter::once(escape_powershell_single_quoted(trimmed))
+        .chain(args.iter().map(|arg| escape_powershell_single_quoted(arg)))
+        .map(|part| format!("'{}'", part))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+      let mut command = Command::new("powershell.exe");
+      command
+        .arg("-NoLogo")
+        .arg("-NoProfile")
+        .arg("-NonInteractive")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-Command")
+        .arg(format!(
+          "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $OutputEncoding=[System.Text.UTF8Encoding]::new($false); & {}",
+          script
+        ));
+      apply_utf8_env(&mut command);
+      maybe_apply_claude_git_bash_env(&mut command, executable);
       apply_no_window(&mut command);
       return command;
     }
@@ -15,6 +71,7 @@ pub fn build_cli_command(executable: &str, args: &[String]) -> Command {
     let mut command = Command::new("cmd");
     command.arg("/D").arg("/C").arg(executable);
     command.args(args);
+    apply_utf8_env(&mut command);
     maybe_apply_claude_git_bash_env(&mut command, executable);
     apply_no_window(&mut command);
     return command;
@@ -178,4 +235,3 @@ fn resolve_git_bash_path() -> Option<std::ffi::OsString> {
     .find(|path| path.is_file())
     .map(|p| p.into_os_string())
 }
-

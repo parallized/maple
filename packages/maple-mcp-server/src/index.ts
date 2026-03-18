@@ -149,6 +149,19 @@ function buildReportHistoryLines(reports: TaskReport[]): string[] {
   return lines;
 }
 
+function findLatestExecutionSummary(reports: TaskReport[]): string | null {
+  const latest = [...reports]
+    .filter((report) => report.content.trim().length > 0)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  if (!latest) return null;
+
+  const content = latest.content.trim();
+  if (content.includes("执行已中断") || content.includes("手动停止")) {
+    return "最近一次执行已中断";
+  }
+  return null;
+}
+
 // ── MCP Server ──
 
 const server = new McpServer({
@@ -273,6 +286,8 @@ server.tool(
     const tags = task.tags.length > 0 ? task.tags.join("、") : "（无）";
     const details = (task.details ?? "").trim();
     const detailsText = details.length > 0 ? details : "（空）";
+    const executionSummary = findLatestExecutionSummary(task.reports ?? []);
+    const reportLines = buildReportHistoryLines(task.reports ?? []);
 
     return {
       content: [
@@ -281,12 +296,15 @@ server.tool(
           text: [
             `任务：${task.title || "（无标题）"}  (id: ${task.id})`,
             `状态：${task.status}`,
+            ...(executionSummary ? [`执行状态：${executionSummary}`] : []),
             `标签：${tags}`,
             `版本：${task.version}`,
             `更新时间：${task.updatedAt}`,
             "",
             "详情：",
             detailsText,
+            "",
+            ...reportLines,
           ].join("\n"),
         },
       ],

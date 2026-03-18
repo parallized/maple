@@ -21,6 +21,7 @@ type WorkerConsoleModalProps = {
     kind: WorkerKind | null;
   }>;
   onClose: () => void;
+  onInterruptWorker: (workerId: string) => void;
   onSelectWorker: (workerId: string) => void;
 };
 
@@ -80,6 +81,7 @@ export function WorkerConsoleModal({
   theme,
   workerPool,
   onClose,
+  onInterruptWorker,
   onSelectWorker
 }: WorkerConsoleModalProps) {
   const terminalHostRef = useRef<HTMLDivElement>(null);
@@ -251,6 +253,16 @@ export function WorkerConsoleModal({
           </div>
 
           <div className="worker-console-actions">
+            {isExecutingTask ? (
+              <button
+                type="button"
+                className="ui-btn ui-btn--xs gap-1.5"
+                onClick={() => onInterruptWorker(workerConsoleWorkerId)}
+              >
+                <Icon icon="mingcute:stop-circle-line" />
+                中断执行
+              </button>
+            ) : null}
             <button
               type="button"
               className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn"

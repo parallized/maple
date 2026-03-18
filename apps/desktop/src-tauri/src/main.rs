@@ -9,6 +9,7 @@ mod tray_status;
 mod process_utils;
 
 use base64::Engine;
+use encoding_rs::{GBK, WINDOWS_1252};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -279,46 +280,7 @@ async fn start_interactive_worker(
   let ttitle = task_title.clone();
 
   tauri::async_runtime::spawn_blocking(move || {
-    let mut pty_command = Command::new("script");
-    pty_command
-      .arg("-q")
-      .arg("/dev/null")
-      .arg(&executable_trimmed)
-      .args(&args)
-      .env("TERM", "xterm-256color")
-      .env("COLORTERM", "truecolor")
-      .env("FORCE_COLOR", "1")
-      .env("CLICOLOR_FORCE", "1")
-      .stdin(Stdio::piped())
-      .stdout(Stdio::piped())
-      .stderr(Stdio::piped());
-
-    if let Some(dir) = normalize_cwd(cwd.clone()) {
-      pty_command.current_dir(dir);
-    }
-
-    let mut child = match pty_command.spawn() {
-      Ok(child) => child,
-      Err(pty_error) => {
-        let mut fallback = process_utils::build_cli_command(&executable_trimmed, &args);
-        fallback
-          .env("TERM", "xterm-256color")
-          .env("COLORTERM", "truecolor")
-          .env("FORCE_COLOR", "1")
-          .env("CLICOLOR_FORCE", "1")
-          .stdin(Stdio::piped())
-          .stdout(Stdio::piped())
-          .stderr(Stdio::piped());
-
-        if let Some(dir) = normalize_cwd(cwd) {
-          fallback.current_dir(dir);
-        }
-
-        fallback
-          .spawn()
-          .map_err(|fallback_error| format!("启动 Worker 失败（PTY+回退均失败）: PTY={pty_error}; fallback={fallback_error}"))?
-      }
-    };
+    let mut child = spawn_worker_process(&executable_trimmed, &args, cwd, "启动 Worker")?;
 
     let worker_key = wid.clone();
     let pid = child.id();
@@ -580,9 +542,134 @@ fn run_command(
   Ok(WorkerCommandResult {
     success: output.status.success(),
     code: output.status.code(),
-    stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
-    stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+    stdout: decode_command_output(&output.stdout).trim().to_string(),
+    stderr: decode_command_output(&output.stderr).trim().to_string(),
   })
+}
+
+fn decode_command_output(bytes: &[u8]) -> String {
+  if bytes.is_empty() {
+    return String::new();
+  }
+
+  if let Ok(text) = String::from_utf8(bytes.to_vec()) {
+    #[cfg(target_os = "windows")]
+    if let Some(repaired) = repair_windows_utf8_mojibake(&text) {
+      return repaired;
+    }
+    return text;
+  }
+
+  #[cfg(target_os = "windows")]
+  {
+    let (decoded, _, had_errors) = GBK.decode(bytes);
+    if !had_errors {
+      let text = decoded.into_owned();
+      if let Some(repaired) = repair_windows_utf8_mojibake(&text) {
+        return repaired;
+      }
+      return text;
+    }
+  }
+
+  let text = String::from_utf8_lossy(bytes).into_owned();
+
+  #[cfg(target_os = "windows")]
+  if let Some(repaired) = repair_windows_utf8_mojibake(&text) {
+    return repaired;
+  }
+
+  text
+}
+
+#[cfg(target_os = "windows")]
+fn repair_windows_utf8_mojibake(text: &str) -> Option<String> {
+  if !looks_like_windows_utf8_mojibake(text) {
+    return None;
+  }
+
+  let (bytes, _, had_errors) = WINDOWS_1252.encode(text);
+  if had_errors {
+    return None;
+  }
+
+  let candidate = String::from_utf8(bytes.into_owned()).ok()?;
+  if candidate == text || !contains_east_asian_text(&candidate) {
+    return None;
+  }
+
+  Some(candidate)
+}
+
+#[cfg(target_os = "windows")]
+fn looks_like_windows_utf8_mojibake(text: &str) -> bool {
+  let suspicious = text.chars().filter(|ch| matches!(
+    ch,
+    'Ã' | 'Â' | 'Å' | 'Æ' | 'Ç' | 'Ð' | 'Ñ' | 'Ø' | 'Ù' | 'Ú' | 'Ý' | 'Þ' | 'ß'
+      | 'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'æ' | 'ç' | 'è' | 'é' | 'ê' | 'ë'
+      | 'ì' | 'í' | 'î' | 'ï' | 'ð' | 'ñ' | 'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø'
+      | 'ù' | 'ú' | 'û' | 'ü' | 'ý' | 'þ' | 'ÿ' | 'Œ' | 'œ' | 'Š' | 'š' | 'Ÿ'
+      | 'Ž' | 'ž' | '€' | '™' | '—' | '–' | '‘' | '’' | '“' | '”'
+  )).count();
+
+  suspicious >= 2
+}
+
+#[cfg(target_os = "windows")]
+fn contains_east_asian_text(text: &str) -> bool {
+  text.chars().any(|ch| matches!(
+    ch as u32,
+    0x3040..=0x30ff | 0x3400..=0x4dbf | 0x4e00..=0x9fff | 0xac00..=0xd7af
+  ))
+}
+
+fn apply_worker_process_env(command: &mut Command, cwd: Option<String>) {
+  command
+    .env("TERM", "xterm-256color")
+    .env("COLORTERM", "truecolor")
+    .env("FORCE_COLOR", "1")
+    .env("CLICOLOR_FORCE", "1")
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+
+  if let Some(dir) = normalize_cwd(cwd) {
+    command.current_dir(dir);
+  }
+}
+
+fn spawn_worker_process(
+  executable: &str,
+  args: &[String],
+  cwd: Option<String>,
+  action_label: &str,
+) -> Result<Child, String> {
+  #[cfg(target_os = "windows")]
+  {
+    let mut command = process_utils::build_cli_command(executable, args);
+    apply_worker_process_env(&mut command, cwd);
+    return command
+      .spawn()
+      .map_err(|error| format!("{action_label}失败: {error}"));
+  }
+
+  #[cfg(not(target_os = "windows"))]
+  {
+    let mut pty_command = Command::new("script");
+    pty_command.arg("-q").arg("/dev/null").arg(executable).args(args);
+    apply_worker_process_env(&mut pty_command, cwd.clone());
+
+    match pty_command.spawn() {
+      Ok(child) => Ok(child),
+      Err(pty_error) => {
+        let mut fallback = process_utils::build_cli_command(executable, args);
+        apply_worker_process_env(&mut fallback, cwd);
+        fallback.spawn().map_err(|fallback_error| {
+          format!("{action_label}失败（PTY+回退均失败）: PTY={pty_error}; fallback={fallback_error}")
+        })
+      }
+    }
+  }
 }
 
 fn run_command_stream(
@@ -599,46 +686,7 @@ fn run_command_stream(
     return Err("worker executable 不能为空".to_string());
   }
 
-  let mut pty_command = Command::new("script");
-  pty_command
-    .arg("-q")
-    .arg("/dev/null")
-    .arg(&executable)
-    .args(&args)
-    .env("TERM", "xterm-256color")
-    .env("COLORTERM", "truecolor")
-    .env("FORCE_COLOR", "1")
-    .env("CLICOLOR_FORCE", "1")
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
-
-  if let Some(dir) = normalize_cwd(cwd.clone()) {
-    pty_command.current_dir(dir);
-  }
-
-  let mut child = match pty_command.spawn() {
-    Ok(child) => child,
-    Err(pty_error) => {
-      let mut fallback = process_utils::build_cli_command(&executable, &args);
-      fallback
-        .env("TERM", "xterm-256color")
-        .env("COLORTERM", "truecolor")
-        .env("FORCE_COLOR", "1")
-        .env("CLICOLOR_FORCE", "1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-      if let Some(dir) = normalize_cwd(cwd) {
-        fallback.current_dir(dir);
-      }
-
-      fallback.spawn().map_err(|fallback_error| {
-        format!("执行命令失败（PTY+回退均失败）: PTY={pty_error}; fallback={fallback_error}")
-      })?
-    }
-  };
+  let mut child = spawn_worker_process(&executable, &args, cwd, "执行命令")?;
 
   let worker_key = worker_id.clone();
   let pid = child.id();
@@ -723,7 +771,7 @@ fn stream_chunks<R: Read>(
     match reader.read(&mut buffer) {
       Ok(0) => break,
       Ok(size) => {
-        let chunk = String::from_utf8_lossy(&buffer[..size]).to_string();
+        let chunk = decode_command_output(&buffer[..size]);
         if is_conpty_noise(&chunk) {
           continue;
         }
@@ -759,7 +807,7 @@ fn stream_chunks_app<R: Read>(
     match reader.read(&mut buffer) {
       Ok(0) => break,
       Ok(size) => {
-        let chunk = String::from_utf8_lossy(&buffer[..size]).to_string();
+        let chunk = decode_command_output(&buffer[..size]);
         if is_conpty_noise(&chunk) {
           continue;
         }

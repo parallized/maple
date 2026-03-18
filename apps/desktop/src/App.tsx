@@ -103,6 +103,7 @@ const PROMPT_PLACEMENT_BY_KIND: Record<WorkerKind, PromptPlacementStrategy> = {
 const PERMISSION_OPTION_PATTERN = /\[(?:y\/n|Y\/n|y\/N)\]|\((?:yes\/no|y\/n)\)|\b(?:yes\/no|y\/n)\b/i;
 const PERMISSION_QUESTION_PATTERN = /\b(?:allow|approve|permission|confirm|accept|continue|proceed)\b/i;
 const PERMISSION_CODE_HINT_PATTERN = /(::|=>|;\s*$|\bfn\b|\bstruct\b|\bpub\b|\bconst\b|\bimport\b|\bexport\b)/i;
+const INTERRUPTED_EXECUTION_REPORT = "执行已中断：Worker 被手动停止，相关任务已重置为待办。";
 
 function clampInteger(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -178,6 +179,8 @@ export function App() {
   const permissionAnsweredAtRef = useRef<Record<string, number>>({});
   const doneProjectIdsRef = useRef<Set<string>>(new Set());
   const doneProjectInitRef = useRef(false);
+  const activeWorkerRunIdRef = useRef<Record<string, string>>({});
+  const interruptedWorkerRunIdsRef = useRef<Set<string>>(new Set());
 
   // ── Derived ──
   const effectiveAiLanguage = aiLanguage === "follow_ui" ? uiLanguage : aiLanguage;
@@ -727,8 +730,10 @@ export function App() {
       const kindLabel = parsed.kind ? WORKER_KINDS.find((w) => w.kind === parsed.kind)?.label : null;
       const projectName = parsed.projectId ? projectsRef.current.find((p) => p.id === parsed.projectId)?.name : null;
       const label = kindLabel && projectName ? `${kindLabel} · ${projectName}` : kindLabel ?? workerId;
+      const currentRunId = activeWorkerRunIdRef.current[workerId];
+      const interrupted = isWorkerRunInterrupted(currentRunId);
       appendWorkerLog(workerId, `\n[exit ${code ?? "?"}] ${success ? "完成" : "失败"}\n`);
-      setNotice(`${label} 会话已结束（exit ${code ?? "?"}）`);
+      setNotice(interrupted ? `${label} 已中断。` : `${label} 会话已结束（exit ${code ?? "?"}）`);
     }).then((unlisten) => {
       if (disposed) {
         unlisten();
@@ -993,7 +998,14 @@ export function App() {
     return project.tasks.filter((task) => task.status === status).length;
   }
 
-  function resetProjectTasksToTodo(projectId: string, statuses: Task["status"][]): number {
+  function resetProjectTasksToTodo(
+    projectId: string,
+    statuses: Task["status"][],
+    options?: {
+      workerKind?: WorkerKind;
+      report?: { author: string; content: string };
+    }
+  ): number {
     const statusSet = new Set(statuses);
     const now = new Date().toISOString();
     let resetCount = 0;
@@ -1003,6 +1015,12 @@ export function App() {
       if (project.id !== projectId) return project;
       let projectChanged = false;
       const nextTasks: Task[] = project.tasks.map((task): Task => {
+        if (options?.workerKind) {
+          const taskWorkerKind = task.targetWorkerKind ?? project.workerKind;
+          if (taskWorkerKind !== options.workerKind) {
+            return task;
+          }
+        }
         if (!statusSet.has(task.status)) return task;
         projectChanged = true;
         resetCount += 1;
@@ -1011,6 +1029,9 @@ export function App() {
           status: "待办" as const,
           needsConfirmation: false,
           updatedAt: now,
+          reports: options?.report
+            ? [...task.reports, createTaskReport(options.report.author, options.report.content)]
+            : task.reports,
         };
       });
       if (!projectChanged) return project;
@@ -1035,14 +1056,33 @@ export function App() {
     }
   }
 
-  async function restartProjectExecution(projectId: string) {
-    const project = projectsRef.current.find((item) => item.id === projectId);
-    if (!project) return;
-    const kind = project.workerKind;
-    if (!kind) { setPickerForProject(projectId); return; }
+  function beginWorkerRun(workerId: string): string {
+    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    activeWorkerRunIdRef.current[workerId] = runId;
+    return runId;
+  }
 
-    const workerId = buildWorkerId(kind, project.id);
-    clearRetryState(projectId);
+  function markWorkerRunInterrupted(workerId: string): string | null {
+    const runId = activeWorkerRunIdRef.current[workerId];
+    if (!runId) return null;
+    interruptedWorkerRunIdsRef.current.add(runId);
+    return runId;
+  }
+
+  function isWorkerRunInterrupted(runId: string | null | undefined): boolean {
+    return Boolean(runId) && interruptedWorkerRunIdsRef.current.has(runId!);
+  }
+
+  async function interruptProjectExecution(workerId: string) {
+    const parsed = parseWorkerId(workerId);
+    const projectId = parsed.projectId;
+    const workerKind = parsed.kind;
+    const label = parsed.kind
+      ? WORKER_KINDS.find((worker) => worker.kind === parsed.kind)?.label ?? parsed.kind
+      : workerId;
+
+    markWorkerRunInterrupted(workerId);
+    if (projectId) clearRetryState(projectId);
 
     const stopped = await stopWorkerProcess(workerId);
     setExecutingWorkers((prev) => {
@@ -1052,7 +1092,64 @@ export function App() {
     });
     setPermissionPrompt((prev) => (prev?.workerId === workerId ? null : prev));
 
-    const resetCount = resetProjectTasksToTodo(projectId, ["进行中", "队列中"]);
+    if (!projectId) {
+      appendWorkerLog(
+        workerId,
+        `\n[手动中断] ${stopped ? "已终止当前 Worker。" : "未检测到可终止的 Worker 进程。"}\n`
+      );
+      setNotice(stopped ? `已中断 ${label}。` : `未检测到可中断的 ${label} 进程。`);
+      return;
+    }
+
+    const resetCount = resetProjectTasksToTodo(projectId, ["进行中", "队列中"], {
+      workerKind: workerKind ?? undefined,
+      report: {
+        author: label,
+        content: INTERRUPTED_EXECUTION_REPORT,
+      },
+    });
+
+    if (resetCount === 0) {
+      appendWorkerLog(
+        workerId,
+        `\n[手动中断] ${stopped ? "当前 Worker 已终止。" : "未检测到可终止的 Worker 进程。"} 当前项目没有执行中的任务。\n`
+      );
+      setNotice(stopped ? `已停止 ${label}，当前项目没有执行中的任务。` : "当前项目没有执行中的任务。");
+      return;
+    }
+
+    appendWorkerLog(
+      workerId,
+      `\n[手动中断] 已重置 ${resetCount} 个任务为待办，${stopped ? "当前 Worker 已终止" : "未检测到可终止的 Worker 进程"}。\n`
+    );
+    setNotice(`已中断 ${label}，并将 ${resetCount} 个任务恢复为待办。`);
+  }
+
+  async function restartProjectExecution(projectId: string) {
+    const project = projectsRef.current.find((item) => item.id === projectId);
+    if (!project) return;
+    const kind = project.workerKind;
+    if (!kind) { setPickerForProject(projectId); return; }
+
+    const workerId = buildWorkerId(kind, project.id);
+    clearRetryState(projectId);
+    markWorkerRunInterrupted(workerId);
+
+    const stopped = await stopWorkerProcess(workerId);
+    setExecutingWorkers((prev) => {
+      const next = new Set(prev);
+      next.delete(workerId);
+      return next;
+    });
+    setPermissionPrompt((prev) => (prev?.workerId === workerId ? null : prev));
+
+    const resetCount = resetProjectTasksToTodo(projectId, ["进行中", "队列中"], {
+      workerKind: kind,
+      report: {
+        author: WORKER_KINDS.find((worker) => worker.kind === kind)?.label ?? kind,
+        content: INTERRUPTED_EXECUTION_REPORT,
+      },
+    });
     if (resetCount === 0) {
       setNotice("当前项目没有执行中的任务。");
       return;
@@ -1210,6 +1307,7 @@ export function App() {
     }
     const pendingTaskIds = new Set(pendingTasks.map((t) => t.id));
     const workerId = buildWorkerId(kind, project.id);
+    const runId = beginWorkerRun(workerId);
     setExecutingWorkers((prev) => {
       const next = new Set(prev);
       next.add(workerId);
@@ -1241,7 +1339,13 @@ export function App() {
         });
       });
 
+      let executionInterrupted = false;
       for (const task of pendingTasks) {
+        if (isWorkerRunInterrupted(runId)) {
+          executionInterrupted = true;
+          break;
+        }
+
         // Check if user deleted this task while worker was running
         const currentProject = projectsRef.current.find((p) => p.id === projectId);
         if (!currentProject || !currentProject.tasks.some((t) => t.id === task.id)) {
@@ -1263,6 +1367,11 @@ export function App() {
             if (result.stderr.trim()) appendWorkerLog(workerId, `${result.stderr.trim()}\n`);
           }
 
+          if (isWorkerRunInterrupted(runId)) {
+            executionInterrupted = true;
+            break;
+          }
+
           // Check if MCP events already updated the task to a terminal state.
           // If so, the worker drove state transitions properly via MCP tools.
           const currentTask = projectsRef.current
@@ -1278,6 +1387,11 @@ export function App() {
           }
 
           // Fallback: worker exited without driving a terminal MCP state.
+          if (isWorkerRunInterrupted(runId)) {
+            executionInterrupted = true;
+            break;
+          }
+
           const report = createTaskReport(label, buildWorkerArchiveReport(result, task.title));
           updateTask(project.id, task.id, (c) => ({
             ...c,
@@ -1288,18 +1402,30 @@ export function App() {
 
     } catch (error) {
           appendWorkerLog(workerId, `\n${String(error)}\n`);
+          if (isWorkerRunInterrupted(runId)) {
+            executionInterrupted = true;
+            break;
+          }
           updateTask(project.id, task.id, (c) => ({ ...c, status: "已阻塞", reports: [...c.reports, createTaskReport(label, `执行异常：${String(error)}`)] }));
         }
       }
-      setNotice(`已触发 ${label} 执行 ${pendingTasks.length} 个任务。`);
+      if (!executionInterrupted) {
+        setNotice(`已触发 ${label} 执行 ${pendingTasks.length} 个任务。`);
+      }
     } finally {
-      setExecutingWorkers((prev) => {
-        const next = new Set(prev);
-        next.delete(workerId);
-        return next;
-      });
+      const shouldClearActiveRun = activeWorkerRunIdRef.current[workerId] === runId;
+      const interrupted = isWorkerRunInterrupted(runId);
+      interruptedWorkerRunIdsRef.current.delete(runId);
+      if (shouldClearActiveRun) {
+        delete activeWorkerRunIdRef.current[workerId];
+        setExecutingWorkers((prev) => {
+          const next = new Set(prev);
+          next.delete(workerId);
+          return next;
+        });
+      }
 
-      if (countTasksByStatus(project.id, "进行中") > 0) {
+      if (!interrupted && countTasksByStatus(project.id, "进行中") > 0) {
         scheduleProjectRetry(project.id, kind, workerId, label);
       } else {
         clearRetryState(project.id);
@@ -1531,6 +1657,7 @@ export function App() {
             workerPool={workerPool}
             theme={theme}
             onClose={() => setWorkerConsoleOpen(false)}
+            onInterruptWorker={(wId) => void interruptProjectExecution(wId)}
             onSelectWorker={(wId) => setWorkerConsoleWorkerId(wId)}
           />
         )}

@@ -1,7 +1,7 @@
 use axum::{
     extract::State as AxumState,
-    http::{HeaderMap, HeaderValue, StatusCode},
-    response::IntoResponse,
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
     routing::post,
     Json, Router,
 };
@@ -12,14 +12,15 @@ use serde_json::{json, Value};
 use std::collections::{HashSet, BTreeMap};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
 
 use crate::maple_fs;
 
 const MCP_PORT: u16 = 45819;
 const MCP_IMAGE_MAX_BYTES: usize = 3 * 1024 * 1024;
-const MCP_SESSION_ID: &str = "maple-http-session";
 const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
 
 fn mime_from_extension(ext: &str) -> &'static str {
@@ -127,6 +128,34 @@ fn read_asset_base64_image(file_name: &str) -> Result<(String, &'static str), St
 
 pub struct McpHttpState {
     pub app_handle: tauri::AppHandle,
+    pub sessions: Mutex<HashSet<String>>,
+    pub next_session_id: AtomicU64,
+}
+
+fn new_session_id(state: &McpHttpState) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let sequence = state.next_session_id.fetch_add(1, Ordering::Relaxed);
+    format!("maple-{}-{now}-{sequence}", std::process::id())
+}
+
+fn create_session(state: &McpHttpState) -> String {
+    let session_id = new_session_id(state);
+    let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+    sessions.insert(session_id.clone());
+    session_id
+}
+
+fn validate_session(state: &McpHttpState, session_id: &str) -> bool {
+    let sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+    sessions.contains(session_id)
+}
+
+fn remove_session(state: &McpHttpState, session_id: &str) -> bool {
+    let mut sessions = state.sessions.lock().unwrap_or_else(|e| e.into_inner());
+    sessions.remove(session_id)
 }
 
 // ── Events emitted to frontend ──
@@ -428,6 +457,20 @@ fn build_report_history_lines(reports: &[TaskReport]) -> Vec<String> {
     lines
 }
 
+fn latest_execution_summary(reports: &[TaskReport]) -> Option<String> {
+    let mut sorted: Vec<&TaskReport> = reports
+        .iter()
+        .filter(|report| !report.content.trim().is_empty())
+        .collect();
+    sorted.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    let latest = sorted.into_iter().next()?;
+    let content = latest.content.trim();
+    if content.contains("执行已中断") || content.contains("手动停止") {
+        return Some("最近一次执行已中断".to_string());
+    }
+    None
+}
+
 fn is_terminal_task_status(status: &str) -> bool {
     matches!(status, "草稿" | "已完成" | "已阻塞" | "需要更多信息")
 }
@@ -666,16 +709,25 @@ fn tool_query_task_details(args: &Value) -> Value {
     } else {
         rewrite_maple_asset_urls(details)
     };
+    let execution_summary = latest_execution_summary(&task.reports);
+    let report_lines = build_report_history_lines(&task.reports);
 
-    let lines: Vec<String> = vec![
+    let mut lines: Vec<String> = vec![
         format!("任务：{}  (id: {})", task.title, task.id),
         format!("状态：{}", task.status),
+    ];
+    if let Some(summary) = execution_summary {
+        lines.push(format!("执行状态：{}", summary));
+    }
+    lines.extend([
         format!("标签：{}", tags),
         format!("更新时间：{}", task.updated_at),
         String::new(),
         "详情：".to_string(),
         details_text,
-    ];
+        String::new(),
+    ]);
+    lines.extend(report_lines);
 
     let mut content: Vec<Value> = vec![json!({ "type": "text", "text": lines.join("\n") })];
     for file_name in assets {
@@ -1158,15 +1210,15 @@ async fn handle_mcp_post(
     if id.is_none() || id.as_ref() == Some(&Value::Null) {
         return (
             StatusCode::ACCEPTED,
-            mcp_response_headers(false),
+            mcp_response_headers(None),
             Json(json!(null)),
         );
     }
 
-    if method != "initialize" && header_session_id != Some(MCP_SESSION_ID) {
+    if method != "initialize" && header_session_id.is_none() {
         return (
             StatusCode::BAD_REQUEST,
-            mcp_response_headers(false),
+            mcp_response_headers(None),
             Json(json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -1178,12 +1230,36 @@ async fn handle_mcp_post(
         );
     }
 
+    if method != "initialize"
+        && !header_session_id
+            .is_some_and(|session_id| validate_session(state.as_ref(), session_id))
+    {
+        return (
+            StatusCode::NOT_FOUND,
+            mcp_response_headers(None),
+            Json(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32001,
+                    "message": "Session not found or expired"
+                }
+            })),
+        );
+    }
+
+    let mut response_session_id: Option<String> = None;
+
     let result = match method {
-        "initialize" => json!({
-            "protocolVersion": MCP_PROTOCOL_VERSION,
-            "capabilities": { "tools": {} },
-            "serverInfo": { "name": "maple", "version": "0.1.4" }
-        }),
+        "initialize" => {
+            let session_id = create_session(state.as_ref());
+            response_session_id = Some(session_id);
+            json!({
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": { "tools": {} },
+                "serverInfo": { "name": "maple", "version": "0.1.4" }
+            })
+        }
 
         "ping" => json!({}),
 
@@ -1215,7 +1291,7 @@ async fn handle_mcp_post(
         _ => {
             return (
                 StatusCode::OK,
-                mcp_response_headers(false),
+                mcp_response_headers(None),
                 Json(json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -1227,7 +1303,7 @@ async fn handle_mcp_post(
 
     (
         StatusCode::OK,
-        mcp_response_headers(method == "initialize"),
+        mcp_response_headers(response_session_id.as_deref()),
         Json(json!({ "jsonrpc": "2.0", "id": id, "result": result })),
     )
 }
@@ -1236,56 +1312,83 @@ async fn handle_mcp_get() -> impl IntoResponse {
     method_not_allowed_response()
 }
 
-async fn handle_mcp_delete(headers: HeaderMap) -> impl IntoResponse {
+async fn handle_mcp_delete(
+    AxumState(state): AxumState<Arc<McpHttpState>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     let header_session_id = headers
         .get("mcp-session-id")
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
         .filter(|v| !v.is_empty());
 
-    if header_session_id != Some(MCP_SESSION_ID) {
-        return (
+    let Some(session_id) = header_session_id else {
+        return response_with_json(
             StatusCode::BAD_REQUEST,
-            mcp_response_headers(false),
-            Json(json!({
+            mcp_response_headers(None),
+            json!({
                 "jsonrpc": "2.0",
                 "id": Value::Null,
                 "error": {
                     "code": -32000,
                     "message": "Bad Request: Mcp-Session-Id header is required"
                 }
-            })),
+            }),
+        );
+    };
+
+    if !remove_session(state.as_ref(), session_id) {
+        return response_with_json(
+            StatusCode::NOT_FOUND,
+            mcp_response_headers(None),
+            json!({
+                "jsonrpc": "2.0",
+                "id": Value::Null,
+                "error": {
+                    "code": -32001,
+                    "message": "Session not found or expired"
+                }
+            }),
         );
     }
 
-    method_not_allowed_response()
+    let headers = mcp_response_headers(None);
+    (StatusCode::NO_CONTENT, headers, "").into_response()
 }
 
-fn method_not_allowed_response() -> (StatusCode, HeaderMap, Json<Value>) {
-    let mut headers = mcp_response_headers(false);
+fn response_with_json(status: StatusCode, headers: HeaderMap, body: Value) -> Response {
+    (status, headers, Json(body)).into_response()
+}
+
+fn method_not_allowed_response() -> Response {
+    let mut headers = mcp_response_headers(None);
     headers.insert("allow", HeaderValue::from_static("POST, DELETE, GET"));
-    (
+    response_with_json(
         StatusCode::METHOD_NOT_ALLOWED,
         headers,
-        Json(json!({
+        json!({
             "jsonrpc": "2.0",
             "id": Value::Null,
             "error": {
                 "code": -32000,
                 "message": "Method not allowed."
             }
-        })),
+        }),
     )
 }
 
-fn mcp_response_headers(include_session_id: bool) -> HeaderMap {
+fn mcp_response_headers(session_id: Option<&str>) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(
         "mcp-protocol-version",
         HeaderValue::from_static(MCP_PROTOCOL_VERSION),
     );
-    if include_session_id {
-        headers.insert("mcp-session-id", HeaderValue::from_static(MCP_SESSION_ID));
+    headers.insert(header::CONNECTION, HeaderValue::from_static("close"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    if let Some(session_id) = session_id {
+        if let Ok(value) = HeaderValue::from_str(session_id) {
+            headers.insert("mcp-session-id", value);
+        }
     }
     headers
 }
@@ -1436,7 +1539,11 @@ fn tool_definitions() -> Vec<Value> {
 // ── Server Startup ──
 
 pub fn start(app_handle: tauri::AppHandle) {
-    let state = Arc::new(McpHttpState { app_handle });
+    let state = Arc::new(McpHttpState {
+        app_handle,
+        sessions: Mutex::new(HashSet::new()),
+        next_session_id: AtomicU64::new(1),
+    });
     tauri::async_runtime::spawn(async move {
         let app = Router::new()
             .route("/mcp", post(handle_mcp_post).get(handle_mcp_get).delete(handle_mcp_delete))
