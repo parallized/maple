@@ -178,21 +178,12 @@ importers:
 
   apps/video:
     dependencies:
-      '@iconify-json/mingcute':
-        specifier: ^1.2.7
-        version: 1.2.7
-      '@iconify/react':
-        specifier: ^5.2.1
-        version: 5.2.1(react@18.3.1)
       '@remotion/cli':
         specifier: 4.0.434
         version: 4.0.434(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@remotion/google-fonts':
         specifier: ^4.0.433
         version: 4.0.433(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@remotion/media':
-        specifier: 4.0.434
-        version: 4.0.434(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -884,12 +875,6 @@ packages:
 
   '@remotion/media-utils@4.0.434':
     resolution: {integrity: sha512-3wBtgZSBNXqwQFqQp6eLwsw3m32zlGhZHsD8bn1TeBJQkHflUXo3WhmGkLoUoZdU8nGutFOoFtckjVq1DEXzpg==}
-    peerDependencies:
-      react: '>=16.8.0'
-      react-dom: '>=16.8.0'
-
-  '@remotion/media@4.0.434':
-    resolution: {integrity: sha512-T6JoX4OjHrhrkQrI0c8AcVp2I9LSRb9B7/pYdJ0AO0rzyvBA7AfLTodQ2I4HwRaWZMSLx8QdO23F2yOsq1lacA==}
     peerDependencies:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
@@ -4307,14 +4292,14 @@ snapshots:
       '@remotion/studio-shared': 4.0.434(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@rspack/core': 1.7.6
       '@rspack/plugin-react-refresh': 1.6.1(react-refresh@0.18.0)
-      css-loader: 5.2.7(webpack@5.105.0)
+      css-loader: 5.2.7(webpack@5.105.0(esbuild@0.25.0))
       esbuild: 0.25.0
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
       react-refresh: 0.18.0
       remotion: 4.0.434(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       source-map: 0.7.3
-      style-loader: 4.0.0(webpack@5.105.0)
+      style-loader: 4.0.0(webpack@5.105.0(esbuild@0.25.0))
       webpack: 5.105.0(esbuild@0.25.0)
     transitivePeerDependencies:
       - '@swc/core'
@@ -4391,14 +4376,6 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
       remotion: 4.0.434(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-
-  '@remotion/media@4.0.434(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
-    dependencies:
-      mediabunny: 1.37.0
-      react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
-      remotion: 4.0.434(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      zod: 4.3.6
 
   '@remotion/player@4.0.434(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
@@ -5780,7 +5757,7 @@ snapshots:
       shebang-command: 2.0.0
       which: 2.0.2
 
-  css-loader@5.2.7(webpack@5.105.0):
+  css-loader@5.2.7(webpack@5.105.0(esbuild@0.25.0)):
     dependencies:
       icss-utils: 5.1.0(postcss@8.5.6)
       loader-utils: 2.0.4
@@ -7496,7 +7473,7 @@ snapshots:
 
   strip-final-newline@2.0.0: {}
 
-  style-loader@4.0.0(webpack@5.105.0):
+  style-loader@4.0.0(webpack@5.105.0(esbuild@0.25.0)):
     dependencies:
       webpack: 5.105.0(esbuild@0.25.0)
 
