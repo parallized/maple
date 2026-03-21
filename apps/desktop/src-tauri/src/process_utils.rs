@@ -30,6 +30,42 @@ fn escape_powershell_single_quoted(value: &str) -> String {
   value.replace("'", "''")
 }
 
+/// Encode bytes as standard base64 (RFC 4648).
+#[cfg(target_os = "windows")]
+fn base64_encode(data: &[u8]) -> String {
+  const CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let mut result = String::with_capacity((data.len() + 2) / 3 * 4);
+  for chunk in data.chunks(3) {
+    let b0 = chunk[0] as u32;
+    let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+    let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+    let triple = (b0 << 16) | (b1 << 8) | b2;
+    result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+    result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+    if chunk.len() > 1 {
+      result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+    } else {
+      result.push('=');
+    }
+    if chunk.len() > 2 {
+      result.push(CHARS[(triple & 0x3F) as usize] as char);
+    } else {
+      result.push('=');
+    }
+  }
+  result
+}
+
+/// Encode a PowerShell script as a base64 UTF-16LE string for `-EncodedCommand`.
+#[cfg(target_os = "windows")]
+fn encode_powershell_command(script: &str) -> String {
+  let utf16_bytes: Vec<u8> = script
+    .encode_utf16()
+    .flat_map(|c| c.to_le_bytes())
+    .collect();
+  base64_encode(&utf16_bytes)
+}
+
 pub fn build_cli_command(executable: &str, args: &[String]) -> Command {
   #[cfg(target_os = "windows")]
   {
@@ -48,7 +84,12 @@ pub fn build_cli_command(executable: &str, args: &[String]) -> Command {
         .chain(args.iter().map(|arg| escape_powershell_single_quoted(arg)))
         .map(|part| format!("'{}'", part))
         .collect::<Vec<_>>()
-        .join(", ");
+        .join(" ");
+
+      let full_script = format!(
+        "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $OutputEncoding=[System.Text.UTF8Encoding]::new($false); & {}",
+        script
+      );
 
       let mut command = Command::new("powershell.exe");
       command
@@ -57,11 +98,8 @@ pub fn build_cli_command(executable: &str, args: &[String]) -> Command {
         .arg("-NonInteractive")
         .arg("-ExecutionPolicy")
         .arg("Bypass")
-        .arg("-Command")
-        .arg(format!(
-          "[Console]::InputEncoding=[System.Text.UTF8Encoding]::new($false); [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $OutputEncoding=[System.Text.UTF8Encoding]::new($false); & {}",
-          script
-        ));
+        .arg("-EncodedCommand")
+        .arg(encode_powershell_command(&full_script));
       apply_utf8_env(&mut command);
       maybe_apply_claude_git_bash_env(&mut command, executable);
       apply_no_window(&mut command);
