@@ -70,14 +70,6 @@ pub fn build_cli_command(executable: &str, args: &[String]) -> Command {
   #[cfg(target_os = "windows")]
   {
     let trimmed = executable.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    if lower == "wsl" || lower.ends_with("\\wsl.exe") || lower.ends_with("/wsl.exe") {
-      let mut command = Command::new(trimmed);
-      command.args(args);
-      apply_utf8_env(&mut command);
-      apply_no_window(&mut command);
-      return command;
-    }
 
     if is_codex_executable(executable) {
       let script = std::iter::once(escape_powershell_single_quoted(trimmed))
@@ -250,7 +242,12 @@ fn resolve_git_bash_path() -> Option<std::ffi::OsString> {
   if let Some(path_var) = env::var_os("PATH") {
     for dir in env::split_paths(&path_var) {
       let lower = dir.to_string_lossy().to_ascii_lowercase();
-      if lower.contains("\\windows\\system32") {
+      // Skip directories that contain WSL bash proxies.
+      if lower.contains("\\windows\\system32")
+        || lower.contains("/windows/system32")
+        || lower.contains("\\windowsapps")
+        || lower.contains("/windowsapps")
+      {
         continue;
       }
 
