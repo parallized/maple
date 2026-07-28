@@ -77,6 +77,9 @@ export function createWorkerExecutionPrompt(input: WorkerExecutionPromptInput): 
           "要求：所有面向用户的输出必须使用中文（submit_task_report.report、mcp_decision.comment、conclusion/changes/verification，以及解释/报错）。",
           "允许：代码/命令/路径/标识符保持原样。"
         ].join("\n");
+  const reportHint = language === "en"
+    ? "Execution report: output only concise Markdown body without headings, categories, or sections. Keep simple tasks within 30 characters, normal tasks within 100, and complex tasks within 300; assess complexity silently."
+    : "执行报告：只输出极简 Markdown 正文，不加标题、分类或分节；自行判断复杂度但不要写出分类，简单任务 30 字内、一般任务 100 字内、复杂任务 300 字内。";
 
   // Gemini CLI resolves /maple via ~/.gemini/commands/maple.toml, so the
   // prompt passed to `-p` must be the bare trigger only (no extra text that
@@ -85,7 +88,7 @@ export function createWorkerExecutionPrompt(input: WorkerExecutionPromptInput): 
     return trigger;
   }
 
-  return `${trigger}\n\n${languageHint}`;
+  return `${trigger}\n\n${languageHint}\n\n${reportHint}`;
 }
 
 function normalizeList(value: unknown): string[] {
@@ -180,18 +183,6 @@ function combinedWorkerOutput(result: WorkerExecutionResultLike): string {
   return stripAnsi([result.stdout, result.stderr].filter(Boolean).join("\n")).trim();
 }
 
-function tailExcerpt(text: string, maxChars: number): string {
-  const trimmed = text.trim();
-  if (!trimmed) return "";
-  if (trimmed.length <= maxChars) return trimmed;
-  const slice = trimmed.slice(trimmed.length - maxChars);
-  const firstNewline = slice.indexOf("\n");
-  if (firstNewline >= 0 && firstNewline < 80) {
-    return slice.slice(firstNewline + 1).trimStart();
-  }
-  return slice.trimStart();
-}
-
 function looksLikeNeedsMoreInfo(output: string): boolean {
   const text = output.trim();
   if (!text) return false;
@@ -245,43 +236,7 @@ export function resolveMcpDecision(result: WorkerExecutionResultLike): MapleMcpD
 }
 
 export function buildWorkerArchiveReport(result: WorkerExecutionResultLike, taskTitle: string): string {
-  const structured = parseWorkerExecutionResult(result);
-  const output = combinedWorkerOutput(result);
-  const rawExcerpt = tailExcerpt(output, 320);
-
-  const reportLines: string[] = [];
-  const statusLine = result.success
-    ? "状态：已阻塞（未收到 MCP 回写）"
-    : "状态：已阻塞（执行失败）";
-
-  reportLines.push(statusLine);
-  reportLines.push("描述：");
-
-  const conclusion = structured?.conclusion?.trim();
-  const baseDescription = result.success
-    ? "Worker 已退出，但未通过 MCP 提交任务状态与报告。"
-    : "Worker 执行失败，且未通过 MCP 提交任务状态与报告。";
-
-  reportLines.push(
-    [
-      baseDescription,
-      conclusion ? `\n\n结论：\n${conclusion}` : taskTitle.trim() ? `\n\n任务：\n${taskTitle.trim()}` : "",
-      result.code != null ? `\n\nExit code：${result.code}` : "",
-      rawExcerpt ? `\n\n输出摘录（末尾）：\n${rawExcerpt}` : "",
-    ].join("").trim()
-  );
-
-  if (structured?.changes?.length) {
-    reportLines.push("");
-    reportLines.push("变更：");
-    reportLines.push(...structured.changes.map((item) => `- ${item}`));
-  }
-
-  if (structured?.verification?.length) {
-    reportLines.push("");
-    reportLines.push("验证：");
-    reportLines.push(...structured.verification.map((item) => `- ${item}`));
-  }
-
-  return reportLines.join("\n");
+  void taskTitle;
+  if (!result.success) return "";
+  return parseWorkerExecutionResult(result)?.conclusion.trim() ?? "";
 }

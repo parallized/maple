@@ -1,0 +1,41 @@
+services:
+  server:
+    build: .
+    restart: unless-stopped
+    environment:
+      MAPLE_PUBLIC_URL: https://${MAPLE_DOMAIN}
+      MAPLE_ALLOWED_ORIGINS: https://${MAPLE_DOMAIN}
+      MAPLE_TRUST_PROXY: "1"
+      MAPLE_SECURE_COOKIES: "1"
+      MAPLE_REGISTRATION_ENABLED: ${MAPLE_REGISTRATION_ENABLED:-1}
+    volumes:
+      - maple-data:/data
+    networks:
+      - maple-internal
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      MAPLE_DOMAIN: ${MAPLE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - maple-internal
+
+networks:
+  maple-internal:
+    internal: true
+
+volumes:
+  maple-data:
+  caddy-data:
+  caddy-config:

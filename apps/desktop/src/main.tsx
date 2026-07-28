@@ -6,10 +6,10 @@ import "@fontsource/maple-mono/600.css";
 import "@fontsource/maple-mono/700.css";
 import "font-smiley-sans/style.css";
 import { App } from "./App";
-import { ensureIconifyCollectionsLoaded } from "./lib/iconify";
-import "./styles.css";
-import "./radius-overrides.css";
-import "./badge-overrides.css";
+import { ensureIconifyCollectionsLoaded } from "@maple/board-ui";
+import "@maple/board-ui/styles.css";
+import "@maple/board-ui/radius-overrides.css";
+import "@maple/board-ui/badge-overrides.css";
 
 ensureIconifyCollectionsLoaded();
 

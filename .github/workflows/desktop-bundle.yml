@@ -20,26 +20,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build worker skills
-        run: pnpm --filter @maple/worker-skills build
+        run: bun run --filter @maple/worker-skills build
 
       - name: Typecheck
-        run: pnpm --filter @maple/desktop typecheck
+        run: bun run --filter @maple/desktop typecheck
 
       - name: Install WiX Toolset (Windows)
         if: runner.os == 'Windows'
@@ -47,11 +48,11 @@ jobs:
 
       - name: Build Tauri bundle (macOS)
         if: runner.os == 'macOS'
-        run: pnpm --filter @maple/desktop tauri:build:dmg
+        run: bun run --filter @maple/desktop tauri:build:dmg
 
       - name: Build Tauri bundle (Windows)
         if: runner.os == 'Windows'
-        run: pnpm --filter @maple/desktop tauri:build:msi
+        run: bun run --filter @maple/desktop tauri:build:msi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

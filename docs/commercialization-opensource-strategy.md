@@ -19,7 +19,7 @@ Maple 是一款**面向 AI 工程执行的桌面工作台**（AI-native dev exec
 | MCP Server | Axum HTTP (Rust) | 端口 45819，JSON-RPC 2.0 协议 |
 | 数据可视化 | Visx (D3)、Three.js、Matter.js | 仪表盘 + 背景特效 |
 | 终端 | xterm.js | Worker 实时输出 |
-| 包管理 | pnpm workspace monorepo | apps/desktop, apps/web, apps/mobile + packages/* |
+| 包管理 | Bun workspace monorepo | apps/desktop、apps/web、apps/server、apps/cli + packages/* |
 
 ### 1.3 核心功能矩阵
 

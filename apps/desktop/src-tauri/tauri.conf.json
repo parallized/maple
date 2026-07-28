@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Maple",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "identifier": "com.maple.desktop",
   "build": {
-    "beforeDevCommand": "pnpm dev:web",
+    "beforeDevCommand": "bun run dev:web",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build:web",
+    "beforeBuildCommand": "bun run build:web",
     "frontendDist": "../dist"
   },
   "app": {

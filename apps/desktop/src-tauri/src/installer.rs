@@ -957,7 +957,7 @@ When user asks `/maple`:
 2. Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
    - For routing, call `query_project_todos` / `finish_worker` with `worker_kind: "codex"`.
 3. Always run typecheck/build verification before marking done.
-   - IMPORTANT: Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts), e.g. `pnpm dev`, `tauri dev`, `vite dev`, or commands with `--watch`.
+   - IMPORTANT: Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts), e.g. `bun run dev`, `tauri dev`, `vite dev`, or commands with `--watch`.
    - Prefer one-shot commands (typecheck/build/test). Every command must exit on its own; add an explicit timeout or pick a safer alternative when unsure.
 4. For each task, call `submit_task_report` to set `进行中` when execution starts, then set `已完成` / `已阻塞` / `需要更多信息` when execution ends.
    - Only use `已阻塞` when you hit a real error you cannot proceed (tool failure / build failure / environment issue).

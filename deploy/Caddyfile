@@ -1,0 +1,4 @@
+{$MAPLE_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy server:45820
+}

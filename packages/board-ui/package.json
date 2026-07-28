@@ -1,0 +1,41 @@
+{
+  "name": "@maple/board-ui",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles/styles.css",
+    "./radius-overrides.css": "./src/styles/radius-overrides.css",
+    "./badge-overrides.css": "./src/styles/badge-overrides.css"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"lint not configured for @maple/board-ui\""
+  },
+  "dependencies": {
+    "@blocknote/core": "^0.46.2",
+    "@blocknote/react": "^0.46.2",
+    "@fontpkg/chill-round-f": "^3.0.0",
+    "@iconify/react": "^5.2.1",
+    "@maple/client-ui": "workspace:*",
+    "@maple/worker-skills": "workspace:*",
+    "@visx/axis": "^3.12.0",
+    "@visx/group": "^3.12.0",
+    "@visx/scale": "^3.12.0",
+    "@visx/shape": "^3.12.0",
+    "@visx/visx": "^3.12.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "framer-motion": "^12.34.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@iconify-json/mingcute": "^1.2.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.9.3"
+  }
+}

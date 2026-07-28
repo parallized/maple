@@ -1,321 +1,73 @@
+[CmdletBinding()]
+param()
+
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-param(
-  [string]$McpUrl = "http://localhost:45819/mcp"
-)
-
-function Write-Step {
-  param([string]$Message)
-  Write-Host ""
-  Write-Host "[maple-installer] $Message"
+$serverUrl = "__MAPLE_SERVER_URL__"
+if (-not ($serverUrl.StartsWith("https://") -or $serverUrl.StartsWith("http://"))) {
+  $serverUrl = if ($env:MAPLE_SERVER_URL) { $env:MAPLE_SERVER_URL } else { "http://127.0.0.1:45820" }
+}
+$serverUrl = $serverUrl.TrimEnd("/")
+if (-not ($serverUrl.StartsWith("https://") -or $serverUrl.StartsWith("http://127.0.0.1") -or $serverUrl.StartsWith("http://localhost"))) {
+  throw "Maple installer requires HTTPS for remote servers."
 }
 
-function Get-UserHome {
-  if ($env:HOME -and $env:HOME.Trim()) { return $env:HOME.Trim() }
-  return [Environment]::GetFolderPath("UserProfile")
+$userHome = [Environment]::GetFolderPath("UserProfile")
+$mapleHome = Join-Path $userHome ".maple"
+$binDir = Join-Path $mapleHome "bin"
+$runtimeDir = Join-Path $mapleHome "runtime"
+$cliPath = Join-Path $binDir "maple-cli.js"
+$wrapperPath = Join-Path $binDir "maple.cmd"
+New-Item -ItemType Directory -Force -Path $binDir, $runtimeDir | Out-Null
+
+$bunCommand = Get-Command bun -ErrorAction SilentlyContinue
+if (-not $bunCommand) {
+  Write-Host "[maple] Installing Bun runtime..."
+  Invoke-RestMethod "https://bun.sh/install.ps1" | Invoke-Expression
+  $bunPath = Join-Path $userHome ".bun/bin/bun.exe"
+} else {
+  $bunPath = $bunCommand.Source
+}
+if (-not (Test-Path -LiteralPath $bunPath -PathType Leaf)) { throw "Bun installation failed." }
+
+Write-Host "[maple] Downloading CLI..."
+$temporaryCli = "$cliPath.download"
+Invoke-WebRequest -UseBasicParsing -Uri "$serverUrl/downloads/maple-cli.js" -OutFile $temporaryCli
+if ((Get-Item -LiteralPath $temporaryCli).Length -lt 10000) { throw "Downloaded CLI is incomplete." }
+Move-Item -Force -LiteralPath $temporaryCli -Destination $cliPath
+
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$wrapper = "@echo off`r`n`"$bunPath`" `"%~dp0maple-cli.js`" %*`r`n"
+[System.IO.File]::WriteAllText($wrapperPath, $wrapper, $utf8NoBom)
+
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$pathEntries = @($userPath -split ";" | Where-Object { $_ })
+if (-not ($pathEntries | Where-Object { $_.TrimEnd("\") -ieq $binDir.TrimEnd("\") })) {
+  [Environment]::SetEnvironmentVariable("Path", (($pathEntries + $binDir) -join ";"), "User")
+}
+$env:Path = "$binDir;$env:Path"
+
+# Starting the CLI once creates the managed Skill and MCP config under ~/.maple/runtime.
+& $bunPath $cliPath status | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Maple CLI verification failed." }
+
+if ($env:MAPLE_SKIP_PLAYWRIGHT_INSTALL -ne "1") {
+  Write-Host "[maple] Installing Playwright runtime..."
+  $playwrightDir = Join-Path $runtimeDir "playwright"
+  New-Item -ItemType Directory -Force -Path $playwrightDir | Out-Null
+  if (-not (Test-Path (Join-Path $playwrightDir "package.json"))) {
+    [System.IO.File]::WriteAllText((Join-Path $playwrightDir "package.json"), '{"name":"maple-playwright-runtime","private":true}' + "`n", $utf8NoBom)
+  }
+  Push-Location $playwrightDir
+  try { & $bunPath add --exact "playwright@1.61.1" } finally { Pop-Location }
+  if ($LASTEXITCODE -ne 0) { throw "Playwright package installation failed." }
+  $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $playwrightDir "browsers"
+  & $bunPath (Join-Path $playwrightDir "node_modules/playwright/cli.js") install chromium --only-shell
+  if ($LASTEXITCODE -ne 0) { throw "Chromium installation failed." }
+  $playwrightWrapper = "@echo off`r`nset `"PLAYWRIGHT_BROWSERS_PATH=%~dp0browsers`"`r`n`"$bunPath`" `"%~dp0node_modules\playwright\cli.js`" %*`r`n"
+  [System.IO.File]::WriteAllText((Join-Path $playwrightDir "maple-playwright.cmd"), $playwrightWrapper, $utf8NoBom)
 }
 
-function Write-TextFile {
-  param(
-    [Parameter(Mandatory = $true)][string]$Path,
-    [Parameter(Mandatory = $true)][string]$Content
-  )
-  $dir = Split-Path -Parent $Path
-  if ($dir) {
-    New-Item -ItemType Directory -Force -Path $dir | Out-Null
-  }
-  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-  [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
-}
-
-function Try-GetCommandPath {
-  param([Parameter(Mandatory = $true)][string]$Name)
-  $cmd = Get-Command $Name -ErrorAction SilentlyContinue
-  if (-not $cmd) { return $null }
-  return $cmd.Source
-}
-
-function ConvertTo-HashtableRecursive {
-  param([Parameter(Mandatory = $true)]$Value)
-
-  if ($null -eq $Value) { return $null }
-  if ($Value -is [System.Collections.IDictionary]) {
-    $result = @{}
-    foreach ($key in $Value.Keys) {
-      $result[$key] = ConvertTo-HashtableRecursive $Value[$key]
-    }
-    return $result
-  }
-  if ($Value -is [pscustomobject]) {
-    $result = @{}
-    foreach ($prop in $Value.PSObject.Properties) {
-      $result[$prop.Name] = ConvertTo-HashtableRecursive $prop.Value
-    }
-    return $result
-  }
-  if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
-    return @($Value | ForEach-Object { ConvertTo-HashtableRecursive $_ })
-  }
-  return $Value
-}
-
-function Install-Codex {
-  Write-Step "Installing Maple MCP for Codex"
-  if (-not (Try-GetCommandPath "codex")) {
-    Write-Warning "[maple-installer] codex not found; skipped."
-    return
-  }
-
-  try { & codex mcp remove maple *> $null } catch { }
-  & codex mcp add maple --url $McpUrl | Out-Null
-
-  Write-Step "Installing local Maple skill for Codex"
-  $home = Get-UserHome
-  $skillPath = Join-Path $home ".codex/skills/maple/SKILL.md"
-  Write-TextFile -Path $skillPath -Content @"
----
-name: maple
-description: "Run /maple workflow for Maple development tasks."
----
-
-# maple
-
-When user asks `/maple`:
-1. Work in the current working directory (do NOT cd elsewhere).
-   - If ~/.maple/constitution.md exists, read it first and follow the rules during execution.
-2. Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
-3. Always run typecheck/build verification before marking done.
-   - IMPORTANT: Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts), e.g. `pnpm dev`, `tauri dev`, `vite dev`, or commands with `--watch`.
-   - Prefer one-shot commands (typecheck/build/test). Every command must exit on its own; add an explicit timeout or pick a safer alternative when unsure.
-4. For each task, call `submit_task_report` to set `进行中` when execution starts, then set `已完成` / `已阻塞` / `需要更多信息` when execution ends.
-   - If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办).
-5. Before ending, call `query_project_todos` and ensure no `待办` / `队列中` / `进行中` task remains.
-6. Call `finish_worker` as the final MCP call.
-7. Output `mcp_decision` with status, comment, and tags.
-"@
-
-  Write-Host ""
-  Write-Host "[maple-installer] Codex setup done."
-  Write-Host "[maple-installer] MCP registered as HTTP server at $McpUrl"
-  Write-Host "[maple-installer] Restart Codex session to load ~/.codex/skills/maple"
-}
-
-function Install-Claude {
-  Write-Step "Installing Maple MCP for Claude Code"
-  if (-not (Try-GetCommandPath "claude")) {
-    Write-Warning "[maple-installer] claude not found; skipped."
-    return
-  }
-
-  try { & claude mcp remove maple --scope user *> $null } catch { }
-  & claude mcp add --scope user --transport http maple $McpUrl | Out-Null
-
-  Write-Step "Installing local /maple command for Claude Code"
-  $home = Get-UserHome
-  $commandPath = Join-Path $home ".claude/commands/maple.md"
-  Write-TextFile -Path $commandPath -Content @"
-Run Maple workflow in the current working directory:
-
-1. Use Maple MCP tools (query_project_todos, query_recent_context) to get tasks
-   - If ~/.maple/constitution.md exists, read it first and follow the rules during execution.
-2. Implement the requested changes in the current project
-3. Run typecheck/build before finishing
-   - Do NOT start long-lived dev/watch processes (they block the workflow). Prefer one-shot verification commands.
-4. For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish
-   - If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办)
-5. Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains
-6. Call finish_worker as the final MCP call
-7. Output mcp_decision with status, comment, and tags
-"@
-
-  Write-Host ""
-  Write-Host "[maple-installer] Claude setup done."
-  Write-Host "[maple-installer] MCP registered as HTTP server at $McpUrl"
-  Write-Host "[maple-installer] Open Claude Code and run /maple"
-}
-
-function Install-iFlow {
-  Write-Step "Installing Maple MCP for iFlow"
-  if (-not (Try-GetCommandPath "iflow")) {
-    Write-Warning "[maple-installer] iflow not found; skipped."
-    return
-  }
-
-  try { & iflow mcp remove maple *> $null } catch { }
-  & iflow mcp add --scope user --transport http maple $McpUrl | Out-Null
-
-  Write-Step "Installing Maple workflow/skill assets for iFlow (~/.iflow)"
-  $home = Get-UserHome
-  $workflowPath = Join-Path $home ".iflow/workflows/maple.md"
-  $skillIndexPath = Join-Path $home ".iflow/skills/SKILL.md"
-  $skillPath = Join-Path $home ".iflow/skills/maple/SKILL.md"
-
-  Write-TextFile -Path $workflowPath -Content @"
-/maple
-
-Work in the current working directory (do NOT cd elsewhere).
-Use Maple MCP tools to query tasks and submit results.
-Run typecheck/build before finishing.
-If ~/.maple/constitution.md exists, read it first and follow the rules during execution.
-Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
-For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
-If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办).
-Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
-Call finish_worker as the final MCP call.
-Output mcp_decision with status, comment, and tags.
-"@
-
-  Write-TextFile -Path $skillIndexPath -Content @"
----
-name: maple
-description: "Project-local maple skill index."
----
-
-# maple
-
-Use `~/.iflow/skills/maple/SKILL.md` for the full maple execution skill.
-"@
-
-  Write-TextFile -Path $skillPath -Content @"
----
-name: maple
-description: "Run maple workflow in this repository."
----
-
-# maple
-
-Maple execution skill:
-- execute tasks end-to-end
-- use Maple MCP + local skills first
-- run typecheck/build before completion
-- if ~/.maple/constitution.md exists, read it first and follow the rules during execution
-- avoid long-lived dev/watch commands that never exit; prefer one-shot verification commands
-- use submit_task_report to mark each task as 进行中 at start, then settle to 已完成 / 已阻塞 / 需要更多信息
-- If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办)
-- call query_project_todos before ending, and keep no 待办 / 队列中 / 进行中 tasks
-- call finish_worker as the final MCP call
-- keep Maple on the standalone execution path
-"@
-
-  Write-Host ""
-  Write-Host "[maple-installer] iFlow setup done."
-  Write-Host "[maple-installer] MCP registered as HTTP server at $McpUrl"
-  Write-Host "[maple-installer] Assets written to $workflowPath and $skillPath"
-}
-
-function Install-Gemini {
-  Write-Step "Installing Maple MCP for Gemini CLI"
-  if (-not (Try-GetCommandPath "gemini")) {
-    Write-Warning "[maple-installer] gemini not found; skipped."
-    Write-Host "[maple-installer] Install Gemini CLI with: npm install -g @google/gemini-cli"
-    return
-  }
-
-  try { & gemini mcp remove maple --scope user *> $null } catch { }
-  $mapleRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-  $mcpServerEntry = Join-Path $mapleRoot "packages/maple-mcp-server/dist/index.js"
-  & gemini mcp add --scope user maple node $mcpServerEntry | Out-Null
-
-  Write-Step "Installing local /maple command for Gemini CLI"
-  $home = Get-UserHome
-  $commandPath = Join-Path $home ".gemini/commands/maple.toml"
-  Write-TextFile -Path $commandPath -Content @"
-# Command: maple
-# Description: Run Maple workflow in the current working directory
-# Version: 1
-
-description = "Run Maple workflow in the current working directory"
-
-prompt = """
-Work in the current working directory (do NOT cd elsewhere).
-If ~/.maple/constitution.md exists, read it first and follow the rules during execution.
-Use Maple MCP tools (query_project_todos, query_recent_context) to gather tasks/context.
-Run typecheck/build before finishing.
-Do NOT run long-lived commands that never exit (dev servers / watch mode / interactive prompts). Prefer one-shot verification commands.
-For each task call submit_task_report: set status to 进行中 at start, then set to 已完成 / 已阻塞 / 需要更多信息 at finish.
-If requirements are missing: use 需要更多信息 and include a maple-needs-info JSON form block in the report (Maple UI renders it in-report; user clicks “填写完毕” after filling, and the task goes back to 待办).
-Before ending, call query_project_todos and ensure no 待办 / 队列中 / 进行中 task remains.
-Call finish_worker as the final MCP call.
-Output mcp_decision with status, comment, and tags.
-"""
-"@
-
-  Write-Host ""
-  Write-Host "[maple-installer] Gemini setup done."
-  Write-Host "[maple-installer] MCP registered as stdio server via node $mcpServerEntry"
-  Write-Host "[maple-installer] Command written to $commandPath"
-  Write-Host "[maple-installer] Restart Gemini CLI session and run /maple"
-}
-
-function Install-Windsurf {
-  Write-Step "Installing Maple MCP for Windsurf"
-
-  $home = Get-UserHome
-  $windsurfConfigDir = Join-Path $home ".codeium/windsurf"
-  $windsurfConfigPath = Join-Path $windsurfConfigDir "mcp_config.json"
-  New-Item -ItemType Directory -Force -Path $windsurfConfigDir | Out-Null
-
-  $config = @{}
-  if (Test-Path $windsurfConfigPath) {
-    $raw = (Get-Content -Raw -ErrorAction SilentlyContinue $windsurfConfigPath).Trim()
-    if ($raw) {
-      try {
-        $config = $raw | ConvertFrom-Json -ErrorAction Stop
-      } catch {
-        Write-Warning "[maple-installer] invalid JSON in $windsurfConfigPath; overwriting."
-        $config = @{}
-      }
-    }
-  }
-  $config = ConvertTo-HashtableRecursive $config
-  if (-not ($config -is [hashtable])) {
-    $config = @{}
-  }
-  if (-not $config.ContainsKey("mcpServers") -or -not ($config.mcpServers -is [hashtable])) {
-    $config.mcpServers = @{}
-  }
-  $config.mcpServers.maple = @{ url = $McpUrl }
-
-  $json = $config | ConvertTo-Json -Depth 100
-  Write-TextFile -Path $windsurfConfigPath -Content ($json + "`n")
-
-  Write-Step "Installing local /maple workflow for Windsurf"
-  $mapleRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-  $workflowPath = Join-Path $mapleRoot ".windsurf/workflows/maple.md"
-  Write-TextFile -Path $workflowPath -Content @"
-# /maple
-
-当用户输入 `/maple` 时，按以下流程执行：
-
-1. 在当前项目根目录执行，使用 Maple MCP + Maple Skills 作为唯一执行链路。
-2. 先调用 Maple MCP 查询能力获取任务与上下文：
-   - `query_project_todos`：拉取当前项目未完成任务（按更新时间倒序）。
-   - `query_recent_context`：拉取近期报告与 Worker 日志上下文（可按关键词过滤）。
-3. 对每条任务执行端到端实现：代码修改、类型检查、构建校验。
-4. 仅通过 Maple Skills 的 MCP 决策输出决定任务结果：
-   - 必须产出 `mcp_decision.status`、`mcp_decision.comment`、`mcp_decision.tags[]`。
-   - 缺少 `mcp_decision` 时，不得标记完成，统一标记为阻塞并说明原因。
-5. 对每条任务调用 `submit_task_report`：开始执行先更新为 `进行中`，结束后再更新为 `已完成` / `已阻塞` / `需要更多信息`。
-   - 若需要更多信息：在报告中附带一个 `maple-needs-info` JSON 表单块（Maple 会在执行报告中渲染；用户填写后点击“填写完毕”，任务将回到 `待办`）。
-6. 结束前必须再次调用 `query_project_todos`，确认不存在 `待办` / `队列中` / `进行中` 任务。
-7. 仅在第 6 步满足后，调用 `finish_worker`（必须作为最后一个 MCP 调用）。
-8. 输出本轮执行汇总（已完成 / 需更多信息 / 已阻塞 / 剩余）。
-
-输出语言默认使用中文，除非用户明确要求其他语言。
-"@
-
-  Write-Host ""
-  Write-Host "[maple-installer] Windsurf setup done."
-  Write-Host "[maple-installer] MCP config written to $windsurfConfigPath"
-  Write-Host "[maple-installer] Workflow written to $workflowPath"
-  Write-Host "[maple-installer] Restart Windsurf to load updated MCP config."
-}
-
-Write-Host "[maple-install] Installing maple MCP + skills for Codex / Claude / iFlow / Gemini / Windsurf..."
-Install-Codex
-Install-Claude
-Install-iFlow
-Install-Gemini
-Install-Windsurf
-Write-Host "[maple-install] Done."
+Write-Host "[maple] Installed in $mapleHome"
+Write-Host "[maple] Connect with: maple connect --server $serverUrl"
