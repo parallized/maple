@@ -30,8 +30,8 @@ const DOC_GROUPS: DocGroup[] = [
         title: "安装与接入",
         blocks: [
           { type: "p", text: "Maple 由 Server 与 Runner 组成：Server 提供看板与调度，Runner 在你的主机上真正执行任务。一条命令即可完成安装。" },
-          { type: "code", lang: "macOS / Linux", text: "curl -fsSL https://maple.parallized.cn/install.sh | sh" },
-          { type: "code", lang: "Windows (PowerShell)", text: "irm https://maple.parallized.cn/install.ps1 | iex" },
+          { type: "code", lang: "macOS / Linux", text: "curl -fsSL https://maplecode.art/install.sh | sh" },
+          { type: "code", lang: "Windows (PowerShell)", text: "irm https://maplecode.art/install.ps1 | iex" },
           { type: "p", text: "安装完成后启动 CLI，主菜单会引导你完成后续配置。Runner 的执行环境（Node、Bun、各 Coding Agent CLI）由安装脚本自动检测并提示。" }
         ]
       },

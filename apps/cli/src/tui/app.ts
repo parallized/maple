@@ -42,7 +42,7 @@ function mainMenuTitle(config: CliConfig): string {
 }
 
 const SERVER_PRESETS: SelectOption[] = [
-  { value: "https://maple.parallized.cn", label: "官方服务", hint: "maple.parallized.cn", icon: "🌐" },
+  { value: "https://maplecode.art", label: "官方服务", hint: "maplecode.art", icon: "🌐" },
   { value: "http://127.0.0.1:45820", label: "本地开发", hint: "127.0.0.1:45820", icon: "🏠" }
 ];
 
