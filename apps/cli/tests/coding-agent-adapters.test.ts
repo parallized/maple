@@ -1,0 +1,431 @@
+import { describe, expect, it } from "bun:test";
+import type { RunLogEntry, WorkerKind } from "@maple/protocol";
+import { getCodingAgentAdapter } from "../src/execution/adapters/registry";
+import { executeWorker } from "../src/execution/process-executor";
+import { formatRunLogEntry } from "../src/execution/run-log";
+import { detectCodingAgentTools } from "../src/execution/tool-availability";
+import { buildResolvedWorkerCommand, buildWorkerCommand } from "../src/execution/worker-command";
+
+const PROMPT = "修复 \"quoted\" 行为\n并运行测试";
+
+describe("Coding Agent commands", () => {
+  it.each([
+    ["codex", "codex", ["exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "-"], "stdin"],
+    ["claude", "claude", ["--print", "--permission-mode", "acceptEdits", "--verbose", "--output-format", "stream-json", PROMPT], "argument"],
+    ["kimi", "kimi", ["--prompt", PROMPT, "--output-format", "stream-json"], "argument"],
+    ["gemini", "gemini", ["-p", PROMPT, "--output-format", "stream-json", "--approval-mode=yolo"], "argument"],
+    ["opencode", "opencode", ["run", "--auto", "--format", "json", PROMPT], "argument"],
+    ["glm", "opencode", ["run", "--auto", "--format", "json", "--model", "zai-coding-plan/glm-5.2", PROMPT], "argument"],
+    ["iflow", "iflow", ["-p", PROMPT, "--yolo", "--stream", "--debug"], "argument"]
+  ] as const)("builds an isolated %s adapter command", (kind, executable, args, promptInput) => {
+    const command = buildWorkerCommand(kind, PROMPT, "direct", {});
+    expect(command).toEqual({
+      executable,
+      args: [...args],
+      ...(promptInput === "stdin" ? { stdin: PROMPT } : {})
+    });
+    expect([...command.args, command.stdin].filter((value) => value === PROMPT)).toHaveLength(1);
+  });
+
+  it("supports Kimi executable and model overrides without adding incompatible permission flags", () => {
+    const command = buildWorkerCommand("kimi", PROMPT, "direct", {
+      MAPLE_KIMI_BIN: "kimi-code-custom",
+      MAPLE_KIMI_MODEL: "kimi-for-coding"
+    });
+    expect(command).toEqual({
+      executable: "kimi-code-custom",
+      args: ["--model", "kimi-for-coding", "--prompt", PROMPT, "--output-format", "stream-json"]
+    });
+    expect(command.args).not.toContain("--auto");
+    expect(command.args).not.toContain("--yolo");
+  });
+
+  it("gives GLM its own model and executable override chain", () => {
+    expect(buildWorkerCommand("glm", PROMPT, "direct", { MAPLE_OPENCODE_BIN: "shared-opencode" }).executable)
+      .toBe("shared-opencode");
+
+    const command = buildWorkerCommand("glm", PROMPT, "direct", {
+      MAPLE_OPENCODE_BIN: "shared-opencode",
+      MAPLE_GLM_BIN: "glm-host",
+      MAPLE_GLM_MODEL: "zhipuai-coding-plan/glm-5.2"
+    });
+    expect(command.executable).toBe("glm-host");
+    expect(command.args).toEqual([
+      "run",
+      "--auto",
+      "--format",
+      "json",
+      "--model",
+      "zhipuai-coding-plan/glm-5.2",
+      PROMPT
+    ]);
+  });
+
+  it.each([
+    ["codex", "--add-dir"],
+    ["claude", "--add-dir"],
+    ["kimi", "--add-dir"],
+    ["gemini", "--include-directories"],
+    ["iflow", "--include-directories"]
+  ] as const)("allows %s to write only the Maple-managed artifact directory", (kind, flag) => {
+    const artifactDirectory = "C:\\Users\\maple\\.maple\\artifacts\\attempt-1";
+    const command = buildWorkerCommand(kind, PROMPT, "direct", {}, {
+      additionalWritableDirectories: [artifactDirectory]
+    });
+    const flagIndex = command.args.indexOf(flag);
+    expect(flagIndex).toBeGreaterThanOrEqual(0);
+    expect(command.args[flagIndex + 1]).toBe(artifactDirectory);
+  });
+
+  it.each([
+    ["codex", ["exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "resume", "session-1", "-"]],
+    ["claude", ["--print", "--resume", "session-1", "--permission-mode", "acceptEdits", "--verbose", "--output-format", "stream-json", PROMPT]],
+    ["kimi", ["--resume", "session-1", "--prompt", PROMPT, "--output-format", "stream-json"]],
+    ["gemini", ["--resume", "session-1", "-p", PROMPT, "--output-format", "stream-json", "--approval-mode=yolo"]],
+    ["opencode", ["run", "--auto", "--format", "json", "--session", "session-1", PROMPT]],
+    ["glm", ["run", "--auto", "--format", "json", "--model", "zai-coding-plan/glm-5.2", "--session", "session-1", PROMPT]],
+    ["iflow", ["--resume", "session-1", "-p", PROMPT, "--yolo", "--stream", "--debug"]]
+  ] as const)("resumes the exact persisted %s session", (kind, expectedArgs) => {
+    const command = buildWorkerCommand(kind, PROMPT, "direct", {}, { resumeSessionId: "session-1" });
+    expect(command.args).toEqual([...expectedArgs]);
+    if (kind === "codex") expect(command.stdin).toBe(PROMPT);
+  });
+
+  it("detects installed tools from every adapter's actual executable", () => {
+    const available = new Set(["codex-custom", "opencode"]);
+    const tools = detectCodingAgentTools(
+      { MAPLE_CODEX_BIN: "codex-custom" },
+      (executable) => available.has(executable) ? executable : null
+    );
+
+    expect(tools.map(({ kind, label, executable, available: installed }) => ({
+      kind,
+      label,
+      executable,
+      installed
+    }))).toEqual([
+      { kind: "codex", label: "Codex", executable: "codex-custom", installed: true },
+      { kind: "claude", label: "Claude", executable: "claude", installed: false },
+      { kind: "kimi", label: "Kimi", executable: "kimi", installed: false },
+      { kind: "glm", label: "GLM", executable: "opencode", installed: true },
+      { kind: "iflow", label: "iFlow", executable: "iflow", installed: false },
+      { kind: "gemini", label: "Gemini", executable: "gemini", installed: false },
+      { kind: "opencode", label: "OpenCode", executable: "opencode", installed: true }
+    ]);
+  });
+
+  it.each([
+    ["codex", "codex"],
+    ["claude", "claude"],
+    ["kimi", "kimi"],
+    ["glm", "opencode"],
+    ["iflow", "iflow"],
+    ["gemini", "gemini"],
+    ["opencode", "opencode"]
+  ] as const)("resolves the %s adapter executable before launch", (kind, executable) => {
+    const resolved = `C:\\tools\\${executable}.cmd`;
+    const command = buildResolvedWorkerCommand(
+      kind,
+      PROMPT,
+      "direct",
+      {},
+      (candidate) => candidate === executable ? resolved : null
+    );
+
+    expect(command.executable).toBe(resolved);
+  });
+
+  it("resolves both the agent and selected shell executable", () => {
+    const executables = new Map([
+      ["codex", "C:\\tools\\codex.cmd"],
+      ["cmd", "C:\\Windows\\System32\\cmd.exe"]
+    ]);
+    const command = buildResolvedWorkerCommand(
+      "codex",
+      PROMPT,
+      "cmd",
+      {},
+      (candidate) => executables.get(candidate) ?? null
+    );
+
+    expect(command.executable).toBe("C:\\Windows\\System32\\cmd.exe");
+    expect(command.args.at(-1)).toContain("C:\\tools\\codex.cmd");
+  });
+});
+
+function parse(kind: WorkerKind, lines: string[]) {
+  const parser = getCodingAgentAdapter(kind).createOutputParser();
+  return lines.flatMap((line) => parser.push("stdout", `${line}\n`));
+}
+
+describe("Coding Agent structured output", () => {
+  it.each([
+    ["codex", { type: "thread.started", thread_id: "codex-session" }, "codex-session"],
+    ["claude", { type: "system", subtype: "init", session_id: "claude-session" }, "claude-session"],
+    ["kimi", { role: "meta", type: "session.resume_hint", session_id: "kimi-session" }, "kimi-session"],
+    ["gemini", { type: "init", session_id: "gemini-session", model: "gemini" }, "gemini-session"],
+    ["opencode", { type: "step_start", sessionID: "opencode-session", part: { id: "step-1" } }, "opencode-session"],
+    ["glm", { type: "step_start", sessionID: "glm-session", part: { id: "step-1" } }, "glm-session"],
+    ["iflow", { type: "assistant", sessionId: "iflow-session", content: "ok" }, "iflow-session"]
+  ] as const)("captures the %s Provider session ID", (kind, payload, expectedSessionId) => {
+    const parser = getCodingAgentAdapter(kind).createOutputParser();
+    parser.push("stdout", `${JSON.stringify(payload)}\n`);
+    expect(parser.sessionId()).toBe(expectedSessionId);
+  });
+
+  it("maps Codex lifecycle, assistant, command and file changes", () => {
+    const events = parse("codex", [
+      JSON.stringify({ type: "thread.started", thread_id: "thread-1" }),
+      JSON.stringify({
+        type: "item.started",
+        item: { id: "command-1", type: "command_execution", command: "bun test", status: "in_progress" }
+      }),
+      JSON.stringify({
+        type: "item.completed",
+        item: { id: "file-1", type: "file_change", changes: [{ path: "src/a.ts", kind: "update" }] }
+      }),
+      JSON.stringify({ type: "item.completed", item: { id: "message-1", type: "agent_message", text: "完成" } })
+    ]);
+    expect(events.map((entry) => entry.kind)).toEqual(["lifecycle", "command", "file_change", "assistant"]);
+    expect(events[1]).toMatchObject({ groupId: "command-1", status: "progress", title: "bun test" });
+    expect(events[3]?.content).toBe("完成");
+  });
+
+  it("maps Claude text, thinking, tool calls, results and final status", () => {
+    const events = parse("claude", [
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [
+            { type: "thinking", thinking: "检查代码" },
+            { type: "tool_use", id: "tool-1", name: "Bash", input: { command: "bun test" } },
+            { type: "text", text: "测试完成" }
+          ]
+        }
+      }),
+      JSON.stringify({
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "tool-1", content: "41 pass" }] }
+      }),
+      JSON.stringify({ type: "result", subtype: "success", result: "done" })
+    ]);
+    expect(events.map((entry) => entry.kind)).toEqual([
+      "reasoning",
+      "command",
+      "assistant",
+      "tool_result",
+      "lifecycle"
+    ]);
+    expect(events[1]).toMatchObject({ groupId: "tool-1", status: "started" });
+    expect(events[3]).toMatchObject({ groupId: "tool-1", status: "completed" });
+  });
+
+  it("maps Kimi assistant, tool and retry meta records", () => {
+    const events = parse("kimi", [
+      JSON.stringify({
+        role: "assistant",
+        content: "准备修改",
+        tool_calls: [{ id: "call-1", function: { name: "write_file", arguments: { path: "a.ts" } } }]
+      }),
+      JSON.stringify({ role: "tool", tool_call_id: "call-1", content: "ok" }),
+      JSON.stringify({ role: "meta", type: "turn.step.retrying", error_message: "rate limited" })
+    ]);
+    expect(events.map((entry) => entry.kind)).toEqual(["assistant", "file_change", "tool_result", "warning"]);
+    expect(events[1]).toMatchObject({ groupId: "call-1", status: "started" });
+    expect(events[2]).toMatchObject({ groupId: "call-1", status: "completed" });
+    expect(events[3]).toMatchObject({ level: "warning", status: "progress" });
+  });
+
+  it("preserves provider tool failures as failed result events", () => {
+    const kimi = parse("kimi", [
+      JSON.stringify({ role: "tool", tool_call_id: "call-2", is_error: true, content: "permission denied" })
+    ]);
+    const opencode = parse("opencode", [
+      JSON.stringify({ type: "tool_use", part: { id: "call-3", tool: "bash", state: { error: "exit 1" } } })
+    ]);
+    expect(kimi[0]).toMatchObject({ kind: "tool_result", level: "error", status: "failed" });
+    expect(opencode[0]).toMatchObject({ kind: "command", level: "error", status: "failed" });
+  });
+
+  it("maps Gemini streaming messages, tools and completion", () => {
+    const events = parse("gemini", [
+      JSON.stringify({ type: "init", model: "gemini-2.5-pro" }),
+      JSON.stringify({ type: "message", role: "assistant", content: "正在处理" }),
+      JSON.stringify({ type: "tool_use", id: "tool-1", name: "run_command", parameters: { command: "bun test" } }),
+      JSON.stringify({ type: "tool_result", id: "tool-1", status: "success", output: "ok" }),
+      JSON.stringify({ type: "result", response: "完成" })
+    ]);
+    expect(events.map((entry) => entry.kind)).toEqual([
+      "lifecycle",
+      "assistant",
+      "command",
+      "tool_result",
+      "assistant",
+      "lifecycle"
+    ]);
+    expect(events[2]?.groupId).toBe("tool-1");
+    expect(events[3]).toMatchObject({ groupId: "tool-1", status: "completed" });
+  });
+
+  it("captures token usage from Claude result and maps cache fields", () => {
+    const parser = getCodingAgentAdapter("claude").createOutputParser();
+    expect(parser.usage()).toBeNull();
+    parser.push("stdout", `${JSON.stringify({
+      type: "result",
+      subtype: "success",
+      result: "done",
+      usage: {
+        input_tokens: 1200,
+        cache_creation_input_tokens: 300,
+        cache_read_input_tokens: 800,
+        output_tokens: 45
+      }
+    })}\n`);
+    expect(parser.usage()).toMatchObject({
+      inputTokens: 1500, // input(1200) + cache_creation(300)
+      cachedInputTokens: 800,
+      outputTokens: 45,
+      reasoningOutputTokens: 0
+    });
+  });
+
+  it("ignores Claude result without usage", () => {
+    const parser = getCodingAgentAdapter("claude").createOutputParser();
+    parser.push("stdout", `${JSON.stringify({ type: "result", subtype: "success", result: "done" })}\n`);
+    expect(parser.usage()).toBeNull();
+  });
+
+  it("captures token usage from Gemini result usage_metadata", () => {
+    const parser = getCodingAgentAdapter("gemini").createOutputParser();
+    expect(parser.usage()).toBeNull();
+    parser.push("stdout", `${JSON.stringify({
+      type: "result",
+      response: "完成",
+      usage_metadata: {
+        prompt_token_count: 2100,
+        candidates_token_count: 88,
+        cached_content_token_count: 1500,
+        thoughts_token_count: 200
+      }
+    })}\n`);
+    expect(parser.usage()).toMatchObject({
+      inputTokens: 2100,
+      cachedInputTokens: 1500,
+      outputTokens: 88,
+      reasoningOutputTokens: 200
+    });
+  });
+
+  it("ignores Gemini result without usage_metadata", () => {
+    const parser = getCodingAgentAdapter("gemini").createOutputParser();
+    parser.push("stdout", `${JSON.stringify({ type: "result", response: "完成" })}\n`);
+    expect(parser.usage()).toBeNull();
+  });
+
+  it.each(["opencode", "glm"] as const)("maps %s host text, reasoning, tool, steps and errors", (kind) => {
+    const events = parse(kind, [
+      JSON.stringify({ type: "step_start", part: { id: "step-1" } }),
+      JSON.stringify({ type: "reasoning", part: { id: "reason-1", text: "分析" } }),
+      JSON.stringify({ type: "tool_use", part: { id: "tool-1", tool: "bash", state: { status: "completed", output: "ok" } } }),
+      JSON.stringify({ type: "text", part: { id: "text-1", text: "完成" } }),
+      JSON.stringify({ type: "step_finish", part: { id: "step-1" } }),
+      JSON.stringify({ type: "error", error: { message: "provider failed" } })
+    ]);
+    expect(events.map((entry) => entry.kind)).toEqual([
+      "lifecycle",
+      "reasoning",
+      "command",
+      "assistant",
+      "lifecycle",
+      "error"
+    ]);
+    expect(events[2]).toMatchObject({ groupId: "tool-1", status: "completed" });
+  });
+
+  it("keeps iFlow generic JSON and future unknown output instead of dropping it", () => {
+    const parser = getCodingAgentAdapter("iflow").createOutputParser();
+    const known = parser.push("stdout", `${JSON.stringify({ type: "assistant", content: "流式回复" })}\n`);
+    const unknown = parser.push("stdout", `${JSON.stringify({ type: "future_event", payload: { value: 1 } })}\n`);
+    const raw = parser.push("stderr", "unstructured diagnostic\n");
+    expect(known[0]).toMatchObject({ kind: "assistant", content: "流式回复" });
+    expect(unknown[0]).toMatchObject({ kind: "raw" });
+    expect(unknown[0]?.content).toContain("future_event");
+    expect(raw[0]).toMatchObject({ kind: "raw", level: "debug" });
+  });
+
+  it("decodes JSONL split across chunks and flushes the final line", () => {
+    const parser = getCodingAgentAdapter("codex").createOutputParser();
+    expect(parser.push("stdout", '{"type":"item.completed","item":{"id":"m1","type":"agent_')).toEqual([]);
+    const completed = parser.push("stdout", 'message","text":"跨块完成"}}\n');
+    expect(completed[0]).toMatchObject({ kind: "assistant", content: "跨块完成", groupId: "m1" });
+
+    parser.push("stdout", '{"type":"turn.completed","usage":{"input_tokens":12}}');
+    const flushed = parser.flush("stdout");
+    expect(flushed[0]).toMatchObject({ kind: "lifecycle", status: "completed" });
+  });
+
+  it("captures token usage from Codex turn.completed and keeps the last one", () => {
+    const parser = getCodingAgentAdapter("codex").createOutputParser();
+    expect(parser.usage()).toBeNull();
+
+    parser.push(
+      "stdout",
+      '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":5,"reasoning_output_tokens":3}}\n'
+    );
+    expect(parser.usage()).toMatchObject({
+      inputTokens: 100,
+      cachedInputTokens: 20,
+      outputTokens: 5,
+      reasoningOutputTokens: 3
+    });
+
+    // 多次 turn.completed 取最后一次
+    parser.push(
+      "stdout",
+      '{"type":"turn.completed","usage":{"input_tokens":72148,"cached_input_tokens":47360,"output_tokens":2765,"reasoning_output_tokens":1542}}\n'
+    );
+    expect(parser.usage()).toMatchObject({ inputTokens: 72148, outputTokens: 2765 });
+
+    // 无 usage 字段的完成事件不清空已记录的用量
+    parser.push("stdout", '{"type":"turn.completed"}\n');
+    expect(parser.usage()?.inputTokens).toBe(72148);
+  });
+});
+
+describe("run log text fallback", () => {
+  const base: RunLogEntry = {
+    sequence: 1,
+    occurredAt: "2026-07-27T00:00:00.000Z",
+    stream: "stdout",
+    kind: "assistant",
+    level: "info",
+    content: "已完成"
+  };
+
+  it("keeps assistant content clean and labels operational records", () => {
+    expect(formatRunLogEntry(base)).toBe("已完成");
+    expect(formatRunLogEntry({ ...base, kind: "command", title: "bun test", content: "41 pass" }))
+      .toBe("[命令 · bun test] 41 pass");
+  });
+});
+
+describe("process execution lifecycle", () => {
+  it("does not launch an agent after cancellation and still emits ordered records", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const entries: RunLogEntry[] = [];
+    const result = await executeWorker({
+      workerKind: "codex",
+      cwd: import.meta.dir,
+      prompt: "do not run",
+      signal: controller.signal,
+      onLog: async (entry) => {
+        entries.push(entry);
+      }
+    });
+    expect(result).toMatchObject({ success: false, exitCode: null, error: "Maple CLI 已停止，Worker 未启动。" });
+    expect(entries.map((entry) => entry.sequence)).toEqual([0, 1]);
+    expect(entries.map((entry) => entry.kind)).toEqual(["lifecycle", "error"]);
+    expect(entries.every((entry) => Number.isFinite(Date.parse(entry.occurredAt)))).toBe(true);
+  });
+});

@@ -1,97 +1,29 @@
-# Maple MCP 与 Skills 指南
+# Maple managed runtime
 
-## Monorepo 拆分位置
+Maple CLI owns its agent runtime. Starting any installed CLI creates and maintains:
 
-- `packages/mcp-tools`：Maple MCP 工具能力（项目待办查询、最近上下文查询、工具清单）
-- `packages/worker-skills`：Maple Skills 能力（任务执行 Prompt、技能定义）
-
-## 独立定位（关键）
-
-- `Maple MCP + Maple Skills` 是 Maple 的核心执行能力。
-- 默认走项目内闭环执行链路，不依赖外部任务系统。
-- 任何扩展接入都不应影响 Maple 主链路的独立性。
-
-## 在 Maple 仓库内安装
-
-1. 在仓库根目录执行依赖安装：
-
-```bash
-pnpm install
+```text
+~/.maple/runtime/
+  mcp/mcp.json
+  skills/maple/SKILL.md
+  playwright/
+  artifacts/
 ```
 
-2. 验证拆分后的包已被桌面端正确引用：
+The MCP server is the CLI's built-in `maple mcp` command. It only exposes the current process role, project directory and managed Skill location. Task state and reports continue to flow through the authenticated Server API; MCP is not an alternate authorization path.
 
-```bash
-pnpm typecheck
-pnpm build
+PM and Worker prompts include the managed Skill and MCP paths. Codex receives an invocation-scoped MCP configuration, and Claude receives `--mcp-config`. Maple does not write into `.codex`, `.claude`, `.gemini`, `.iflow` or `.windsurf`.
+
+Playwright and Chromium are installed below `~/.maple/runtime/playwright`, with `PLAYWRIGHT_BROWSERS_PATH` pinned to that directory. No dependency or browser cache is written into a project directory.
+
+Use the Server-hosted installers:
+
+```powershell
+irm https://your-maple-host/install.ps1 | iex
 ```
 
-## 在其他工程中复用这两个包
-
-```bash
-pnpm add @maple/mcp-tools @maple/worker-skills
+```sh
+curl -fsSL https://your-maple-host/install.sh | sh
 ```
 
-## 继续扩展 Maple MCP 与 Skills
-
-- MCP 工具扩展：编辑 `packages/mcp-tools/src/index.ts`，新增工具定义与查询函数。
-- Skills 扩展：编辑 `packages/worker-skills/src/index.ts`，新增技能项并调整提示词模板。
-- 扩展后统一验证：
-
-```bash
-pnpm typecheck
-pnpm build
-```
-
-## 默认 Maple MCP（内置 HTTP）
-
-Maple 桌面应用内置 HTTP MCP 服务器，启动后自动监听 `127.0.0.1:45819`。
-
-无需单独安装或配置 MCP 进程，打开 Maple 桌面应用即可使用。
-
-Worker 通过以下地址连接：
-
-```
-http://localhost:45819/mcp
-```
-
-项目根目录的 `.mcp.json` 已配置好：
-
-```json
-{
-  "mcpServers": {
-    "maple": {
-      "url": "http://localhost:45819/mcp"
-    }
-  }
-}
-```
-
-## （可选）Codex 侧安装 Skills
-
-1. 推荐：在 Codex 会话中使用 `$skill-installer`，按技能名安装。
-2. 手动：把技能目录放入 `~/.codex/skills/<skill-name>`。
-3. 安装后重启 Codex 会话，使新技能生效。
-
-## Windsurf 接入
-
-如果你在 Windsurf 中使用 Maple，请参考：
-
-- `docs/windsurf-maple-setup.md`
-
-## 一键安装脚本
-
-仓库内提供四套 CLI 安装脚本（MCP + Skills）：
-
-```bash
-bash scripts/maple-install.sh
-```
-
-或按 CLI 单独安装：
-
-```bash
-bash scripts/installers/install-maple-codex.sh
-bash scripts/installers/install-maple-claude.sh
-bash scripts/installers/install-maple-iflow.sh
-bash scripts/installers/install-maple-windsurf.sh
-```
+Set `MAPLE_SKIP_PLAYWRIGHT_INSTALL=1` before installation only when screenshot acceptance is intentionally unavailable.

@@ -8,8 +8,10 @@
     "paths": {
       "@maple/kanban-core": ["packages/kanban-core/src/index.ts"],
       "@maple/agent-runtime": ["packages/agent-runtime/src/index.ts"],
+      "@maple/board-ui": ["packages/board-ui/src/index.ts"],
+      "@maple/client-ui": ["packages/client-ui/src/index.ts"],
+      "@maple/protocol": ["packages/protocol/src/index.ts"],
       "@maple/worker-skills": ["packages/worker-skills/src/index.ts"],
-      "@maple/mcp-server": ["packages/maple-mcp-server/src/index.ts"]
     },
     "strict": true,
     "skipLibCheck": true,

@@ -1,0 +1,26 @@
+{
+  "name": "@maple/server",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "exports": {
+    "./standalone": "./src/standalone/index.ts"
+  },
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun scripts/start.ts",
+    "build": "bun scripts/build.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "lint": "echo \"lint not configured for @maple/server\""
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.4.0",
+    "@maple/protocol": "workspace:*",
+    "elysia": "^1.4.0",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0"
+  }
+}

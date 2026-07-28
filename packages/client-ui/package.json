@@ -1,0 +1,19 @@
+{
+  "name": "@maple/client-ui",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./theme.css": "./src/theme.css"
+  },
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"lint not configured for @maple/client-ui\""
+  },
+  "dependencies": {
+    "@maple/protocol": "workspace:*"
+  }
+}

@@ -1,0 +1,11 @@
+.git
+.github
+.zcode
+node_modules
+**/node_modules
+**/dist
+**/target
+apps/desktop/src-tauri/target
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
