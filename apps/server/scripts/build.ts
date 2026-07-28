@@ -7,7 +7,12 @@ import {
   prepareBuildStagingRoot,
   publishBuildDirectory
 } from "./build-output";
-import { copyStandaloneDashboard, writeStandaloneDownloadManifest } from "./standalone-download";
+import {
+  copyStandaloneDashboard,
+  STANDALONE_DOWNLOAD_MANIFEST,
+  STANDALONE_DOWNLOAD_SIZED_MANIFEST,
+  writeStandaloneDownloadManifest
+} from "./standalone-download";
 
 const serverRoot = resolve(import.meta.dir, "..");
 const webRoot = resolve(serverRoot, "../web");
@@ -71,12 +76,14 @@ try {
   const serverEntry = join(stagingRoot, "index.js");
   const dashboardEntry = join(webOutputRoot, "index.html");
   const standaloneEntry = join(standaloneDownloadRoot, "maple-local.js");
-  const standaloneManifest = join(standaloneDownloadRoot, "manifest.txt");
+  const standaloneManifest = join(standaloneDownloadRoot, STANDALONE_DOWNLOAD_MANIFEST);
+  const standaloneSizedManifest = join(standaloneDownloadRoot, STANDALONE_DOWNLOAD_SIZED_MANIFEST);
   if (
     !existsSync(serverEntry)
     || !existsSync(dashboardEntry)
     || !existsSync(standaloneEntry)
     || !existsSync(standaloneManifest)
+    || !existsSync(standaloneSizedManifest)
   ) {
     throw new Error("Maple Server build is incomplete: Server entry or dashboard entry is missing.");
   }

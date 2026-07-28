@@ -69,6 +69,47 @@ describe("Maple Local download publication", () => {
     }
   });
 
+  it("shows every installation stage and identifies the stage that failed", () => {
+    const scriptsRoot = resolve(import.meta.dir, "../../../scripts");
+    const installers = [
+      { name: "maple-install.sh", stages: 8 },
+      { name: "maple-install.ps1", stages: 7 },
+      { name: "maple-local-install.sh", stages: 9 },
+      { name: "maple-local-install.ps1", stages: 9 }
+    ];
+
+    for (const installer of installers) {
+      const content = readFileSync(join(scriptsRoot, installer.name), "utf8");
+      for (let stage = 1; stage <= installer.stages; stage++) {
+        expect(content).toContain(`[${stage}/${installer.stages}]`);
+      }
+      expect(content).toContain("Installation failed during");
+      expect(content).toContain("Installing Playwright package");
+      expect(content).toContain("Installing Chromium browser");
+    }
+  });
+
+  it("shows download progress and validates the complete local payload", () => {
+    const scriptsRoot = resolve(import.meta.dir, "../../../scripts");
+    const hostedShell = readFileSync(join(scriptsRoot, "maple-install.sh"), "utf8");
+    const hostedPowerShell = readFileSync(join(scriptsRoot, "maple-install.ps1"), "utf8");
+    const localShell = readFileSync(join(scriptsRoot, "maple-local-install.sh"), "utf8");
+    const localPowerShell = readFileSync(join(scriptsRoot, "maple-local-install.ps1"), "utf8");
+
+    expect(hostedShell).toContain("--progress-bar");
+    expect(hostedPowerShell).toContain("Write-Progress");
+    expect(localShell).toContain("maple_show_progress");
+    expect(localPowerShell).toContain("Write-Progress");
+
+    for (const installer of [localShell, localPowerShell]) {
+      expect(installer).toContain("manifest-v2.txt");
+      expect(installer).toContain("WebUI");
+      expect(installer).toContain("Downloaded payload size mismatch");
+    }
+    expect(localShell).toContain("Server+CUI");
+    expect(localPowerShell).toContain("Server + CUI");
+  });
+
   it("installs a persistent Maple Local update command on both platforms", () => {
     const scriptsRoot = resolve(import.meta.dir, "../../../scripts");
     const shellInstaller = readFileSync(join(scriptsRoot, "maple-local-install.sh"), "utf8");
@@ -120,5 +161,7 @@ describe("Maple Local download publication", () => {
     expect(existsSync(join(downloadRoot, "web", "downloads"))).toBe(false);
     expect(readFileSync(join(downloadRoot, "manifest.txt"), "utf8"))
       .toBe("maple-local.js\nweb/assets/app.js\nweb/index.html\n");
+    expect(readFileSync(join(downloadRoot, "manifest-v2.txt"), "utf8"))
+      .toBe("5\tmaple-local.js\n3\tweb/assets/app.js\n5\tweb/index.html\n");
   });
 });

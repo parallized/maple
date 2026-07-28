@@ -44,7 +44,7 @@ export function AccountControl({
   function togglePopover() {
     if (!popoverOpen && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
-      setPopoverPos({ left: rect.left, bottom: window.innerHeight - rect.top + 8 });
+      setPopoverPos({ left: rect.left, bottom: window.innerHeight - rect.top + 12 });
     }
     setPopoverOpen((value) => !value);
   }
@@ -121,7 +121,7 @@ export function AccountControl({
             </div>
           </div>
 
-          <div className="px-2 pb-1">
+          <div className="px-2 pb-2 pt-1">
             <PopoverItem
               icon="mingcute:settings-3-line"
               label="设置"

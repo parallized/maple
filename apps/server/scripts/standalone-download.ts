@@ -1,9 +1,12 @@
-import { cpSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
 function portablePath(path: string): string {
   return path.split(sep).join("/");
 }
+
+export const STANDALONE_DOWNLOAD_MANIFEST = "manifest.txt";
+export const STANDALONE_DOWNLOAD_SIZED_MANIFEST = "manifest-v2.txt";
 
 function filesBelow(root: string, current = root): string[] {
   const files: string[] = [];
@@ -33,9 +36,15 @@ export function copyStandaloneDashboard(sourceWebRoot: string, downloadRoot: str
 export function writeStandaloneDownloadManifest(downloadRoot: string): string[] {
   const root = resolve(downloadRoot);
   const manifest = filesBelow(root)
-    .filter((path) => path !== "manifest.txt")
+    .filter((path) => path !== STANDALONE_DOWNLOAD_MANIFEST && path !== STANDALONE_DOWNLOAD_SIZED_MANIFEST)
     .sort((left, right) => left.localeCompare(right, "en"));
-  writeFileSync(join(root, "manifest.txt"), `${manifest.join("\n")}\n`, "utf8");
+  writeFileSync(join(root, STANDALONE_DOWNLOAD_MANIFEST), `${manifest.join("\n")}\n`, "utf8");
+  const sizedManifest = manifest.map((path) => `${statSync(join(root, path)).size}\t${path}`);
+  writeFileSync(
+    join(root, STANDALONE_DOWNLOAD_SIZED_MANIFEST),
+    `${sizedManifest.join("\n")}\n`,
+    "utf8"
+  );
   return manifest;
 }
 

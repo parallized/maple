@@ -2,10 +2,10 @@
 
 ## 使用
 
-目前你可以选择 2 种形式使用 Maple，取决于你是否需要多平台协作
+目前你可以选择 2 种形式使用 Maple，取决于你是否需要多平台、随地使用、多人协作等功能
 
-- 本地运行，数据完全自持，响应速度快，没有安全套件，端口不开放无需在线和多人协作的情况下使用
-- 自行部署服务器或使用 Maple 官方测试服务器，有安全套件，支持多租户，多平台，随时随地使用
+- 本地运行：数据完全自持，响应速度快，没有安全套件，端口不开放无需在线和多人协作的情况下使用
+- 自行部署服务器或使用 Maple 官方测试服务器：有安全套件，支持多租户，多平台，随时随地使用
 
 Maple 依赖于你本机的各种 AI 服务包括 Codex, Claude 等等，建议在安装 Maple 期间把 AI 服务调通
 
@@ -15,6 +15,8 @@ Maple 依赖于你本机的各种 AI 服务包括 Codex, Claude 等等，建议�
 
 ```powershell
 irm https://maplecode.art/install-local.ps1 | iex
+
+curl -fsSL https://maplecode.art/install-local.sh | sh
 ```
 
 2. 在弹出的浏览器页面开始工作
@@ -25,6 +27,8 @@ irm https://maplecode.art/install-local.ps1 | iex
 
 ```powershell
 irm https://maplecode.art/install.ps1 | iex
+
+curl -fsSL https://maplecode.art/install.sh | sh
 ```
 
 2. 登录 MapleCode 官方，并绑定你的 CLI 至工作区
