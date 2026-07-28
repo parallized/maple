@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./ui-font": "./src/lib/ui-font.ts",
     "./styles.css": "./src/styles/styles.css",
     "./radius-overrides.css": "./src/styles/radius-overrides.css",
     "./badge-overrides.css": "./src/styles/badge-overrides.css"

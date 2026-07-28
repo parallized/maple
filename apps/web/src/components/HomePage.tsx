@@ -1,4 +1,4 @@
-import { applyUiFont } from "@maple/board-ui";
+import { applyUiFont } from "@maple/board-ui/ui-font";
 import { Icon } from "@iconify/react";
 import { useEffect, useRef, useState } from "react";
 import type { DashboardApi } from "../api/client";
