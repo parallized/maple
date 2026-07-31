@@ -5,9 +5,15 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $MapleInstallStage = "reading installer configuration"
+$script:MapleProgressActivity = ""
+$script:MapleNextDownloadPercent = 0
 trap {
+  $failure = $_
   try { Write-Progress -Id 1 -Activity "Installing Maple Local" -Completed } catch {}
   [Console]::Error.WriteLine("[maple-local] Installation failed during $MapleInstallStage.")
+  if ($failure.Exception.Message) {
+    [Console]::Error.WriteLine("[maple-local] Cause: $($failure.Exception.Message)")
+  }
   break
 }
 
@@ -48,18 +54,25 @@ function Invoke-MapleDownload {
     while (($read = $source.Read($buffer, 0, $buffer.Length)) -gt 0) {
       $target.Write($buffer, 0, $read)
       $downloaded += $read
-      if (Test-MapleProgressAvailable) {
-        $progressBytes = if ($TotalBytes -gt 0) { $CompletedBytes + $downloaded } else { $downloaded }
-        $progressTotal = if ($TotalBytes -gt 0) { $TotalBytes } else { $response.ContentLength }
-        if ($progressTotal -gt 0) {
-          $percent = [Math]::Min(100, [Math]::Floor(($progressBytes * 100) / $progressTotal))
+      $progressBytes = if ($TotalBytes -gt 0) { $CompletedBytes + $downloaded } else { $downloaded }
+      $progressTotal = if ($TotalBytes -gt 0) { $TotalBytes } else { $response.ContentLength }
+      if ($script:MapleProgressActivity -ne $Activity) {
+        $script:MapleProgressActivity = $Activity
+        $script:MapleNextDownloadPercent = 0
+      }
+      if ($progressTotal -gt 0) {
+        $percent = [Math]::Min(100, [Math]::Floor(($progressBytes * 100) / $progressTotal))
+        if (Test-MapleProgressAvailable) {
           Write-Progress -Id $ProgressId -Activity $Activity `
             -Status "$Status - $(Format-MapleBytes $progressBytes) / $(Format-MapleBytes $progressTotal)" `
             -PercentComplete $percent
-        } else {
-          Write-Progress -Id $ProgressId -Activity $Activity `
-            -Status "$Status - $(Format-MapleBytes $progressBytes)" -PercentComplete -1
+        } elseif ($percent -ge $script:MapleNextDownloadPercent) {
+          Write-Host "[maple-local]       $Status - $percent% - $(Format-MapleBytes $progressBytes) / $(Format-MapleBytes $progressTotal)"
+          do { $script:MapleNextDownloadPercent += 10 } while ($script:MapleNextDownloadPercent -le $percent)
         }
+      } elseif (Test-MapleProgressAvailable) {
+        Write-Progress -Id $ProgressId -Activity $Activity `
+          -Status "$Status - $(Format-MapleBytes $progressBytes)" -PercentComplete -1
       }
     }
     return $downloaded

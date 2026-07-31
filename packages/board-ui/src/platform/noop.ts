@@ -33,6 +33,8 @@ export function createNoopPlatform(
     persistProjects: () => {},
     loadConstitution: async () => null,
     saveConstitution: async () => {},
+    loadLeaderConstitution: async () => null,
+    saveLeaderConstitution: async () => {},
     saveImageAsset: async () => {
       throw new Error("当前平台不支持保存图片。");
     },

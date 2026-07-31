@@ -68,6 +68,16 @@ export function isAddProjectKey(key: Key): boolean {
   return key.name === "char" && key.char?.toLowerCase() === "e";
 }
 
+export function isForceTerminateKey(key: Key): boolean {
+  return key.name === "char" && key.char?.toLowerCase() === "x";
+}
+
+export function runnerStoppingLabel(forceStopping: boolean): string {
+  return forceStopping
+    ? "正在强制终止 Worker…"
+    : "正在终止，等待 Worker 收尾… 按 X 强制终止";
+}
+
 function cleanInlineLabel(value: string): string {
   return value.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
 }
@@ -156,6 +166,7 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
   let connection: RunnerConnectionStatus = { state: "connecting", message: "正在连接 Server…" };
   let cacheLabel = "";
   let stopping = false;
+  let forceStopping = false;
   let addingProject = false;
   let projectNotice: { kind: "success" | "info" | "error"; message: string } | null = null;
   const managerStates = new Map<string, ProjectManagerActivityState>();
@@ -270,7 +281,7 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
           ];
       const waitingPanel = wrapPanel(waitingLines, null, style, symbols);
       const panelWidth = Math.max(...waitingPanel.map(displayWidth));
-      const leftPad = " ".repeat(Math.max(0, Math.floor((width - panelWidth) / 2)));
+      const leftPad = "  ".concat(" ".repeat(Math.max(0, Math.floor((width - 4 - panelWidth) / 2))));
       const topPad = Math.max(0, Math.floor((logHeight - waitingPanel.length) / 2));
       for (let index = 0; index < topPad; index++) body.push("");
       for (const line of waitingPanel) body.push(`${leftPad}${line}`);
@@ -278,6 +289,8 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
       body.push(...bottomAlignLogLines(pane.logs, logHeight));
     }
     while (body.length < logHeight) body.push("");
+    // 上半区（品牌行、记录区）与底部信息区保持相同的 2 格左边距。
+    const paddedBody = body.map((line) => (line ? `  ${line}` : line));
 
     const workspaceName = currentConfig.runner?.workspaceName?.trim() || "Maple";
     const host = serverHost(currentConfig.serverUrl);
@@ -347,7 +360,7 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
             ? style.dim(projectNotice.message)
             : "";
     const status = stopping
-      ? style.warning("正在终止，等待 Worker 收尾…")
+      ? style.warning(runnerStoppingLabel(forceStopping))
       : `${style.accent("Q")} ${style.dim("终止退出")}  ${dot} ${connection.message}${projectStatus ? ` · ${projectStatus}` : ""}`;
     // 缓存占用右对齐在状态行；宽度不足（至少留 2 格间距）时省略。
     // 左右各留 2 格边距：贴到最后一列会被部分终端吃掉末尾字符（比如缓存的 M）。
@@ -359,7 +372,7 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
     }
     // 底部信息区与记录区之间一条细分割线（左右各留 2 格），底部再留一行空行。
     const divider = style.panel(`  ${symbols.hr.repeat(Math.max(1, width - 4))}  `);
-    screen.render([header, ...body, tabBar, divider, `  ${projectBar}`, statusLine, ""]);
+    screen.render([`  ${header}`, ...paddedBody, tabBar ? `  ${tabBar}` : "", divider, `  ${projectBar}`, statusLine, ""]);
     dirty = false;
   };
 
@@ -406,6 +419,14 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
     for (;;) {
       const key = await Promise.race([source.next(), runPromise.then(() => null)]);
       if (key === null) break;
+      if (stopping && isForceTerminateKey(key)) {
+        if (!forceStopping) {
+          forceStopping = true;
+          runner.forceTerminate();
+          render();
+        }
+        continue;
+      }
       if (isAddProjectKey(key)) {
         if (addingProject || stopping) continue;
         addingProject = true;

@@ -1,6 +1,7 @@
 import type { HealthResponse } from "@maple/protocol";
 import { startStandaloneServer } from "@maple/server/standalone";
 import { stringOption } from "../args";
+import { createDeepSeekProviderCredentialService } from "../credentials/deepseek";
 import { openBrowser } from "../auth/device-authorization";
 import { connectCommand, projectCommand, statusCommand } from "../commands";
 import { ensureRuntimeLayout, runtimeEnvironment } from "../runtime/layout";
@@ -8,10 +9,14 @@ import { runRuntimeMcpServer } from "../runtime/mcp-server";
 import { runTui } from "../tui/app";
 import { provisionStandaloneCli } from "./bootstrap";
 import { resolveStandaloneLayout } from "./layout";
-import { parseStandaloneArgs } from "./startup";
+import { parseStandaloneArgs, shouldOpenStandaloneBrowser } from "./startup";
 
 const argv = process.argv.slice(2);
 const args = parseStandaloneArgs(argv);
+
+function openStandaloneDashboard(url: string): void {
+  if (shouldOpenStandaloneBrowser()) openBrowser(url);
+}
 
 function printStandaloneHelp(): void {
   console.log(`Maple Local
@@ -63,7 +68,7 @@ async function main(): Promise<void> {
   const url = `http://127.0.0.1:${layout.port}`;
   if (await runningStandalone(url)) {
     if (argv.length === 0 || args.command === "tui" || args.command === "connect") {
-      openBrowser(url);
+      openStandaloneDashboard(url);
       console.log(`[maple-local] 已在运行：${url}`);
       return;
     }
@@ -76,7 +81,9 @@ async function main(): Promise<void> {
   const server = await startStandaloneServer({
     dataDir: layout.serverDataDir,
     webRoot: layout.webRoot,
-    port: layout.port
+    port: layout.port,
+    allowedOrigins: layout.allowedOrigins,
+    providerCredentials: createDeepSeekProviderCredentialService()
   });
   provisionStandaloneCli(server, layout.cliConfigPath);
   const controller = new AbortController();
@@ -86,17 +93,17 @@ async function main(): Promise<void> {
 
   try {
     if (argv.length === 0) {
-      openBrowser(server.url);
+      openStandaloneDashboard(server.url);
       await runTui(layout.cliConfigPath, {
         fixedServerUrl: server.url,
         standalone: true,
         autoConnect: true
       });
     } else if (args.command === "tui") {
-      openBrowser(server.url);
+      openStandaloneDashboard(server.url);
       await runTui(layout.cliConfigPath, { fixedServerUrl: server.url, standalone: true });
     } else if (args.command === "connect") {
-      openBrowser(server.url);
+      openStandaloneDashboard(server.url);
       await connectCommand(
         { ...args, options: { ...args.options, server: server.url } },
         layout.cliConfigPath,

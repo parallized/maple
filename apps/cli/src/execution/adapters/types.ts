@@ -9,6 +9,8 @@ export interface WorkerCommand {
 
 export interface AgentCommandOptions {
   readOnly?: boolean;
+  /** Per-run reasoning override; the Leader uses a lighter setting than Workers. */
+  reasoningEffort?: string;
   /** 已持久化的 Provider session ID；存在时必须续接该会话。 */
   resumeSessionId?: string;
   /** Maple 管理的任务级目录；Agent 只能在有明确用途时额外写入这些目录。 */

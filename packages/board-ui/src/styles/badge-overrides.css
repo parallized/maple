@@ -18,6 +18,12 @@
   font-weight: 500;
 }
 
+.ui-badge.ui-badge--planning {
+  background: color-mix(in srgb, var(--color-planning) 16%, transparent);
+  color: color-mix(in srgb, var(--color-planning) 85%, var(--color-base-content));
+  font-weight: 500;
+}
+
 .ui-badge.ui-badge--draft {
   background: color-mix(in srgb, var(--color-warning) 12%, transparent);
   color: color-mix(in srgb, var(--color-warning) 85%, var(--color-base-content));

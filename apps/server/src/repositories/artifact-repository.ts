@@ -27,6 +27,7 @@ interface ArtifactRow {
   mime_type: TodoScreenshotMimeType;
   size_bytes: number;
   storage_name: string;
+  delivery_id: string | null;
   created_at: string;
 }
 
@@ -80,9 +81,18 @@ export class ArtifactRepository {
   async storeScreenshot(
     todoId: string,
     attemptId: string,
+    deliveryId: string,
     file: File,
     compressionPreset: ScreenshotCompressionPreset
   ): Promise<TodoArtifact> {
+    const delivered = this.findDelivery(deliveryId);
+    if (delivered) {
+      if (delivered.todo_id !== todoId || delivered.attempt_id !== attemptId) {
+        throw new ArtifactValidationError("artifact_delivery_conflict", "截图投递 ID 已被其他任务使用。", 409);
+      }
+      if (existsSync(this.storagePath(delivered.storage_name))) return toArtifact(delivered);
+      this.database.run("DELETE FROM todo_artifacts WHERE id = ?", [delivered.id]);
+    }
     if (file.size <= 0 || file.size > TODO_SCREENSHOT_MAX_BYTES) {
       throw new ArtifactValidationError(
         "screenshot_size_invalid",
@@ -114,36 +124,6 @@ export class ArtifactRepository {
     const id = crypto.randomUUID();
     const storageName = `${id}.webp`;
     const createdAt = nowIso();
-    const reserve = this.database.transaction(() => {
-      const row = this.database
-        .query("SELECT COUNT(*) AS count FROM todo_artifacts WHERE attempt_id = ? AND kind = 'screenshot'")
-        .get(attemptId) as { count: number };
-      if (row.count >= TODO_SCREENSHOT_MAX_COUNT) return false;
-      this.database.run(
-        `INSERT INTO todo_artifacts(
-           id, todo_id, attempt_id, kind, file_name, mime_type, size_bytes, storage_name, created_at
-         ) VALUES (?, ?, ?, 'screenshot', ?, ?, ?, ?, ?)`,
-        [
-          id,
-          todoId,
-          attemptId,
-          normalized.fileName,
-          normalized.mimeType,
-          normalized.bytes.byteLength,
-          storageName,
-          createdAt
-        ]
-      );
-      return true;
-    });
-    if (!reserve.immediate()) {
-      throw new ArtifactValidationError(
-        "screenshot_limit_reached",
-        `每次任务最多上传 ${TODO_SCREENSHOT_MAX_COUNT} 张截图。`,
-        409
-      );
-    }
-
     const finalPath = this.storagePath(storageName);
     const temporaryPath = `${finalPath}.${crypto.randomUUID()}.tmp`;
     const thumbnail = await createScreenshotThumbnail(normalized.bytes);
@@ -160,15 +140,66 @@ export class ArtifactRepository {
       if (thumbnail && thumbnailTemporaryPath && thumbnailFinalPath) {
         await rename(thumbnailTemporaryPath, thumbnailFinalPath);
       }
-      touchRevision(this.database);
     } catch (error) {
-      this.database.run("DELETE FROM todo_artifacts WHERE id = ?", [id]);
       await rm(temporaryPath, { force: true }).catch(() => undefined);
       await rm(finalPath, { force: true }).catch(() => undefined);
       if (thumbnailTemporaryPath) await rm(thumbnailTemporaryPath, { force: true }).catch(() => undefined);
       if (thumbnailFinalPath) await rm(thumbnailFinalPath, { force: true }).catch(() => undefined);
       throw error;
     }
+
+    let reservation: { existing: ArtifactRow | null; reserved: boolean };
+    try {
+      reservation = this.database.transaction((): { existing: ArtifactRow | null; reserved: boolean } => {
+        const existing = this.findDelivery(deliveryId);
+        if (existing) {
+          if (existing.todo_id !== todoId || existing.attempt_id !== attemptId) {
+            throw new ArtifactValidationError("artifact_delivery_conflict", "截图投递 ID 已被其他任务使用。", 409);
+          }
+          return { existing, reserved: false };
+        }
+        const row = this.database
+          .query("SELECT COUNT(*) AS count FROM todo_artifacts WHERE attempt_id = ? AND kind = 'screenshot'")
+          .get(attemptId) as { count: number };
+        if (row.count >= TODO_SCREENSHOT_MAX_COUNT) return { existing: null, reserved: false };
+        this.database.run(
+          `INSERT INTO todo_artifacts(
+             id, todo_id, attempt_id, kind, file_name, mime_type, size_bytes, storage_name, delivery_id, created_at
+           ) VALUES (?, ?, ?, 'screenshot', ?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            todoId,
+            attemptId,
+            normalized.fileName,
+            normalized.mimeType,
+            normalized.bytes.byteLength,
+            storageName,
+            deliveryId,
+            createdAt
+          ]
+        );
+        return { existing: null, reserved: true };
+      }).immediate();
+    } catch (error) {
+      await rm(finalPath, { force: true }).catch(() => undefined);
+      if (thumbnailFinalPath) await rm(thumbnailFinalPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    if (reservation.existing) {
+      await rm(finalPath, { force: true }).catch(() => undefined);
+      if (thumbnailFinalPath) await rm(thumbnailFinalPath, { force: true }).catch(() => undefined);
+      return toArtifact(reservation.existing);
+    }
+    if (!reservation.reserved) {
+      await rm(finalPath, { force: true }).catch(() => undefined);
+      if (thumbnailFinalPath) await rm(thumbnailFinalPath, { force: true }).catch(() => undefined);
+      throw new ArtifactValidationError(
+        "screenshot_limit_reached",
+        `每次任务最多上传 ${TODO_SCREENSHOT_MAX_COUNT} 张截图。`,
+        409
+      );
+    }
+    touchRevision(this.database);
 
     return {
       id,
@@ -234,6 +265,12 @@ export class ArtifactRepository {
       throw new Error("成果物存储名无效");
     }
     return join(this.root, storageName);
+  }
+
+  private findDelivery(deliveryId: string): ArtifactRow | null {
+    return this.database
+      .query("SELECT * FROM todo_artifacts WHERE delivery_id = ?")
+      .get(deliveryId) as ArtifactRow | null;
   }
 }
 

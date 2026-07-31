@@ -30,6 +30,7 @@ describe("Web Worker sidebar", () => {
     expect(workers.map((worker) => worker.kind)).toEqual([
       "claude",
       "codex",
+      "deepseek",
       "kimi",
       "glm",
       "iflow",

@@ -22,6 +22,7 @@ describe("Worker model identity", () => {
     expect(formatWorkerModelName("claude", "opus[1m]")).toBe("Claude Opus 1M");
     expect(formatWorkerModelName("kimi", "kimi-code/k3-256k")).toBe("Kimi K3 256K");
     expect(formatWorkerModelName("glm", "zai-coding-plan/glm-5.2")).toBe("GLM 5.2");
+    expect(formatWorkerModelName("deepseek", "deepseek-v4-flash")).toBe("DeepSeek V4 Flash");
   });
 
   it("reads only the selected Codex and Kimi model fields from local config", () => {
@@ -64,6 +65,11 @@ describe("Worker model identity", () => {
       modelId: "zai-coding-plan/glm-5.2",
       modelName: "GLM 5.2",
       reasoningEffort: null
+    });
+    expect(resolveWorkerModelIdentity("deepseek", {})).toEqual({
+      modelId: "deepseek-v4-flash",
+      modelName: "DeepSeek V4 Flash",
+      reasoningEffort: "high"
     });
   });
 });

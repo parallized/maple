@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
+MAPLE_PROGRESS_LAST_REPORTED=-10
+
 maple_format_bytes() {
   MAPLE_FORMAT_BYTES="$1"
   if [ "$MAPLE_FORMAT_BYTES" -ge 1073741824 ]; then
@@ -15,13 +17,23 @@ maple_format_bytes() {
 }
 
 maple_show_progress() {
-  [ -t 1 ] || return 0
   MAPLE_PROGRESS_BYTES="$1"
   MAPLE_PROGRESS_TOTAL="$2"
   MAPLE_PROGRESS_INDEX="$3"
   MAPLE_PROGRESS_COUNT="$4"
   MAPLE_PROGRESS_LABEL="$5"
   MAPLE_PROGRESS_PERCENT=$((MAPLE_PROGRESS_BYTES * 100 / MAPLE_PROGRESS_TOTAL))
+  if [ ! -t 1 ]; then
+    MAPLE_PROGRESS_BUCKET=$((MAPLE_PROGRESS_PERCENT / 10 * 10))
+    if [ "$MAPLE_PROGRESS_BYTES" -ge "$MAPLE_PROGRESS_TOTAL" ]; then MAPLE_PROGRESS_BUCKET=100; fi
+    if [ "$MAPLE_PROGRESS_BUCKET" -le "$MAPLE_PROGRESS_LAST_REPORTED" ]; then return 0; fi
+    MAPLE_PROGRESS_LAST_REPORTED="$MAPLE_PROGRESS_BUCKET"
+    printf '[maple-local]       Downloading %-12s %3d%%  %s / %s  (%d/%d)\n' \
+      "$MAPLE_PROGRESS_LABEL" "$MAPLE_PROGRESS_BUCKET" \
+      "$(maple_format_bytes "$MAPLE_PROGRESS_BYTES")" "$(maple_format_bytes "$MAPLE_PROGRESS_TOTAL")" \
+      "$MAPLE_PROGRESS_INDEX" "$MAPLE_PROGRESS_COUNT"
+    return 0
+  fi
   MAPLE_PROGRESS_FILLED=$((MAPLE_PROGRESS_PERCENT * 24 / 100))
   MAPLE_PROGRESS_BAR=""
   MAPLE_PROGRESS_POSITION=0
@@ -44,8 +56,8 @@ maple_download_payload() {
   MAPLE_PAYLOAD_URL="$1"
   MAPLE_PAYLOAD_TARGET="$2"
   MAPLE_PAYLOAD_SIZE="$3"
-  if [ -t 2 ] && [ "$MAPLE_PAYLOAD_SIZE" -ge 1048576 ]; then
-    printf '\n'
+  if [ "$MAPLE_PAYLOAD_SIZE" -ge 1048576 ]; then
+    if [ -t 2 ]; then printf '\n'; fi
     curl -fL --retry 3 --show-error --progress-bar "$MAPLE_PAYLOAD_URL" -o "$MAPLE_PAYLOAD_TARGET"
   else
     curl -fsSL --retry 3 "$MAPLE_PAYLOAD_URL" -o "$MAPLE_PAYLOAD_TARGET"

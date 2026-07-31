@@ -4,7 +4,7 @@ import { buildWorkerCommand } from "../src/execution/worker-command";
 
 const base = {
   executable: "codex",
-  args: ["exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "-"],
+  args: ["--ask-for-approval", "never", "exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "-"],
   stdin: "Fix the bug"
 };
 
@@ -23,6 +23,8 @@ describe("worker shells", () => {
         'exec "$@"',
         shell,
         "codex",
+        "--ask-for-approval",
+        "never",
         "exec",
         "--sandbox",
         "workspace-write",
@@ -41,6 +43,8 @@ describe("worker shells", () => {
       "-c",
       "exec $argv",
       "codex",
+      "--ask-for-approval",
+      "never",
       "exec",
       "--sandbox",
       "workspace-write",

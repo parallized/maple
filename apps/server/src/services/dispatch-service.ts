@@ -5,6 +5,7 @@ import {
 } from "@maple/protocol";
 import type {
   AppendJobLogRequest,
+  AppendJobLogsRequest,
   CompleteJobRequest,
   ExecutionJob,
   HeartbeatJobRequest,
@@ -61,24 +62,6 @@ export class DispatchService {
     const executionSettings = this.settings.getExecution(runnerWorkspace.workspace_id);
     const claimTransaction = this.database.transaction((): ClaimedIdentifiers | null => {
       const now = nowIso();
-      const expiredAttemptUpdate = this.database.run(
-        `UPDATE todo_attempts
-         SET state = 'abandoned', error = '执行端租约已过期，任务已重新排队。', completed_at = ?
-         WHERE id IN (
-           SELECT active_attempt_id FROM todos
-           WHERE status IN ('queued', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?
-         ) AND state IN ('claimed', 'running')`,
-        [now, now]
-      );
-      const expiredTodoUpdate = this.database.run(
-        `UPDATE todos
-         SET status = 'todo', claimed_by_runner_id = NULL, active_attempt_id = NULL,
-             lease_token_hash = NULL, lease_expires_at = NULL,
-             last_error = '上一次执行端已断开，任务已重新排队。', updated_at = ?
-         WHERE status IN ('queued', 'running') AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`,
-        [now, now]
-      );
-
       const candidate = this.database
         .query(
           `SELECT t.id AS todo_id, b.id AS binding_id,
@@ -139,7 +122,6 @@ export class DispatchService {
         .get(runnerId, now, runnerId) as ClaimCandidateRow | null;
 
       if (!candidate) {
-        if (expiredAttemptUpdate.changes > 0 || expiredTodoUpdate.changes > 0) touchRevision(this.database);
         return null;
       }
 
@@ -238,39 +220,31 @@ export class DispatchService {
     const lease = this.findLease(runnerId, todoId, input.leaseToken);
     if (!lease) return false;
     const now = nowIso();
+    const restoredConnection = lease.lease_expires_at <= now;
     this.database.run("UPDATE todos SET lease_expires_at = ? WHERE id = ?", [
       addSeconds(now, this.leaseSeconds),
       todoId
     ]);
+    if (restoredConnection) touchRevision(this.database);
     return true;
   }
 
   appendLog(runnerId: string, todoId: string, input: AppendJobLogRequest): boolean {
     const lease = this.findLease(runnerId, todoId, input.leaseToken);
     if (!lease) return false;
-    const createdAt = nowIso();
-    const occurredAt = input.occurredAt && Number.isFinite(Date.parse(input.occurredAt))
-      ? input.occurredAt
-      : createdAt;
-    this.database.run(
-      `INSERT INTO todo_logs(
-         attempt_id, sequence, occurred_at, stream, kind, level, status, title, content, group_id, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        lease.active_attempt_id,
-        input.sequence ?? 0,
-        occurredAt,
-        input.stream,
-        input.kind ?? "raw",
-        input.level ?? (input.stream === "stderr" ? "error" : "info"),
-        input.status ?? null,
-        input.title ?? null,
-        input.content,
-        input.groupId ?? null,
-        createdAt
-      ]
-    );
+    this.insertLog(lease.active_attempt_id, input);
     return true;
+  }
+
+  appendLogs(runnerId: string, todoId: string, input: AppendJobLogsRequest): number | null {
+    const append = this.database.transaction(() => {
+      const lease = this.findLease(runnerId, todoId, input.leaseToken);
+      if (!lease) return null;
+      let accepted = 0;
+      for (const log of input.logs) accepted += this.insertLog(lease.active_attempt_id, log);
+      return accepted;
+    });
+    return append.immediate();
   }
 
   artifactUploadContext(
@@ -298,13 +272,7 @@ export class DispatchService {
       const lease = this.findLease(runnerId, todoId, input.leaseToken);
       if (!lease) return null;
       const now = nowIso();
-      const screenshotCount = lease.background_playwright_screenshot === 1
-        ? (this.database
-            .query("SELECT COUNT(*) AS count FROM todo_artifacts WHERE attempt_id = ? AND kind = 'screenshot'")
-            .get(lease.active_attempt_id) as { count: number }).count
-        : 0;
-      const screenshotMissing = lease.background_playwright_screenshot === 1 && screenshotCount === 0;
-      const succeeded = input.success && !screenshotMissing;
+      const succeeded = input.success;
       const attempts = (this.database
         .query("SELECT COUNT(*) AS count FROM todo_attempts WHERE todo_id = ?")
         .get(todoId) as { count: number }).count;
@@ -314,9 +282,7 @@ export class DispatchService {
       const todoStatus = succeeded ? "review" : shouldRetry ? "todo" : "blocked";
       const attemptState = succeeded ? "succeeded" : "failed";
       const summary = input.summary?.trim() || null;
-      const error = screenshotMissing
-        ? "已开启截图验收，但本次执行没有上传任何验收截图。"
-        : input.error?.trim() || null;
+      const error = input.error?.trim() || null;
       const retryAfter = shouldRetry ? addSeconds(now, lease.retry_interval_seconds) : null;
       this.database.run(
         `UPDATE todo_attempts
@@ -353,7 +319,6 @@ export class DispatchService {
   }
 
   private findLease(runnerId: string, todoId: string, leaseToken: string): LeaseRow | null {
-    const now = nowIso();
     return this.database
       .query(
         `SELECT t.active_attempt_id, t.lease_expires_at, a.background_playwright_screenshot,
@@ -361,10 +326,40 @@ export class DispatchService {
          FROM todos t
          JOIN todo_attempts a ON a.id = t.active_attempt_id
          WHERE t.id = ? AND t.claimed_by_runner_id = ? AND t.lease_token_hash = ?
-           AND t.active_attempt_id IS NOT NULL AND t.lease_expires_at > ?
+           AND t.active_attempt_id IS NOT NULL
            AND t.status IN ('queued', 'running')`
       )
-      .get(todoId, runnerId, hashSecret(leaseToken), now) as LeaseRow | null;
+      .get(todoId, runnerId, hashSecret(leaseToken)) as LeaseRow | null;
+  }
+
+  private insertLog(
+    attemptId: string,
+    input: Omit<AppendJobLogRequest, "leaseToken">
+  ): number {
+    const createdAt = nowIso();
+    const occurredAt = input.occurredAt && Number.isFinite(Date.parse(input.occurredAt))
+      ? input.occurredAt
+      : createdAt;
+    return this.database.run(
+      `INSERT OR IGNORE INTO todo_logs(
+         attempt_id, sequence, occurred_at, stream, kind, level, status, title, content, group_id,
+         delivery_id, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        attemptId,
+        input.sequence ?? 0,
+        occurredAt,
+        input.stream,
+        input.kind ?? "raw",
+        input.level ?? (input.stream === "stderr" ? "error" : "info"),
+        input.status ?? null,
+        input.title ?? null,
+        input.content,
+        input.groupId ?? null,
+        input.deliveryId ?? null,
+        createdAt
+      ]
+    ).changes;
   }
 
   private readMutation(todoId: string, attemptId: string): JobMutationResponse {

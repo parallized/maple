@@ -21,6 +21,7 @@ export const TODO_STATUS_META: Record<TodoStatus, TodoStatusMeta> = {
 
 export const WORKER_META: Record<WorkerKind, { label: string; icon: `mingcute:${string}` }> = {
   codex: { label: "Codex", icon: "mingcute:code-line" },
+  deepseek: { label: "DeepSeek Flash", icon: "mingcute:flash-line" },
   claude: { label: "Claude", icon: "mingcute:chat-1-line" },
   kimi: { label: "Kimi", icon: "mingcute:moon-line" },
   glm: { label: "GLM", icon: "mingcute:ai-line" },

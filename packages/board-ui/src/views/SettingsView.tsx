@@ -1,10 +1,11 @@
 import { Icon } from "@iconify/react";
 import { useEffect, useState, type ReactNode } from "react";
 import { FadeContent } from "../components/ReactBits";
+import { DeepSeekConnectionDialog } from "../components/DeepSeekConnectionDialog";
 import { WorkerConfigCard, type WorkerProbe } from "../components/WorkerConfigCard";
 import { WorkerLogo } from "../components/WorkerLogo";
 import { EXTERNAL_EDITOR_OPTIONS, WORKER_KINDS, type AiLanguage, type ExternalEditorApp, type ThemeMode, type UiFont, type UiLanguage } from "../lib/constants";
-import type { AcceptanceSettings, DetailMode, ScreenshotCompressionPreset, WorkerKind } from "../domain";
+import type { AcceptanceSettings, DeepSeekConnectionStatus, DetailMode, ScreenshotCompressionPreset, WorkerKind } from "../domain";
 import type { InstallTargetId } from "../lib/install-targets";
 import { usePlatform } from "../platform/context";
 
@@ -24,7 +25,10 @@ type SettingsViewProps = {
   aiLanguage: AiLanguage;
   externalEditorApp: ExternalEditorApp;
   baseWorker: WorkerKind;
+  /** Leader PM 使用的 Coding Agent。 */
+  leaderWorker: WorkerKind;
   constitution: string;
+  leaderConstitution: string;
   workerAvailability: Array<{
     kind: WorkerKind;
     label: string;
@@ -37,8 +41,9 @@ type SettingsViewProps = {
   onUiLanguageChange: (language: UiLanguage) => void;
   onAiLanguageChange: (language: AiLanguage) => void;
   onBaseWorkerChange: (kind: WorkerKind) => void;
+  onLeaderWorkerChange: (kind: WorkerKind) => void;
   onExternalEditorAppChange: (app: ExternalEditorApp) => void;
-  onSaveConstitution: (next: string) => Promise<void> | void;
+  onSaveConstitution: (worker: string, leader: string) => Promise<void> | void;
   onDetailModeChange: (mode: DetailMode) => void;
   workerRetryIntervalSeconds: number;
   workerRetryMaxAttempts: number;
@@ -46,6 +51,8 @@ type SettingsViewProps = {
   onWorkerRetryMaxAttemptsChange: (count: number) => void;
   onRefreshProbes: () => void;
   extraTabs?: SettingsExtraTab[];
+  /** 外部请求切换到指定页签(如点看板 Leader 状态条跳「模型和工具」);nonce 变化即生效。 */
+  tabRequest?: { tab: string; nonce: number } | null;
 };
 
 export function SettingsView({
@@ -56,6 +63,7 @@ export function SettingsView({
   aiLanguage,
   externalEditorApp,
   constitution,
+  leaderConstitution,
   workerAvailability,
   installProbes,
   onThemeChange,
@@ -64,7 +72,9 @@ export function SettingsView({
   onAiLanguageChange,
   onExternalEditorAppChange,
   baseWorker,
+  leaderWorker,
   onBaseWorkerChange,
+  onLeaderWorkerChange,
   onSaveConstitution,
   onDetailModeChange,
   workerRetryIntervalSeconds,
@@ -72,15 +82,66 @@ export function SettingsView({
   onWorkerRetryIntervalChange,
   onWorkerRetryMaxAttemptsChange,
   onRefreshProbes,
-  extraTabs
+  extraTabs,
+  tabRequest
 }: SettingsViewProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const platform = usePlatform();
   const { capabilities } = platform;
 
   const [activeTab, setActiveTab] = useState<string>("general");
+
+  // 外部页签请求:nonce 每次变化都切过去(同一页签也可重复触发)。
+  useEffect(() => {
+    if (tabRequest) setActiveTab(tabRequest.tab);
+  }, [tabRequest?.nonce]);
   const [constitutionDraft, setConstitutionDraft] = useState<string>(() => constitution);
+  const [leaderConstitutionDraft, setLeaderConstitutionDraft] = useState<string>(() => leaderConstitution);
   const [constitutionSaving, setConstitutionSaving] = useState(false);
+
+  const canManageDeepSeek = typeof platform.loadDeepSeekConnection === "function"
+    && typeof platform.connectDeepSeek === "function"
+    && typeof platform.disconnectDeepSeek === "function";
+  const [deepSeekStatus, setDeepSeekStatus] = useState<DeepSeekConnectionStatus | null>(null);
+  const [deepSeekStatusLoading, setDeepSeekStatusLoading] = useState(false);
+  const [deepSeekStatusError, setDeepSeekStatusError] = useState("");
+  const [deepSeekDialogOpen, setDeepSeekDialogOpen] = useState(false);
+
+  async function reloadDeepSeekStatus(): Promise<void> {
+    if (!canManageDeepSeek || deepSeekStatusLoading) return;
+    setDeepSeekStatusLoading(true);
+    setDeepSeekStatusError("");
+    try {
+      setDeepSeekStatus(await platform.loadDeepSeekConnection!());
+    } catch (error) {
+      setDeepSeekStatusError(error instanceof Error
+        ? error.message
+        : t("无法读取 DeepSeek 连接状态。", "Could not load the DeepSeek connection."));
+    } finally {
+      setDeepSeekStatusLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab !== "models" || !canManageDeepSeek || deepSeekStatus || deepSeekStatusLoading || deepSeekStatusError) return;
+    void reloadDeepSeekStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, canManageDeepSeek, deepSeekStatus, deepSeekStatusLoading, deepSeekStatusError]);
+
+  async function handleConnectDeepSeek(apiKey: string): Promise<void> {
+    const next = await platform.connectDeepSeek!(apiKey);
+    setDeepSeekStatus(next);
+    setDeepSeekStatusError("");
+    setDeepSeekDialogOpen(false);
+  }
+
+  async function handleDisconnectDeepSeek(): Promise<void> {
+    const next = await platform.disconnectDeepSeek!();
+    setDeepSeekStatus(next);
+    setDeepSeekStatusError("");
+    if (baseWorker === "deepseek") onBaseWorkerChange("codex");
+    if (leaderWorker === "deepseek") onLeaderWorkerChange("codex");
+  }
 
   // ── 验收设置（Server-backed 平台才支持，读取/写回走 platform 可选方法）──
   const canEditAcceptance = typeof platform.loadAcceptanceSettings === "function" && typeof platform.saveAcceptanceSettings === "function";
@@ -154,16 +215,28 @@ export function SettingsView({
   useEffect(() => {
     setConstitutionDraft(constitution);
   }, [constitution]);
+  useEffect(() => {
+    setLeaderConstitutionDraft(leaderConstitution);
+  }, [leaderConstitution]);
 
-  const installedWorkers = workerAvailability.filter((w) => w.available);
-  const uninstalledWorkers = workerAvailability.filter((w) => !w.available);
-  const constitutionDirty = constitutionDraft !== constitution;
+  const visibleWorkerAvailability = workerAvailability.filter(
+    (worker) => worker.kind !== "deepseek" || deepSeekStatus?.configured
+  );
+  const installedWorkers = visibleWorkerAvailability.filter((w) => w.available);
+  const uninstalledWorkers = visibleWorkerAvailability.filter((w) => !w.available);
+  const deepSeekSelectable = deepSeekStatus?.configured === true
+    || baseWorker === "deepseek"
+    || leaderWorker === "deepseek";
+  const selectableModelWorkers = WORKER_KINDS.filter(
+    (worker) => worker.kind !== "deepseek" || deepSeekSelectable
+  );
+  const constitutionDirty = constitutionDraft !== constitution || leaderConstitutionDraft !== leaderConstitution;
 
   async function handleSaveConstitution() {
     if (!constitutionDirty || constitutionSaving) return;
     try {
       setConstitutionSaving(true);
-      await Promise.resolve(onSaveConstitution(constitutionDraft));
+      await Promise.resolve(onSaveConstitution(constitutionDraft, leaderConstitutionDraft));
     } finally {
       setConstitutionSaving(false);
     }
@@ -171,6 +244,7 @@ export function SettingsView({
 
   const tabs = [
     { id: "general", label: t("常规", "General"), icon: "mingcute:settings-3-line" },
+    { id: "models", label: t("模型和工具", "Models & Workflow"), icon: "mingcute:ai-line" },
     ...(capabilities.canInstall
       ? [{ id: "workers", label: t("Worker", "Worker"), icon: "mingcute:plugin-2-line" }]
       : []),
@@ -191,16 +265,16 @@ export function SettingsView({
   return (
     <FadeContent duration={300} className="h-full">
       <section className="h-full max-w-full flex flex-col">
-        <div className="flex flex-1 min-h-0 gap-[0.9rem]">
+        <div className="settings-layout flex flex-1 min-h-0 gap-[0.9rem]">
           {/* Sidebar Navigation */}
           <aside className="board-sidebar">
-            <div className="flex items-center gap-2 min-w-0 px-1 mb-4">
+            <div className="settings-nav-title flex items-center gap-2 min-w-0 px-1 mb-4">
               <span className="text-[1.35rem] font-medium truncate tracking-tight text-(--color-base-content)">
                 {t("设置", "Settings")}
               </span>
             </div>
 
-            <nav className="flex flex-col gap-0.5 select-none">
+            <nav className="settings-tabs flex flex-col gap-0.5 select-none">
               {allTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -235,7 +309,7 @@ export function SettingsView({
                       </h3>
                       
                       <div className="flex flex-col gap-10 px-1">
-                        <div className="flex items-center justify-between group">
+                        <div className="flex flex-wrap items-center justify-between gap-3 group">
                           <div className="flex flex-col gap-1.5">
                             <span className="text-[14px] font-bold text-base-content/90">{t("界面主题", "Theme Mode")}</span>
                             <span className="text-[12px] text-muted/50 leading-relaxed max-w-[300px]">
@@ -265,7 +339,7 @@ export function SettingsView({
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between group">
+                        <div className="flex flex-wrap items-center justify-between gap-3 group">
                           <div className="flex flex-col gap-1.5">
                             <span className="text-[14px] font-bold text-base-content/90">{t("全局字体", "Interface Font")}</span>
                             <span className="text-[12px] text-muted/50 leading-relaxed max-w-[300px]">
@@ -294,7 +368,7 @@ export function SettingsView({
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between group">
+                        <div className="flex flex-wrap items-center justify-between gap-3 group">
                           <div className="flex flex-col gap-1.5">
                             <span className="text-[14px] font-bold text-base-content/90">{t("任务展示方式", "Task Details")}</span>
                             <span className="text-[12px] text-muted/50 leading-relaxed max-w-[300px]">
@@ -333,44 +407,12 @@ export function SettingsView({
 
                     <section>
                       <h3 className="text-[10px] font-bold text-muted/40 uppercase tracking-[0.2em] mb-8 px-1 flex items-center gap-2">
-                        <Icon icon="mingcute:ai-line" className="text-sm" />
-                        {t("基模", "Base Model")}
-                      </h3>
-                      <div className="flex flex-col gap-4 px-1">
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-[14px] font-bold text-base-content/90">{t("关键统领模型", "Key Orchestrator")}</span>
-                          <span className="text-[12px] text-muted/50 leading-relaxed max-w-[420px]">
-                            {t("基模是关键统领模型，新建任务默认交由基模执行，可在任务列表中随时调整。", "The base model orchestrates all work. New tasks are assigned to it by default.")}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {WORKER_KINDS.map((worker) => (
-                            <button
-                              key={worker.kind}
-                              type="button"
-                              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-[12px] font-bold transition-all ${
-                                baseWorker === worker.kind
-                                  ? "bg-primary/5 border-primary/30 text-primary shadow-sm ring-1 ring-primary/10"
-                                  : "bg-base-300/10 border-transparent text-muted hover:bg-base-300/20 hover:text-base-content"
-                              }`}
-                              onClick={() => onBaseWorkerChange(worker.kind)}
-                            >
-                              <WorkerLogo kind={worker.kind} size={16} />
-                              {worker.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </section>
-
-                    <section>
-                      <h3 className="text-[10px] font-bold text-muted/40 uppercase tracking-[0.2em] mb-8 px-1 flex items-center gap-2">
                         <Icon icon="mingcute:translate-line" className="text-sm" />
                         {t("语言与地区", "Language")}
                       </h3>
                       
                       <div className="flex flex-col gap-10 px-1">
-                        <div className="flex items-center justify-between group">
+                        <div className="flex flex-wrap items-center justify-between gap-3 group">
                           <div className="flex flex-col gap-1.5">
                             <span className="text-[14px] font-bold text-base-content/90">{t("界面显示语言", "UI Language")}</span>
                             <span className="text-[12px] text-muted/50 leading-relaxed">
@@ -398,7 +440,7 @@ export function SettingsView({
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between group">
+                        <div className="flex flex-wrap items-center justify-between gap-3 group">
                           <div className="flex flex-col gap-1.5">
                             <span className="text-[14px] font-bold text-base-content/90">{t("AI 输出偏好", "AI Preference")}</span>
                             <span className="text-[12px] text-muted/50 leading-relaxed max-w-[300px]">
@@ -431,6 +473,125 @@ export function SettingsView({
                   </>
                 )}
 
+                {activeTab === "models" && (
+                  <>
+                    {canManageDeepSeek ? (
+                      <section>
+                        <h3 className="mb-5 flex items-center gap-2 px-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted/40">
+                          <Icon icon="mingcute:link-2-line" className="text-sm" />
+                          {t("模型提供方", "Model providers")}
+                        </h3>
+                        <button
+                          type="button"
+                          className="group inline-flex items-center gap-3 rounded-2xl bg-base-100 px-4 py-3 text-left shadow-[0_1px_3px_color-mix(in_srgb,var(--color-primary)_12%,transparent),0_1px_2px_color-mix(in_srgb,var(--color-base-content)_8%,transparent)] transition-shadow hover:shadow-[0_2px_8px_color-mix(in_srgb,var(--color-primary)_18%,transparent),0_1px_2px_color-mix(in_srgb,var(--color-base-content)_8%,transparent)]"
+                          onClick={() => setDeepSeekDialogOpen(true)}
+                        >
+                          <WorkerLogo kind="deepseek" size={18} className="flex-none" />
+                          <span className="flex max-w-[190px] flex-col gap-0.5">
+                            <span className="text-[13px] font-semibold text-base-content/90">DeepSeek Flash</span>
+                            <span
+                              className="truncate text-[11px] text-muted/50"
+                              title={t("使用 Codex CLI，和现有 GPT / Codex 不冲突，配置 KEY 后即可直接使用", "Runs on Codex CLI without conflicting with your existing GPT / Codex — set the KEY and go")}
+                            >
+                              {t("使用 Codex CLI，和现有 GPT / Codex 不冲突，配置 KEY 后即可直接使用", "Runs on Codex CLI without conflicting with your existing GPT / Codex — set the KEY and go")}
+                            </span>
+                          </span>
+                          <span className={`flex flex-none items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold ${
+                            deepSeekStatus?.configured
+                              ? "bg-emerald-500/8 text-emerald-500/85"
+                              : "bg-base-300/10 text-muted/55"
+                          }`}>
+                            {deepSeekStatusLoading ? (
+                              <Icon icon="mingcute:loading-3-line" className="animate-spin" />
+                            ) : deepSeekStatus?.configured ? (
+                              <Icon icon="mingcute:check-circle-line" />
+                            ) : (
+                              <Icon icon="mingcute:add-circle-line" />
+                            )}
+                            {deepSeekStatusLoading
+                              ? t("检查中", "Checking")
+                              : deepSeekStatus?.source === "environment"
+                                ? t("环境管理", "Environment")
+                                : deepSeekStatus?.configured
+                                  ? t("已连接", "Connected")
+                                  : deepSeekStatus?.supported === false
+                                    ? t("仅限 Local", "Local only")
+                                    : t("连接", "Connect")}
+                          </span>
+                          <Icon icon="mingcute:right-line" className="flex-none text-[15px] text-muted/35 transition-transform group-hover:translate-x-0.5" />
+                        </button>
+                        {deepSeekStatusError ? (
+                          <p className="mb-0 mt-2 px-1 text-[11px] text-red-500/75">{deepSeekStatusError}</p>
+                        ) : null}
+                      </section>
+                    ) : null}
+
+                    <section>
+                      <h3 className="text-[10px] font-bold text-muted/40 uppercase tracking-[0.2em] mb-8 px-1 flex items-center gap-2">
+                        <Icon icon="mingcute:ai-line" className="text-sm" />
+                        {t("Coding 工具", "Worker Model")}
+                      </h3>
+                      <div className="flex flex-col gap-4 px-1">
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[14px] font-bold text-base-content/90">{t("默认执行工具", "Default Executor")}</span>
+                          <span className="text-[12px] text-muted/50 leading-relaxed max-w-[420px]">
+                            {t("Coding 工具负责干活，新建任务默认交由它执行，可在任务列表中随时调整。", "The worker model does the work. New tasks are assigned to it by default.")}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {selectableModelWorkers.map((worker) => (
+                            <button
+                              key={worker.kind}
+                              type="button"
+                              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-[12px] font-bold transition-all ${
+                                baseWorker === worker.kind
+                                  ? "bg-primary/5 border-primary/30 text-primary shadow-sm ring-1 ring-primary/10"
+                                  : "bg-base-300/10 border-transparent text-muted hover:bg-base-300/20 hover:text-base-content"
+                              }`}
+                              onClick={() => onBaseWorkerChange(worker.kind)}
+                            >
+                              <WorkerLogo kind={worker.kind} size={16} />
+                              {worker.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </section>
+
+                    <section>
+                      <h3 className="text-[10px] font-bold text-muted/40 uppercase tracking-[0.2em] mb-8 px-1 flex items-center gap-2">
+                        <Icon icon="mingcute:command-line" className="text-sm" />
+                        {t("领导模型", "Leader Model")}
+                      </h3>
+                      <div className="flex flex-col gap-4 px-1">
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[14px] font-bold text-base-content/90">{t("项目经理工具", "Project Manager")}</span>
+                          <span className="text-[12px] text-muted/50 leading-relaxed max-w-[420px]">
+                            {t("必选项。领导模型是所有工作的发起者：诊断项目、把目标拆成任务树、派单给 Worker、收口验收，整个项目的统领与项目管理都由它出面。", "Required. The leader model initiates all work: it diagnoses the project, breaks goals into task trees, dispatches workers and closes out reviews.")}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {selectableModelWorkers.map((worker) => (
+                            <button
+                              key={worker.kind}
+                              type="button"
+                              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl border text-[12px] font-bold transition-all ${
+                                leaderWorker === worker.kind
+                                  ? "bg-primary/5 border-primary/30 text-primary shadow-sm ring-1 ring-primary/10"
+                                  : "bg-base-300/10 border-transparent text-muted hover:bg-base-300/20 hover:text-base-content"
+                              }`}
+                              onClick={() => onLeaderWorkerChange(worker.kind)}
+                            >
+                              <WorkerLogo kind={worker.kind} size={16} />
+                              {worker.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </section>
+                  </>
+                )}
+
                 {activeTab === "workers" && (
                   <>
                     <section>
@@ -451,8 +612,9 @@ export function SettingsView({
 
                       <div className="flex flex-col gap-2 px-1">
                         {installedWorkers.map((worker) => {
-                          const nativeProbe = installProbes[worker.kind as InstallTargetId];
-                          const wslProbe = installProbes[`wsl:${worker.kind}` as InstallTargetId];
+                          const probeKind = worker.kind === "deepseek" ? "codex" : worker.kind;
+                          const nativeProbe = installProbes[probeKind as InstallTargetId];
+                          const wslProbe = installProbes[`wsl:${probeKind}` as InstallTargetId];
                           return (
                             <WorkerConfigCard
                               key={worker.kind}
@@ -477,8 +639,9 @@ export function SettingsView({
                             </div>
                             <div className="opacity-60 grayscale hover:grayscale-0 hover:opacity-100 transition-all flex flex-col gap-2">
                               {uninstalledWorkers.map((worker) => {
-                                const nativeProbe = installProbes[worker.kind as InstallTargetId];
-                                const wslProbe = installProbes[`wsl:${worker.kind}` as InstallTargetId];
+                                const probeKind = worker.kind === "deepseek" ? "codex" : worker.kind;
+                                const nativeProbe = installProbes[probeKind as InstallTargetId];
+                                const wslProbe = installProbes[`wsl:${probeKind}` as InstallTargetId];
                                 return (
                                   <WorkerConfigCard
                                     key={worker.kind}
@@ -511,26 +674,69 @@ export function SettingsView({
                       </h3>
                       <p className="text-xs text-muted/60 leading-relaxed mt-1">
                         {t(
-                          "在此定义全局指令约束。所有 Worker 在执行前都会阅读并严格遵守这些规则。",
-                          "Define global constraints here. All workers will follow these rules strictly."
+                          "在此分别为 Leader 与 Worker 定义指令约束。两者在执行前都会阅读并严格遵守各自规则。",
+                          "Define constraints for Leader and Worker here. Both will follow their own rules strictly before acting."
                         )}
                       </p>
                     </div>
-                    
-                    <div className="flex flex-col gap-4 px-1">
-                      <div className="relative group">
-                        <textarea
-                          className="ui-textarea min-h-[420px] bg-base-300/10 border-base-300/20 focus:bg-base-100/50 transition-all font-mono text-[14px] leading-relaxed p-6 rounded-2xl custom-scrollbar resize-none"
-                          value={constitutionDraft}
-                          placeholder={t(
-                            "例如：\n- 优先使用单次执行命令，避免交互式操作\n- 提交代码前必须执行 bun run build\n- 严格遵守现有的项目代码结构和命名规范",
-                            "Example:\n- Prefer one-shot commands\n- Run bun run build before marking done\n- Follow existing project style and structure"
+
+                    <div className="flex flex-col gap-6 px-1">
+                      <div className="flex flex-col gap-2">
+                        <h4 className="text-xs font-semibold text-muted/80 flex items-center gap-1.5">
+                          <Icon icon="mingcute:compass-line" className="text-sm" />
+                          {t("Leader 宪法", "Leader Constitution")}
+                        </h4>
+                        <p className="text-[11px] text-muted/50 leading-relaxed">
+                          {t(
+                            "Leader 在归组派单前阅读。用于约束调度行为，例如模型路由、任务拆分、验收规则。",
+                            "Leader reads this before dispatching. Use it for routing, task splitting, and acceptance rules."
                           )}
-                          onChange={(event) => setConstitutionDraft(event.currentTarget.value)}
-                        />
-                        <div className="absolute top-4 right-4 flex items-center gap-2">
-                          <div className="bg-base-100/80 backdrop-blur px-2 py-1 rounded-md border border-base-300/10 text-[10px] font-mono text-muted tabular-nums shadow-sm">
-                            {constitutionDraft.length.toLocaleString()} <span className="opacity-40">CHARS</span>
+                        </p>
+                        <div className="relative group">
+                          <textarea
+                            className="ui-textarea min-h-[240px] bg-base-300/10 border-base-300/20 focus:bg-base-100/50 transition-all font-mono leading-relaxed p-5 rounded-2xl custom-scrollbar resize-none"
+                            style={{ fontSize: "0.75rem" }}
+                            value={leaderConstitutionDraft}
+                            placeholder={t(
+                              "例如你可以输入：\n- 前端任务必须派给 DeepSeek, kimi, GLM 模型\n- 前端不允许使用 GPT / codex 系模型",
+                              "Example:\n- Frontend tasks must be assigned to DeepSeek, kimi, GLM models\n- Do not use GPT / codex models for frontend work"
+                            )}
+                            onChange={(event) => setLeaderConstitutionDraft(event.currentTarget.value)}
+                          />
+                          <div className="absolute top-4 right-4 flex items-center gap-2">
+                            <div className="bg-base-100/80 backdrop-blur px-2 py-1 rounded-md border border-base-300/10 text-[10px] font-mono text-muted tabular-nums shadow-sm">
+                              {leaderConstitutionDraft.length.toLocaleString()} <span className="opacity-40">CHARS</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <h4 className="text-xs font-semibold text-muted/80 flex items-center gap-1.5">
+                          <Icon icon="mingcute:tool-line" className="text-sm" />
+                          {t("Worker 宪法", "Worker Constitution")}
+                        </h4>
+                        <p className="text-[11px] text-muted/50 leading-relaxed">
+                          {t(
+                            "所有 Worker 在执行前阅读。用于约束具体实现，例如代码规范、技术栈、交付标准。",
+                            "All workers read this before executing. Use it for code style, stack, and delivery standards."
+                          )}
+                        </p>
+                        <div className="relative group">
+                          <textarea
+                            className="ui-textarea min-h-[240px] bg-base-300/10 border-base-300/20 focus:bg-base-100/50 transition-all font-mono leading-relaxed p-5 rounded-2xl custom-scrollbar resize-none"
+                            style={{ fontSize: "0.75rem" }}
+                            value={constitutionDraft}
+                            placeholder={t(
+                              "例如你可以输入：\n- 提交代码之前必须进行类型检查\n- 优先使用单次执行命令，避免交互式操作\n- 严格遵守现有的项目代码结构和命名规范",
+                              "Example:\n- Always typecheck before committing code\n- Prefer one-shot commands over interactive ones\n- Follow existing project style and structure"
+                            )}
+                            onChange={(event) => setConstitutionDraft(event.currentTarget.value)}
+                          />
+                          <div className="absolute top-4 right-4 flex items-center gap-2">
+                            <div className="bg-base-100/80 backdrop-blur px-2 py-1 rounded-md border border-base-300/10 text-[10px] font-mono text-muted tabular-nums shadow-sm">
+                              {constitutionDraft.length.toLocaleString()} <span className="opacity-40">CHARS</span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -539,8 +745,8 @@ export function SettingsView({
                         <button
                           type="button"
                           className={`flex-1 flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold transition-all ${
-                            constitutionDirty 
-                              ? "bg-primary text-white shadow-lg shadow-primary/20 active:scale-[0.98]" 
+                            constitutionDirty
+                              ? "bg-primary text-white shadow-lg shadow-primary/20 active:scale-[0.98]"
                               : "bg-base-300/20 text-muted cursor-not-allowed"
                           }`}
                           disabled={!constitutionDirty || constitutionSaving}
@@ -552,8 +758,11 @@ export function SettingsView({
                         <button
                           type="button"
                           className="w-11 h-11 flex items-center justify-center rounded-xl bg-base-300/10 text-muted hover:text-error hover:bg-error/10 transition-all"
-                          disabled={constitutionSaving || constitutionDraft.length === 0}
-                          onClick={() => setConstitutionDraft("")}
+                          disabled={constitutionSaving || (constitutionDraft.length === 0 && leaderConstitutionDraft.length === 0)}
+                          onClick={() => {
+                            setConstitutionDraft("");
+                            setLeaderConstitutionDraft("");
+                          }}
                           title={t("清空内容", "Clear content")}
                         >
                           <Icon icon="mingcute:delete-2-line" className="text-lg" />
@@ -578,7 +787,7 @@ export function SettingsView({
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-10 px-1">
+                    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-10 px-1">
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-1">
                           <span className="text-sm font-semibold">{t("重试间隔", "Retry Interval")}</span>
@@ -633,7 +842,7 @@ export function SettingsView({
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-between group px-1">
+                    <div className="flex flex-wrap items-center justify-between gap-3 group px-1">
                       <div className="flex flex-col gap-1.5">
                         <span className="text-[14px] font-bold text-base-content/90">
                           {t("后台 Playwright 截图验收", "Background Playwright Screenshots")}
@@ -669,7 +878,7 @@ export function SettingsView({
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-between group px-1 mt-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3 group px-1 mt-6">
                       <div className="flex flex-col gap-1.5">
                         <span className="text-[14px] font-bold text-base-content/90">
                           {t("截图质量", "Screenshot Quality")}
@@ -726,7 +935,7 @@ export function SettingsView({
                       </p>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-3 px-1">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 px-1">
                       {EXTERNAL_EDITOR_OPTIONS.map((opt) => (
                         <button
                           key={opt.value}
@@ -764,6 +973,17 @@ export function SettingsView({
           </div>
         </div>
       </section>
+      <DeepSeekConnectionDialog
+        open={deepSeekDialogOpen}
+        status={deepSeekStatus}
+        statusLoading={deepSeekStatusLoading}
+        statusError={deepSeekStatusError}
+        uiLanguage={uiLanguage}
+        onClose={() => setDeepSeekDialogOpen(false)}
+        onReload={reloadDeepSeekStatus}
+        onConnect={handleConnectDeepSeek}
+        onDisconnect={handleDisconnectDeepSeek}
+      />
     </FadeContent>
   );
 

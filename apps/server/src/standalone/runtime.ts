@@ -7,6 +7,11 @@ import {
   type StandaloneServerConfigOptions
 } from "./config";
 import { ensureStandaloneIdentity, type StandaloneIdentity } from "./identity";
+import type { ProviderCredentialService } from "../services/provider-credential-service";
+
+export interface StartStandaloneServerOptions extends StandaloneServerConfigOptions {
+  providerCredentials?: ProviderCredentialService;
+}
 
 export interface StandaloneServerHandle {
   app: MapleServerApp;
@@ -18,14 +23,19 @@ export interface StandaloneServerHandle {
 
 /** Starts the private loopback Server used by the Maple Local distribution. */
 export async function startStandaloneServer(
-  options: StandaloneServerConfigOptions
+  options: StartStandaloneServerOptions
 ): Promise<StandaloneServerHandle> {
   const config = createStandaloneServerConfig(options);
   const database = createDatabase(config.databasePath);
   let app: MapleServerApp | null = null;
   try {
     const identity = await ensureStandaloneIdentity(database);
-    app = createServerApp({ config, database, standaloneIdentity: identity });
+    app = createServerApp({
+      config,
+      database,
+      standaloneIdentity: identity,
+      providerCredentials: options.providerCredentials
+    });
     app.listen({ hostname: config.host, port: config.port });
     const runners = new RunnerRepository(database, config.runnerOfflineSeconds);
     let stopped = false;

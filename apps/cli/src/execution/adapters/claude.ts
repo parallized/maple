@@ -91,7 +91,7 @@ export const claudeAdapter: CodingAgentAdapter = {
         ...(options?.resumeSessionId ? ["--resume", options.resumeSessionId] : []),
         ...(options?.additionalWritableDirectories ?? []).flatMap((directory) => ["--add-dir", directory]),
         "--permission-mode",
-        options?.readOnly ? "plan" : "acceptEdits",
+        options?.readOnly ? "plan" : "auto",
         "--verbose",
         "--output-format",
         "stream-json",

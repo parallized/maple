@@ -1,5 +1,13 @@
 export type ViewKey = "overview" | "board" | "progress" | "settings";
-export type WorkerKind = "claude" | "codex" | "kimi" | "glm" | "iflow" | "gemini" | "opencode";
+export type WorkerKind = "claude" | "codex" | "deepseek" | "kimi" | "glm" | "iflow" | "gemini" | "opencode";
+
+export type DeepSeekConnectionStatus = {
+  provider: "deepseek";
+  supported: boolean;
+  configured: boolean;
+  source: "windows_credential_manager" | "environment" | "unavailable";
+  message: string | null;
+};
 export type TaskStatus =
   | "草稿"
   | "待办"
@@ -10,6 +18,8 @@ export type TaskStatus =
   | "已完成"
   | "已阻塞";
 export type DetailMode = "sidebar" | "modal";
+/** 服务端下发的任务执行阶段；旧 Server 不下发时为 undefined。 */
+export type TaskExecutionPhase = "queued" | "planning" | "running";
 /** 看板展示类型：自优化列表 / 任务画廊 / 关系树（预留，禁用）。 */
 export type BoardDisplayType = "list" | "gallery" | "tree";
 
@@ -124,6 +134,10 @@ export type Task = {
   workerKind: WorkerKind;
   needsConfirmation?: boolean;
   tags: string[];
+  /** 服务端下发的执行阶段；缺失/null 时按 status 展示（兼容旧 Server）。 */
+  executionPhase?: TaskExecutionPhase | null;
+  /** 执行开始时间；running 计时起点，缺失时回退 updatedAt。 */
+  startedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   reports: TaskReport[];
@@ -144,6 +158,8 @@ export type Project = {
   id: string;
   name: string;
   directory: string;
+  /** 项目创建时间(服务端快照提供);用于侧栏「新增」标记,本地存储的项目可能没有。 */
+  createdAt?: string;
   tasks: Task[];
   tagCatalog?: TagCatalog;
   tokenUsage?: ProjectTokenUsage[];

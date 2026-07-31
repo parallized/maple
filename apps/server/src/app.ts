@@ -42,6 +42,11 @@ import { DispatchService } from "./services/dispatch-service";
 import { ProjectManagerService } from "./services/project-manager-service";
 import { DeviceAuthorizationService } from "./services/device-authorization-service";
 import { ReleaseService } from "./services/release-service";
+import { RunnerReconciliationService } from "./services/runner-reconciliation-service";
+import {
+  ProviderCredentialServiceError,
+  type ProviderCredentialService
+} from "./services/provider-credential-service";
 import { SERVER_VERSION } from "./releases/catalog";
 import { DashboardAssets } from "./web/dashboard-assets";
 import type { StandaloneIdentity } from "./standalone/identity";
@@ -125,6 +130,7 @@ export interface CreateServerAppOptions {
   config: ServerConfig;
   database: Database;
   standaloneIdentity?: StandaloneIdentity;
+  providerCredentials?: ProviderCredentialService;
 }
 
 export function createServerApp(options: CreateServerAppOptions) {
@@ -158,6 +164,11 @@ export function createServerApp(options: CreateServerAppOptions) {
     settings,
     config.leaseSeconds
   );
+  const reconciliation = new RunnerReconciliationService(
+    database,
+    config.leaseSeconds,
+    config.runnerCommandTtlSeconds
+  );
   const accounts = new AccountService(database, config);
   const releases = new ReleaseService(database);
   const auth = new RequestAuth(runners, accounts.sessions);
@@ -169,6 +180,40 @@ export function createServerApp(options: CreateServerAppOptions) {
       throw new HttpError(403, "hosted_feature_unavailable", "Maple Local 不需要账户登录或执行端授权。");
     }
   };
+
+  const providerCredentialRoutes = deploymentMode === "standalone" && options.providerCredentials
+    ? new Elysia({ name: "maple-provider-credentials" })
+        .get("/api/provider-connections/deepseek", async ({ request }) => {
+          webAccess(request);
+          return options.providerCredentials!.deepSeekStatus();
+        })
+        .post(
+          "/api/provider-connections/deepseek/connect",
+          async ({ request, body }) => {
+            webAccess(request, true);
+            return options.providerCredentials!.connectDeepSeek(body.apiKey);
+          },
+          {
+            body: t.Object({
+              apiKey: t.String({ minLength: 8, maxLength: 512 })
+            })
+          }
+        )
+        .delete("/api/provider-connections/deepseek", async ({ request }) => {
+          webAccess(request, true);
+          return options.providerCredentials!.disconnectDeepSeek();
+        })
+    : new Elysia({ name: "maple-provider-credentials-unavailable" })
+        .get("/api/provider-connections/deepseek", ({ request }) => {
+          webAccess(request);
+          return {
+            provider: "deepseek" as const,
+            supported: false,
+            configured: false,
+            source: "unavailable" as const,
+            message: "请在运行任务的 Maple Local 设备上连接 DeepSeek。"
+          };
+        });
 
   return new Elysia({ name: "maple-server" })
     .use(
@@ -198,6 +243,9 @@ export function createServerApp(options: CreateServerAppOptions) {
           { status: error.status, headers: error.headers }
         );
       }
+      if (error instanceof ProviderCredentialServiceError) {
+        return apiError(error.status, error.code, error.message);
+      }
       if (
         error instanceof Error
         && "status" in error
@@ -214,6 +262,7 @@ export function createServerApp(options: CreateServerAppOptions) {
       console.error("[maple-server] request failed", error);
       return apiError(500, "internal_error", "Server 处理请求时发生错误。");
     })
+    .use(providerCredentialRoutes)
     .get("/health", (): HealthResponse => ({
       name: "maple-server",
       version: SERVER_VERSION,
@@ -541,9 +590,13 @@ export function createServerApp(options: CreateServerAppOptions) {
       },
       {
         body: t.Object({
+          defaultWorker: t.Optional(workerKindSchema),
+          leaderWorker: t.Optional(workerKindSchema),
           baseWorker: t.Optional(workerKindSchema),
           aiOutputLanguage: t.Optional(aiOutputLanguageSchema),
           constitution: t.Optional(t.String({ maxLength: 100_000 })),
+          leaderConstitution: t.Optional(t.String({ maxLength: 100_000 })),
+          concurrency: t.Optional(t.Integer({ minimum: 1, maximum: 16 })),
           retryIntervalSeconds: t.Optional(t.Integer({ minimum: 1, maximum: 600 })),
           retryMaxAttempts: t.Optional(t.Integer({ minimum: 1, maximum: 20 }))
         })
@@ -624,7 +677,9 @@ export function createServerApp(options: CreateServerAppOptions) {
         if (!projects.getById(params.projectId, workspaceId)) return notFound("项目不存在。");
         if (!body.title.trim()) return apiError(422, "title_required", "Todo 标题不能为空。");
         const todo = todos.create(params.projectId, body, workspaceId);
-        if (todo.status !== "draft") projectManager.enqueue(todo.id);
+        if (todo.status !== "draft" && projectManager.enqueue(todo.id)) {
+          return todos.get(todo.id, workspaceId) ?? todo;
+        }
         return todo;
       },
       {
@@ -694,7 +749,7 @@ export function createServerApp(options: CreateServerAppOptions) {
           (todo.status === "todo" || todo.status === "rework")
           && (body.title !== undefined || body.details !== undefined || body.status !== undefined)
         ) {
-          projectManager.enqueue(todo.id, true);
+          if (projectManager.enqueue(todo.id, true)) return todos.get(todo.id, workspaceId) ?? todo;
         }
         return todo;
       },
@@ -760,6 +815,24 @@ export function createServerApp(options: CreateServerAppOptions) {
         })
       }
     )
+    .post(
+      "/api/runner/reconcile",
+      ({ request, body }) => {
+        const runner = auth.runner(request.headers);
+        if (!runner) return unauthorized();
+        return { attempts: reconciliation.reconcile(runner.id, body.attempts) };
+      },
+      {
+        body: t.Object({
+          attempts: t.Array(t.Object({
+            scope: t.Union([t.Literal("execution"), t.Literal("project_manager")]),
+            todoId: t.String({ minLength: 1, maxLength: 200 }),
+            attemptId: t.String({ minLength: 1, maxLength: 200 }),
+            leaseToken: t.String({ minLength: 20, maxLength: 200 })
+          }), { maxItems: 256 })
+        })
+      }
+    )
     .post("/api/runner/commands/claim", ({ request }) => {
       const runner = auth.runner(request.headers);
       if (!runner) return unauthorized();
@@ -780,7 +853,7 @@ export function createServerApp(options: CreateServerAppOptions) {
         const runner = auth.runner(request.headers);
         if (!runner) return unauthorized();
         return projectManager.complete(runner.id, params.todoId, body)
-          ?? conflict("项目经理任务无效、已过期或派单结果不属于当前执行端。");
+          ?? conflict("项目经理任务执行权已撤销或不属于当前执行端。");
       },
       {
         body: t.Object({
@@ -801,7 +874,7 @@ export function createServerApp(options: CreateServerAppOptions) {
         const runner = auth.runner(request.headers);
         if (!runner) return unauthorized();
         return projectManager.block(runner.id, params.todoId, body)
-          ?? conflict("项目经理任务无效、已过期或阻塞结果不属于当前执行端。");
+          ?? conflict("项目经理任务执行权已撤销或不属于当前执行端。");
       },
       {
         body: t.Object({
@@ -887,7 +960,7 @@ export function createServerApp(options: CreateServerAppOptions) {
       ({ request, params, body }) => {
         const runner = auth.runner(request.headers);
         if (!runner) return unauthorized();
-        return dispatch.start(runner.id, params.todoId, body) ?? conflict("任务租约无效或已经过期。");
+        return dispatch.start(runner.id, params.todoId, body) ?? conflict("任务执行权已撤销。");
       },
       { body: t.Object({ leaseToken: t.String({ minLength: 20, maxLength: 200 }) }) }
     )
@@ -897,7 +970,7 @@ export function createServerApp(options: CreateServerAppOptions) {
         const runner = auth.runner(request.headers);
         if (!runner) return unauthorized();
         const ok = dispatch.heartbeat(runner.id, params.todoId, body);
-        return ok ? { ok: true } : conflict("任务租约无效或已经过期。");
+        return ok ? { ok: true } : conflict("任务执行权已撤销。");
       },
       { body: t.Object({ leaseToken: t.String({ minLength: 20, maxLength: 200 }) }) }
     )
@@ -907,11 +980,12 @@ export function createServerApp(options: CreateServerAppOptions) {
         const runner = auth.runner(request.headers);
         if (!runner) return unauthorized();
         const ok = dispatch.appendLog(runner.id, params.todoId, body);
-        return ok ? { ok: true } : conflict("任务租约无效或已经过期。");
+        return ok ? { ok: true } : conflict("任务执行权已撤销。");
       },
       {
         body: t.Object({
           leaseToken: t.String({ minLength: 20, maxLength: 200 }),
+          deliveryId: t.Optional(t.String({ minLength: 1, maxLength: 200 })),
           stream: t.Union([t.Literal("stdout"), t.Literal("stderr"), t.Literal("system")]),
           content: t.String({ minLength: 1, maxLength: 65_536 }),
           sequence: t.Optional(t.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
@@ -925,12 +999,40 @@ export function createServerApp(options: CreateServerAppOptions) {
       }
     )
     .post(
+      "/api/runner/jobs/:todoId/logs/batch",
+      ({ request, params, body }) => {
+        const runner = auth.runner(request.headers);
+        if (!runner) return unauthorized();
+        const accepted = dispatch.appendLogs(runner.id, params.todoId, body);
+        return accepted === null
+          ? conflict("任务执行权已撤销。")
+          : { ok: true as const, accepted };
+      },
+      {
+        body: t.Object({
+          leaseToken: t.String({ minLength: 20, maxLength: 200 }),
+          logs: t.Array(t.Object({
+            deliveryId: t.String({ minLength: 1, maxLength: 200 }),
+            stream: t.Union([t.Literal("stdout"), t.Literal("stderr"), t.Literal("system")]),
+            content: t.String({ minLength: 1, maxLength: 65_536 }),
+            sequence: t.Optional(t.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
+            occurredAt: t.Optional(t.String({ minLength: 1, maxLength: 80 })),
+            kind: t.Optional(runLogKindSchema),
+            level: t.Optional(runLogLevelSchema),
+            status: t.Optional(runLogStatusSchema),
+            title: t.Optional(t.String({ maxLength: 300 })),
+            groupId: t.Optional(t.String({ maxLength: 300 }))
+          }), { minItems: 1, maxItems: 100 })
+        })
+      }
+    )
+    .post(
       "/api/runner/jobs/:todoId/artifacts",
       async ({ request, params, body }) => {
         const runner = auth.runner(request.headers);
         if (!runner) return unauthorized();
         const upload = dispatch.artifactUploadContext(runner.id, params.todoId, body.leaseToken);
-        if (!upload) return conflict("任务租约无效或已经过期。");
+        if (!upload) return conflict("任务执行权已撤销。");
         if (!upload.backgroundPlaywrightScreenshot) {
           return conflict("本次任务没有开启后台 Playwright 截图验收。");
         }
@@ -939,6 +1041,7 @@ export function createServerApp(options: CreateServerAppOptions) {
             artifact: await artifacts.storeScreenshot(
               params.todoId,
               upload.attemptId,
+              body.deliveryId,
               body.file,
               upload.screenshotCompressionPreset
             )
@@ -953,6 +1056,7 @@ export function createServerApp(options: CreateServerAppOptions) {
       {
         body: t.Object({
           leaseToken: t.String({ minLength: 20, maxLength: 200 }),
+          deliveryId: t.String({ minLength: 1, maxLength: 200 }),
           file: t.File({
             type: ["image/png", "image/jpeg", "image/webp"],
             minSize: 1,
@@ -966,7 +1070,7 @@ export function createServerApp(options: CreateServerAppOptions) {
       ({ request, params, body }) => {
         const runner = auth.runner(request.headers);
         if (!runner) return unauthorized();
-        return dispatch.complete(runner.id, params.todoId, body) ?? conflict("任务租约无效或已经过期。");
+        return dispatch.complete(runner.id, params.todoId, body) ?? conflict("任务执行权已撤销。");
       },
       {
         body: t.Object({

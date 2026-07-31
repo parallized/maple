@@ -63,12 +63,51 @@ function itemEvents(value: Record<string, unknown>) {
   return [];
 }
 
+export function createCodexOutputParser(label = "Codex") {
+  return createJsonLineParser((value, stream, ctx) => {
+    const type = stringValue(value.type);
+    if (type === "thread.started") {
+      return [event(stream, "lifecycle", `${label} 会话已创建。`, { title: "会话已创建", status: "started" })];
+    }
+    if (type === "turn.started") {
+      return [event(stream, "lifecycle", "开始处理任务。", { title: "开始执行", status: "started" })];
+    }
+    if (type === "turn.completed") {
+      const usageRecord = isRecord(value.usage) ? value.usage : null;
+      const usage: TokenUsage | null = usageRecord
+        ? {
+            inputTokens: numberValue(usageRecord.input_tokens) ?? 0,
+            cachedInputTokens: numberValue(usageRecord.cached_input_tokens) ?? 0,
+            outputTokens: numberValue(usageRecord.output_tokens) ?? 0,
+            reasoningOutputTokens: numberValue(usageRecord.reasoning_output_tokens) ?? 0
+          }
+        : null;
+      if (usage && (usage.inputTokens || usage.outputTokens || usage.reasoningOutputTokens)) {
+        ctx.reportUsage(usage);
+      }
+      const usageText = usageRecord ? `\n${compactJson(value.usage)}` : "";
+      return [event(stream, "lifecycle", `任务处理完成。${usageText}`, { title: "执行完成", status: "completed" })];
+    }
+    if (type === "turn.failed" || type === "error") {
+      return [event(stream, "error", extractText(value) || compactJson(value), { status: "failed" })];
+    }
+    if (type === "item.started" || type === "item.updated" || type === "item.completed") {
+      return itemEvents(value).map((entry) => ({ ...entry, stream }));
+    }
+    return [];
+  });
+}
+
+/** 后台 Agent 没有交互式审批入口，因此权限必须由 Maple 在启动时明确收口。 */
+export const CODEX_AUTOMATION_PREFIX = ["--ask-for-approval", "never", "exec"] as const;
+
 export const codexAdapter: CodingAgentAdapter = {
   kind: "codex",
   label: "Codex",
   buildCommand(prompt, env, options) {
     const model = env.MAPLE_CODEX_MODEL?.trim();
-    const reasoningEffort = env.MAPLE_CODEX_REASONING_EFFORT?.trim();
+    const reasoningEffort = options?.reasoningEffort?.trim()
+      || env.MAPLE_CODEX_REASONING_EFFORT?.trim();
     const resume = options?.resumeSessionId
       ? ["resume", options.resumeSessionId, "-"]
       : ["-"];
@@ -77,7 +116,7 @@ export const codexAdapter: CodingAgentAdapter = {
     return {
       executable: env.MAPLE_CODEX_BIN?.trim() || "codex",
       args: [
-        "exec",
+        ...CODEX_AUTOMATION_PREFIX,
         ...(model ? ["--model", model] : []),
         ...(reasoningEffort ? ["--config", `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`] : []),
         ...(mcpCommand ? ["--config", `mcp_servers.maple.command=${JSON.stringify(mcpCommand)}`] : []),
@@ -92,38 +131,5 @@ export const codexAdapter: CodingAgentAdapter = {
       stdin: prompt
     };
   },
-  createOutputParser() {
-    return createJsonLineParser((value, stream, ctx) => {
-      const type = stringValue(value.type);
-      if (type === "thread.started") {
-        return [event(stream, "lifecycle", "Codex 会话已创建。", { title: "会话已创建", status: "started" })];
-      }
-      if (type === "turn.started") {
-        return [event(stream, "lifecycle", "开始处理任务。", { title: "开始执行", status: "started" })];
-      }
-      if (type === "turn.completed") {
-        const usageRecord = isRecord(value.usage) ? value.usage : null;
-        const usage: TokenUsage | null = usageRecord
-          ? {
-              inputTokens: numberValue(usageRecord.input_tokens) ?? 0,
-              cachedInputTokens: numberValue(usageRecord.cached_input_tokens) ?? 0,
-              outputTokens: numberValue(usageRecord.output_tokens) ?? 0,
-              reasoningOutputTokens: numberValue(usageRecord.reasoning_output_tokens) ?? 0
-            }
-          : null;
-        if (usage && (usage.inputTokens || usage.outputTokens || usage.reasoningOutputTokens)) {
-          ctx.reportUsage(usage);
-        }
-        const usageText = usageRecord ? `\n${compactJson(value.usage)}` : "";
-        return [event(stream, "lifecycle", `任务处理完成。${usageText}`, { title: "执行完成", status: "completed" })];
-      }
-      if (type === "turn.failed" || type === "error") {
-        return [event(stream, "error", extractText(value) || compactJson(value), { status: "failed" })];
-      }
-      if (type === "item.started" || type === "item.updated" || type === "item.completed") {
-        return itemEvents(value).map((entry) => ({ ...entry, stream }));
-      }
-      return [];
-    });
-  }
+  createOutputParser: () => createCodexOutputParser()
 };

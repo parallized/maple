@@ -1,18 +1,25 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { ExecutionJob, LogStream, RunLogEntry, WorkerKind } from "@maple/protocol";
-import { MapleApiClient, MapleApiError } from "../api/client";
+import type {
+  ExecutionJob,
+  LogStream,
+  RunLogEntry,
+  RunnerAttemptReconcileResult,
+  WorkerKind
+} from "@maple/protocol";
+import { MapleApiClient } from "../api/client";
 import { CLI_CAPABILITIES } from "../capabilities";
 import { loadConfig, saveConfig } from "../config/store";
 import type { CliConfig, LocalProject } from "../config/types";
+import { deepSeekCredentialRevision } from "../credentials/deepseek";
+import { DeliveryOutbox, resolveOutboxPath } from "../delivery/outbox";
 import { buildExecutionPrompt } from "../execution/prompt";
 import { executeWorker, type WorkerExecutor } from "../execution/process-executor";
 import { resolvePlaywrightExecutable } from "../execution/playwright-runtime";
-import { resolveExecutionReportLimit } from "../execution/report";
 import { formatRunLogEntry } from "../execution/run-log";
 import {
   prepareScreenshotDirectory,
-  uploadScreenshotArtifacts
+  collectScreenshotArtifacts
 } from "../execution/screenshot-artifacts";
 import type { WorkerShell } from "../execution/shells";
 import { detectCodingAgentTools, toWorkerInventory } from "../execution/tool-availability";
@@ -20,7 +27,7 @@ import {
   runProjectManager,
   type ProjectManagerDiagnosticEvent
 } from "../manager/project-manager";
-import { selectProjectManagerWorker } from "../manager/decision";
+import { selectProjectManagerWorkerForJob } from "../manager/decision";
 import { runProjectManagerFailureReport } from "../manager/failure-report";
 import type { DirectoryPicker } from "../project/directory-picker";
 import { AgentSessionStore } from "../session/store";
@@ -42,7 +49,7 @@ function describeConnectionError(error: unknown): string {
 
 /** Runner 与 Server 的连接状态，TUI 状态行使用。 */
 export interface RunnerConnectionStatus {
-  state: "connecting" | "online" | "error";
+  state: "connecting" | "online" | "interrupted" | "error";
   message: string;
 }
 
@@ -104,6 +111,7 @@ export interface RunnerLoopOptions {
   projectManagerFailureReporter?: typeof runProjectManagerFailureReport;
   workerExecutor?: WorkerExecutor;
   sessionStore?: AgentSessionStore;
+  outbox?: DeliveryOutbox;
   playwrightExecutable?: string | null;
 }
 
@@ -130,6 +138,11 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+interface AttemptController {
+  supersede(): void;
+  forceTerminate(): void;
+}
+
 export class RunnerLoop {
   private readonly active = new Set<Promise<void>>();
   private commandTask: Promise<void> | null = null;
@@ -143,11 +156,16 @@ export class RunnerLoop {
   private readonly projectManagerFailureReporter: typeof runProjectManagerFailureReport;
   private readonly workerExecutor: WorkerExecutor;
   private readonly sessionStore: AgentSessionStore;
+  private readonly outbox: DeliveryOutbox;
+  private readonly ownsOutbox: boolean;
   private readonly workerShell: WorkerShell;
   private readonly playwrightExecutable: string | null;
   /** 空闲 Worker 槽位序号，执行 Todo 时占用、收尾后归还。 */
   private readonly freeSlots: number[];
   private connectionMessage = "";
+  private readonly attemptControllers = new Map<string, AttemptController>();
+  private forceTerminationRequested = false;
+  private readonly deliveryFailures = new Map<string, string>();
 
   constructor(
     private readonly api: MapleApiClient,
@@ -164,6 +182,8 @@ export class RunnerLoop {
     this.projectManagerFailureReporter = options.projectManagerFailureReporter ?? runProjectManagerFailureReport;
     this.workerExecutor = options.workerExecutor ?? executeWorker;
     this.sessionStore = options.sessionStore ?? new AgentSessionStore(options.configPath);
+    this.outbox = options.outbox ?? new DeliveryOutbox(resolveOutboxPath(this.configPath));
+    this.ownsOutbox = options.outbox === undefined;
     this.workerShell = options.workerShell ?? "direct";
     this.playwrightExecutable = options.playwrightExecutable === undefined
       ? resolvePlaywrightExecutable()
@@ -174,6 +194,12 @@ export class RunnerLoop {
   /** 本机主动添加项目后，立即让正在运行的领取循环使用最新目录映射。 */
   replaceConfig(config: CliConfig): void {
     this.config = config;
+  }
+
+  /** TUI 二次确认后的硬终止入口；对所有正在执行的 Worker / PM 进程树幂等生效。 */
+  forceTerminate(): void {
+    this.forceTerminationRequested = true;
+    for (const controller of this.attemptControllers.values()) controller.forceTerminate();
   }
 
   private setConnection(state: RunnerConnectionStatus["state"], message: string): void {
@@ -188,17 +214,22 @@ export class RunnerLoop {
     this.output.info("[maple] 正在等待 Todo。按 Ctrl+C 安全停止。\n");
     this.setConnection("connecting", "正在连接 Server…");
 
-    // 启动时探测一次本机可用的 Worker 工具，之后每次心跳都携带，Server 侧据此刷新能力记录。
-    const tools = detectCodingAgentTools();
-    const supportedWorkers = tools
-      .filter((tool) => tool.available)
-      .map((tool) => tool.kind);
-    const workerInventory = toWorkerInventory(tools);
-
     let heartbeatAt = 0;
-    while (!signal.aborted) {
+    let credentialRevision = deepSeekCredentialRevision();
+    while (!signal.aborted && !this.forceTerminationRequested) {
       try {
+        const nextCredentialRevision = deepSeekCredentialRevision();
+        if (nextCredentialRevision !== credentialRevision) {
+          credentialRevision = nextCredentialRevision;
+          heartbeatAt = 0;
+        }
         if (Date.now() >= heartbeatAt) {
+          // 每次心跳重新探测；连接或移除 Provider 后无需重启 Runner。
+          const tools = detectCodingAgentTools();
+          const supportedWorkers = tools
+            .filter((tool) => tool.available)
+            .map((tool) => tool.kind);
+          const workerInventory = toWorkerInventory(tools);
           const heartbeat = await this.api.heartbeat(
             CLI_VERSION,
             supportedWorkers,
@@ -222,8 +253,10 @@ export class RunnerLoop {
               saveConfig(this.config, this.configPath);
             }
           }
+          await this.reconcileAndFlush();
           heartbeatAt = Date.now() + 10_000;
         }
+        await this.flushOutbox();
         await this.claimRunnerCommand(signal);
         await this.claimProjectManagerJob(signal);
 
@@ -251,12 +284,12 @@ export class RunnerLoop {
         }
       } catch (error) {
         const detail = describeConnectionError(error);
-        const status = `连接异常：${detail}，1 秒后重试`;
+        const status = `连接中断：${detail}，1 秒后重试`;
         // 同样的错误每秒重复时只在状态行刷新，不重复刷日志行。
         if (status !== this.connectionMessage) {
           this.output.warn(`[maple] Server 连接异常：${detail}，1 秒后重试。`);
         }
-        this.setConnection("error", status);
+        this.setConnection("interrupted", status);
         await wait(CONNECTION_RETRY_MS, signal);
       }
     }
@@ -268,22 +301,44 @@ export class RunnerLoop {
     if (this.commandTask) settling.push(this.commandTask);
     if (this.managerTask) settling.push(this.managerTask);
     if (settling.length > 0) await Promise.allSettled(settling);
+    if (this.ownsOutbox) this.outbox.close();
   }
 
   private async execute(job: ExecutionJob, signal: AbortSignal, slot: number): Promise<void> {
     const project = this.projectForJob(job);
     const jobController = new AbortController();
+    const forceController = new AbortController();
     const abortJob = () => jobController.abort();
     signal.addEventListener("abort", abortJob, { once: true });
+    if (signal.aborted) abortJob();
     let leaseLost = false;
     let heartbeat: ReturnType<typeof setInterval> | null = null;
     let jobSucceeded = false;
     let screenshotDirectory: string | null = null;
     let nextLogSequence = 0;
     const recentLogs: RunLogEntry[] = [];
+    this.outbox.registerAttempt({
+      scope: "execution",
+      todoId: job.todo.id,
+      attemptId: job.attempt.id,
+      leaseToken: job.leaseToken,
+      leaseSeconds: job.leaseSeconds
+    });
+    this.outbox.enqueueStart(job.attempt.id);
+    const attemptController: AttemptController = {
+      supersede: () => {
+        leaseLost = true;
+        jobController.abort();
+      },
+      forceTerminate: () => {
+        forceController.abort();
+        jobController.abort();
+      }
+    };
+    this.attemptControllers.set(job.attempt.id, attemptController);
+    if (this.forceTerminationRequested) attemptController.forceTerminate();
     this.output.jobStarted?.(slot, job.todo.title, job.project.name, job.attempt.workerKind);
     this.output.info(`\n[maple] 领取 Todo：${job.todo.title}`, slot);
-    let logQueue = Promise.resolve();
     const queueLog = (entry: RunLogEntry): Promise<void> => {
       const normalizedEntry = { ...entry, sequence: nextLogSequence++ };
       recentLogs.push(normalizedEntry);
@@ -299,27 +354,16 @@ export class RunnerLoop {
         workerKind: job.attempt.workerKind
       };
       if (this.output.record) this.output.record(runEvent);
-      else this.output.worker(entry.stream, `${formatRunLogEntry(entry)}\n`, slot);
-      logQueue = logQueue
-        .then(() => this.api.appendLog(job.todo.id, { leaseToken: job.leaseToken, ...normalizedEntry }))
-        .then(() => undefined)
-        .catch((error) => {
-          this.output.warn(`[maple] 日志回传失败：${error instanceof Error ? error.message : String(error)}`);
-        });
+      else this.output.worker(normalizedEntry.stream, `${formatRunLogEntry(normalizedEntry)}\n`, slot);
+      if (this.outbox.hasAttempt(job.attempt.id)) this.outbox.enqueueLog(job.attempt.id, normalizedEntry);
       return Promise.resolve();
     };
 
     try {
-      await this.api.startJob(job.todo.id, { leaseToken: job.leaseToken });
-
       const heartbeatMs = Math.max(5_000, Math.floor((job.leaseSeconds * 1000) / 3));
       heartbeat = setInterval(() => {
         void this.api.heartbeatJob(job.todo.id, job.leaseToken).catch((error) => {
           this.output.warn(`[maple] Todo 租约续期失败：${error instanceof Error ? error.message : String(error)}`);
-          if (error instanceof MapleApiError && (error.status === 401 || error.status === 409)) {
-            leaseLost = true;
-            jobController.abort();
-          }
         });
       }, heartbeatMs);
 
@@ -337,6 +381,18 @@ export class RunnerLoop {
             screenshotPreparationError = error instanceof Error ? error.message : String(error);
           }
         }
+      }
+      if (screenshotPreparationError) {
+        await queueLog({
+          sequence: 0,
+          occurredAt: new Date().toISOString(),
+          stream: "system",
+          kind: "warning",
+          level: "warning",
+          status: "progress",
+          title: "截图验收不可用",
+          content: `可选截图验收暂不可用，本次任务继续按 Worker 结果执行：${screenshotPreparationError}`
+        });
       }
 
       let result;
@@ -357,25 +413,7 @@ export class RunnerLoop {
           title: "项目目录不可用",
           content: result.error
         });
-      } else if (screenshotPreparationError) {
-        result = {
-          success: false,
-          exitCode: null,
-          summary: "",
-          error: `无法准备截图验收目录：${screenshotPreparationError}`
-        };
-        await queueLog({
-          sequence: 0,
-          occurredAt: new Date().toISOString(),
-          stream: "system",
-          kind: "error",
-          level: "error",
-          status: "failed",
-          title: "截图验收初始化失败",
-          content: result.error
-        });
       } else {
-        const reportMaxChars = resolveExecutionReportLimit(job.todo);
         const workflowId = job.workflowExecutionMode === "serial" ? job.workflow?.id : undefined;
         const existingSession = workflowId
           ? this.sessionStore.read("workflow", workflowId, job.attempt.workerKind)
@@ -385,14 +423,13 @@ export class RunnerLoop {
           cwd: project.path,
           prompt: buildExecutionPrompt(job, {
             resumingWorkflowSession: Boolean(resumeSessionId),
-            reportMaxChars,
             screenshotDirectory: screenshotDirectory ?? undefined,
             playwrightExecutable: this.playwrightExecutable ?? undefined
           }),
           signal: jobController.signal,
+          forceSignal: forceController.signal,
           shell: this.workerShell,
           summaryMode: "report",
-          reportMaxChars,
           resumeSessionId,
           additionalWritableDirectories: screenshotDirectory ? [screenshotDirectory] : undefined,
           onSession: workflowId
@@ -440,16 +477,12 @@ export class RunnerLoop {
         }
       }
 
-      let screenshotFailure: string | null = null;
       if (result.success && screenshotDirectory) {
         try {
-          const screenshotResult = await uploadScreenshotArtifacts(
-            screenshotDirectory,
-            async (artifact) => {
-              const response = await this.api.uploadScreenshot(job.todo.id, job.leaseToken, artifact);
-              return response.artifact;
-            }
-          );
+          const screenshotResult = await collectScreenshotArtifacts(screenshotDirectory);
+          for (const artifact of screenshotResult.artifacts) {
+            this.outbox.enqueueArtifact(job.attempt.id, artifact);
+          }
           for (const warning of screenshotResult.warnings) {
             await queueLog({
               sequence: 0,
@@ -466,19 +499,15 @@ export class RunnerLoop {
             sequence: 0,
             occurredAt: new Date().toISOString(),
             stream: "system",
-            kind: screenshotResult.uploaded.length > 0 ? "tool_result" : "warning",
-            level: screenshotResult.uploaded.length > 0 ? "info" : "warning",
-            status: screenshotResult.uploaded.length > 0 ? "completed" : "progress",
+            kind: screenshotResult.artifacts.length > 0 ? "tool_result" : "warning",
+            level: screenshotResult.artifacts.length > 0 ? "info" : "warning",
+            status: screenshotResult.artifacts.length > 0 ? "completed" : "progress",
             title: "截图验收",
-            content: screenshotResult.uploaded.length > 0
-              ? `已上传 ${screenshotResult.uploaded.length} 张真实截图。`
-              : "未发现可上传的 Playwright 验收截图。"
+            content: screenshotResult.artifacts.length > 0
+              ? `已收集 ${screenshotResult.artifacts.length} 张真实截图，等待 Server 确认。`
+              : "未发现适用的 Playwright 验收截图，本次任务继续按 Worker 结果完成。"
           });
-          if (screenshotResult.uploaded.length === 0) {
-            screenshotFailure = "已开启截图验收，但 Worker 没有生成任何可上传的验收截图。";
-          }
         } catch (error) {
-          screenshotFailure = `截图收集失败：${error instanceof Error ? error.message : String(error)}`;
           await queueLog({
             sequence: 0,
             occurredAt: new Date().toISOString(),
@@ -487,13 +516,9 @@ export class RunnerLoop {
             level: "warning",
             status: "progress",
             title: "截图验收",
-            content: `截图收集失败，本地文件未删除：${error instanceof Error ? error.message : String(error)}`
+            content: `可选截图收集失败，本次任务继续按 Worker 结果完成：${error instanceof Error ? error.message : String(error)}`
           });
         }
-      }
-
-      if (screenshotFailure) {
-        result = { ...result, success: false, error: screenshotFailure };
       }
 
       let failureReport: string | null = null;
@@ -506,8 +531,8 @@ export class RunnerLoop {
             managerWorkerKind: job.managerWorkerKind,
             managerWorkspace,
             signal: jobController.signal,
+            forceSignal: forceController.signal,
             shell: this.workerShell,
-            reportMaxChars: resolveExecutionReportLimit(job.todo),
             outputLanguage: job.executionSettings?.aiOutputLanguage,
             sessionStore: this.sessionStore,
             executor: this.workerExecutor,
@@ -537,34 +562,34 @@ export class RunnerLoop {
       }
       if (!result.success) result = { ...result, summary: failureReport ?? "" };
 
-      // 日志请求串行回传；队列排空前继续续租，确保尾部事件不会因租约过期而丢失。
-      await logQueue;
-      if (heartbeat) {
-        clearInterval(heartbeat);
-        heartbeat = null;
-      }
-      jobSucceeded = !leaseLost && result.success;
       if (leaseLost) {
         this.output.info(`\n[maple] Todo 租约已撤销，本地 Worker 已停止：${job.todo.title}\n`, slot);
         return;
       }
-      try {
-        await this.api.completeJob(job.todo.id, {
-          leaseToken: job.leaseToken,
-          success: result.success,
-          exitCode: result.exitCode,
-          summary: result.summary,
-          error: result.error ?? undefined,
-          usage: result.usage ?? undefined,
-          failureDisposition: result.success ? undefined : "blocked"
-        });
-        this.output.info(`\n[maple] Todo ${result.success ? "已完成，等待验收" : "执行失败"}：${job.todo.title}\n`, slot);
-      } catch (error) {
-        this.output.warn(`[maple] Todo 结果回传失败：${error instanceof Error ? error.message : String(error)}`);
+      this.outbox.enqueueCompletion(job.attempt.id, {
+        success: result.success,
+        exitCode: result.exitCode,
+        summary: result.summary,
+        error: result.error ?? undefined,
+        usage: result.usage ?? undefined,
+        failureDisposition: result.success ? undefined : "blocked"
+      });
+      await this.flushOutbox();
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = null;
       }
+      jobSucceeded = result.success;
+      const pending = this.outbox.hasAttempt(job.attempt.id);
+      const outcome = result.success ? "已完成，等待验收" : "执行失败";
+      this.output.info(
+        `\n[maple] Todo ${outcome}${pending ? "，结果将在连接恢复后回传" : ""}：${job.todo.title}\n`,
+        slot
+      );
     } finally {
       if (heartbeat) clearInterval(heartbeat);
       signal.removeEventListener("abort", abortJob);
+      this.attemptControllers.delete(job.attempt.id);
       this.output.jobFinished?.(slot, job.todo.title, jobSucceeded);
     }
   }
@@ -601,11 +626,28 @@ export class RunnerLoop {
     if (!claim.job) return;
 
     const job = claim.job;
-    const managerWorkerKind = selectProjectManagerWorker(
-      job.availableWorkers,
-      process.env,
-      job.executionSettings?.baseWorker
-    );
+    const managerController = new AbortController();
+    const managerForceController = new AbortController();
+    const abortManager = () => managerController.abort();
+    signal.addEventListener("abort", abortManager, { once: true });
+    if (signal.aborted) abortManager();
+    this.outbox.registerAttempt({
+      scope: "project_manager",
+      todoId: job.todo.id,
+      attemptId: job.attemptId,
+      leaseToken: job.leaseToken,
+      leaseSeconds: job.leaseSeconds
+    });
+    const attemptController: AttemptController = {
+      supersede: abortManager,
+      forceTerminate: () => {
+        managerForceController.abort();
+        managerController.abort();
+      }
+    };
+    this.attemptControllers.set(job.attemptId, attemptController);
+    if (this.forceTerminationRequested) attemptController.forceTerminate();
+    const managerWorkerKind = selectProjectManagerWorkerForJob(job);
     let managerLogSequence = 0;
     const managerActivity = (activity: Omit<ProjectManagerActivity, "projectId" | "projectName">) => {
       this.output.managerStatus?.({
@@ -637,28 +679,29 @@ export class RunnerLoop {
       const dispatch = await this.projectManagerRunner(
         job,
         project,
-        signal,
+        managerController.signal,
         this.workerShell,
         managerDirectory,
         this.sessionStore,
         undefined,
-        managerDiagnostic
+        managerDiagnostic,
+        managerForceController.signal
       );
       if (dispatch.outcome === "blocked") {
-        await this.api.blockProjectManagerJob(job.todo.id, {
-          leaseToken: job.leaseToken,
+        this.outbox.enqueueManagerBlock(job.attemptId, {
           managerWorkerKind: dispatch.managerWorkerKind,
           report: dispatch.report
         });
+        await this.flushOutbox();
         managerActivity({ state: "failed", managerWorkerKind: dispatch.managerWorkerKind });
         this.output.info(`[maple] 项目经理已阻塞“${job.todo.title}”，未改派其他 Worker。`);
         return;
       }
-      await this.api.completeProjectManagerJob(job.todo.id, {
-        leaseToken: job.leaseToken,
+      this.outbox.enqueueManagerComplete(job.attemptId, {
         managerWorkerKind: dispatch.managerWorkerKind,
         ...dispatch.decision
       });
+      await this.flushOutbox();
       managerActivity({
         state: "dispatched",
         managerWorkerKind: dispatch.managerWorkerKind,
@@ -683,24 +726,74 @@ export class RunnerLoop {
         });
         managerActivity({ state: "failed" });
         this.output.warn(`[maple] 项目经理派单失败：${message}`);
-        if (!signal.aborted) {
-          try {
-            await this.api.blockProjectManagerJob(job.todo.id, {
-              leaseToken: job.leaseToken,
-              managerWorkerKind,
-              technicalError: message
-            });
-          } catch (blockError) {
-            this.output.warn(
-              `[maple] 项目经理失败状态回传失败：${blockError instanceof Error ? blockError.message : String(blockError)}`
-            );
-          }
+        if (!managerController.signal.aborted && this.outbox.hasAttempt(job.attemptId)) {
+          this.outbox.enqueueManagerBlock(job.attemptId, {
+            managerWorkerKind,
+            technicalError: message
+          });
+          await this.flushOutbox();
         }
       })
       .finally(() => {
+        signal.removeEventListener("abort", abortManager);
+        this.attemptControllers.delete(job.attemptId);
         if (this.managerTask === task) this.managerTask = null;
       });
     this.managerTask = task;
+  }
+
+  private async reconcileAndFlush(): Promise<void> {
+    const reconcilable = new Set(this.reconcilableAttemptIds());
+    const references = this.outbox.references().filter((reference) => reconcilable.has(reference.attemptId));
+    const results: RunnerAttemptReconcileResult[] = [];
+    for (let offset = 0; offset < references.length; offset += 200) {
+      const response = await this.api.reconcile({ attempts: references.slice(offset, offset + 200) });
+      results.push(...response.attempts);
+    }
+    for (const result of results) {
+      if (result.state === "superseded") this.attemptControllers.get(result.attemptId)?.supersede();
+    }
+    const warnings = await this.outbox.applyReconciliation(results);
+    for (const warning of warnings) this.output.warn(`[maple] ${warning}`);
+    await this.flushOutbox();
+  }
+
+  private async flushOutbox(): Promise<void> {
+    const result = await this.outbox.flush(this.api, this.flushableAttemptIds());
+    for (const warning of result.warnings) this.output.warn(`[maple] ${warning.message}`);
+    const currentFailures = new Set<string>();
+    for (const failure of result.failures) {
+      currentFailures.add(failure.attemptId);
+      if (this.deliveryFailures.get(failure.attemptId) !== failure.message) {
+        this.deliveryFailures.set(failure.attemptId, failure.message);
+        this.output.warn(`[maple] 回传队列等待重试：${failure.message}`);
+      }
+    }
+    for (const attemptId of this.deliveryFailures.keys()) {
+      if (!currentFailures.has(attemptId)) this.deliveryFailures.delete(attemptId);
+    }
+  }
+
+  private reconcilableAttemptIds(): string[] {
+    return this.outbox.references()
+      .filter((reference) => (
+        this.attemptControllers.has(reference.attemptId)
+        || this.outbox.hasTerminalMessage(reference.attemptId)
+        || this.outbox.hasTerminalServerState(reference.attemptId)
+      ))
+      .map((reference) => reference.attemptId);
+  }
+
+  private flushableAttemptIds(): string[] {
+    return this.outbox.references()
+      .filter((reference) => (
+        !this.outbox.hasTerminalServerState(reference.attemptId)
+        && (
+          this.attemptControllers.has(reference.attemptId)
+          || this.outbox.hasTerminalMessage(reference.attemptId)
+        )
+      ))
+      .map((reference) => reference.attemptId);
   }
 
   private projectForJob(job: ExecutionJob): LocalProject | null {

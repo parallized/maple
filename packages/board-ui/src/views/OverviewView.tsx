@@ -86,6 +86,7 @@ export function OverviewView({ uiLanguage, metrics, runners, workerAvailability,
   const pieData: StatusData[] = [
     { label: "已完成", value: metrics.statusDistribution["已完成"] || 0, color: statusColorVar("已完成") },
     { label: "进行中", value: metrics.statusDistribution["进行中"] || 0, color: statusColorVar("进行中") },
+    { label: "规划中", value: metrics.statusDistribution["规划中"] || 0, color: statusColorVar("规划中") },
     {
       label: "待处理",
       value:
@@ -104,7 +105,7 @@ export function OverviewView({ uiLanguage, metrics, runners, workerAvailability,
   const half = pieSize / 2;
 
   return (
-    <section className="h-full w-full flex flex-col p-4 md:p-6 lg:p-8 max-w-6xl mx-auto overflow-hidden bg-[color-mix(in_srgb,var(--color-base-100)_70%,var(--color-base-200))] rounded-[16px] relative">
+    <section className="h-full w-full flex flex-col p-4 md:p-6 lg:p-8 max-w-6xl mx-auto overflow-hidden bg-[color-mix(in_srgb,var(--color-base-100)_70%,var(--color-base-200))] rounded-none md:rounded-[16px] relative">
       {/* Notion-style Header */}
       <FadeContent delay={0} className="flex-none mb-4 lg:mb-6 relative z-10">
         <header>
@@ -120,7 +121,7 @@ export function OverviewView({ uiLanguage, metrics, runners, workerAvailability,
         </header>
       </FadeContent>
 
-      <div className="flex-1 min-h-0 flex flex-col gap-4 lg:gap-6 overflow-hidden relative z-10">
+      <div className="overview-scroll flex-1 min-h-0 flex flex-col gap-4 lg:gap-6 overflow-y-auto md:overflow-hidden relative z-10">
         {/* Top Row: Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4 flex-none">
           <FadeContent delay={100} className="flex min-h-0">
@@ -185,6 +186,13 @@ export function OverviewView({ uiLanguage, metrics, runners, workerAvailability,
                       <span className="text-[12px] lg:text-[12px] text-muted truncate">进行中</span>
                       <span className="text-[12px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
                         {metrics.statusDistribution["进行中"] || 0}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <div className={`w-2 h-2 rounded-full ${statusDotClass("规划中")} flex-none`} />
+                      <span className="text-[12px] lg:text-[12px] text-muted truncate">规划中</span>
+                      <span className="text-[12px] lg:text-[12px] font-medium text-(--color-base-content) ml-auto">
+                        {metrics.statusDistribution["规划中"] || 0}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 min-w-0">

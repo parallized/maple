@@ -210,11 +210,12 @@ CREATE TABLE IF NOT EXISTS todos (
   details TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
   priority INTEGER NOT NULL DEFAULT 0,
-  worker_kind TEXT NOT NULL CHECK(worker_kind IN ('codex', 'claude', 'kimi', 'glm', 'iflow', 'gemini', 'opencode')),
+  worker_kind TEXT NOT NULL CHECK(worker_kind IN ('codex', 'deepseek', 'claude', 'kimi', 'glm', 'iflow', 'gemini', 'opencode')),
   claimed_by_runner_id TEXT REFERENCES runners(id) ON DELETE SET NULL,
   active_attempt_id TEXT,
   lease_token_hash TEXT,
   lease_expires_at TEXT,
+  retry_after TEXT,
   result_summary TEXT,
   last_error TEXT,
   tags_json TEXT,
@@ -257,6 +258,7 @@ CREATE TABLE IF NOT EXISTS todo_artifacts (
   mime_type TEXT NOT NULL CHECK(mime_type IN ('image/png', 'image/jpeg', 'image/webp')),
   size_bytes INTEGER NOT NULL CHECK(size_bytes > 0),
   storage_name TEXT NOT NULL UNIQUE,
+  delivery_id TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -283,6 +285,7 @@ CREATE TABLE IF NOT EXISTS todo_logs (
   title TEXT,
   content TEXT NOT NULL,
   group_id TEXT,
+  delivery_id TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -305,6 +308,7 @@ CREATE TABLE IF NOT EXISTS todo_routes (
   selected_worker_kind TEXT,
   execution_mode TEXT CHECK(execution_mode IN ('serial', 'parallel')),
   dispatch_brief TEXT,
+  attempt_id TEXT,
   lease_token_hash TEXT,
   lease_expires_at TEXT,
   created_at TEXT NOT NULL,
@@ -354,10 +358,11 @@ export function createDatabase(path: string): Database {
 
 function migrate(database: Database): void {
   migrateTodoWorker(database);
-  ensureTodoWorkerInvariant(database);
   ensureColumn(database, "todos", "tags_json", "TEXT");
   ensureColumn(database, "todos", "details_doc", "TEXT");
   ensureColumn(database, "todos", "retry_after", "TEXT");
+  migrateTodoWorkerConstraint(database);
+  ensureTodoWorkerInvariant(database);
   ensureColumn(database, "projects", "tag_catalog_json", "TEXT");
   ensureColumn(database, "projects", "workspace_id", "TEXT");
   ensureColumn(database, "projects", "workspace_external_key", "TEXT");
@@ -377,6 +382,8 @@ function migrate(database: Database): void {
   ensureColumn(database, "todo_logs", "status", "TEXT");
   ensureColumn(database, "todo_logs", "title", "TEXT");
   ensureColumn(database, "todo_logs", "group_id", "TEXT");
+  ensureColumn(database, "todo_logs", "delivery_id", "TEXT");
+  ensureColumn(database, "todo_artifacts", "delivery_id", "TEXT");
   dropColumn(database, "todos", "preferred_worker");
   dropColumn(database, "project_bindings", "worker_kind");
   dropColumn(database, "runner_commands", "worker_kind");
@@ -390,6 +397,7 @@ function migrate(database: Database): void {
   ensureColumn(database, "todo_attempts", "retry_max_attempts", "INTEGER NOT NULL DEFAULT 5");
   ensureColumn(database, "web_sessions", "csrf_token", "TEXT");
   ensureColumn(database, "todo_routes", "source_status", "TEXT");
+  ensureColumn(database, "todo_routes", "attempt_id", "TEXT");
   purgeUnreleasedLegacyWorkspace(database);
   database.exec(`
     UPDATE projects SET workspace_external_key = external_key WHERE workspace_external_key IS NULL;
@@ -399,6 +407,15 @@ function migrate(database: Database): void {
     CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_runners_workspace ON runners(workspace_id, last_seen_at DESC);
     CREATE INDEX IF NOT EXISTS idx_todos_retry ON todos(status, retry_after);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_todo_logs_delivery
+      ON todo_logs(delivery_id) WHERE delivery_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_todo_artifacts_delivery
+      ON todo_artifacts(delivery_id) WHERE delivery_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_todo_routes_attempt
+      ON todo_routes(attempt_id) WHERE attempt_id IS NOT NULL;
+    UPDATE todo_routes
+      SET attempt_id = 'legacy:' || todo_id
+      WHERE attempt_id IS NULL AND state IN ('claimed', 'routed');
   `);
   migrateProjectManagerQueueStatus(database);
   migrateLegacyRunnerNames(database);
@@ -484,20 +501,89 @@ function migrateTodoWorker(database: Database): void {
 function ensureTodoWorkerInvariant(database: Database): void {
   const allowedWorkers = WORKER_KINDS.map((kind) => `'${kind}'`).join(", ");
   database.exec(`
-    CREATE TRIGGER IF NOT EXISTS todos_worker_kind_insert_guard
+    DROP TRIGGER IF EXISTS todos_worker_kind_insert_guard;
+    DROP TRIGGER IF EXISTS todos_worker_kind_update_guard;
+
+    CREATE TRIGGER todos_worker_kind_insert_guard
     BEFORE INSERT ON todos
     WHEN NEW.worker_kind IS NULL OR NEW.worker_kind NOT IN (${allowedWorkers})
     BEGIN
       SELECT RAISE(ABORT, 'todos.worker_kind must be a supported Worker');
     END;
 
-    CREATE TRIGGER IF NOT EXISTS todos_worker_kind_update_guard
+    CREATE TRIGGER todos_worker_kind_update_guard
     BEFORE UPDATE OF worker_kind ON todos
     WHEN NEW.worker_kind IS NULL OR NEW.worker_kind NOT IN (${allowedWorkers})
     BEGIN
       SELECT RAISE(ABORT, 'todos.worker_kind must be a supported Worker');
     END;
   `);
+}
+
+/**
+ * SQLite 不能原地修改 CHECK。旧版 todos 表需要无损重建，才能允许 DeepSeek；
+ * API Key 不在该表中，迁移只处理公开的 Worker kind。
+ */
+function migrateTodoWorkerConstraint(database: Database): void {
+  const row = database
+    .query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'todos'")
+    .get() as { sql?: string | null } | null;
+  if (row?.sql?.includes("'deepseek'")) return;
+
+  const allowedWorkers = WORKER_KINDS.map((kind) => `'${kind}'`).join(", ");
+  const foreignKeysRow = database.query("PRAGMA foreign_keys").get() as { foreign_keys?: number } | null;
+  const restoreForeignKeys = foreignKeysRow?.foreign_keys !== 0;
+  database.exec("PRAGMA foreign_keys = OFF;");
+  try {
+    database.transaction(() => {
+      database.exec(`
+        DROP TABLE IF EXISTS todos_worker_migration;
+        CREATE TABLE todos_worker_migration (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          details TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL,
+          priority INTEGER NOT NULL DEFAULT 0,
+          worker_kind TEXT NOT NULL CHECK(worker_kind IN (${allowedWorkers})),
+          claimed_by_runner_id TEXT REFERENCES runners(id) ON DELETE SET NULL,
+          active_attempt_id TEXT,
+          lease_token_hash TEXT,
+          lease_expires_at TEXT,
+          retry_after TEXT,
+          result_summary TEXT,
+          last_error TEXT,
+          tags_json TEXT,
+          details_doc TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT
+        );
+
+        INSERT INTO todos_worker_migration (
+          id, project_id, title, details, status, priority, worker_kind,
+          claimed_by_runner_id, active_attempt_id, lease_token_hash, lease_expires_at,
+          retry_after, result_summary, last_error, tags_json, details_doc,
+          created_at, updated_at, started_at, completed_at
+        )
+        SELECT
+          id, project_id, title, details, status, priority, worker_kind,
+          claimed_by_runner_id, active_attempt_id, lease_token_hash, lease_expires_at,
+          retry_after, result_summary, last_error, tags_json, details_doc,
+          created_at, updated_at, started_at, completed_at
+        FROM todos;
+
+        DROP TABLE todos;
+        ALTER TABLE todos_worker_migration RENAME TO todos;
+        CREATE INDEX idx_todos_project_status ON todos(project_id, status, priority DESC, created_at);
+        CREATE INDEX idx_todos_lease ON todos(status, lease_expires_at);
+        CREATE INDEX idx_todos_retry ON todos(status, retry_after);
+      `);
+    }).immediate();
+  } finally {
+    if (restoreForeignKeys) database.exec("PRAGMA foreign_keys = ON;");
+  }
 }
 
 /**

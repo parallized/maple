@@ -100,6 +100,10 @@ describe("Maple Local download publication", () => {
     expect(hostedPowerShell).toContain("Write-Progress");
     expect(localShell).toContain("maple_show_progress");
     expect(localPowerShell).toContain("Write-Progress");
+    expect(localShell).toContain("MAPLE_PROGRESS_LAST_REPORTED");
+    expect(localShell).not.toContain("[ -t 1 ] || return 0");
+    expect(localPowerShell).toContain("MapleNextDownloadPercent");
+    expect(localPowerShell).toContain("[maple-local] Cause:");
 
     for (const installer of [localShell, localPowerShell]) {
       expect(installer).toContain("manifest-v2.txt");

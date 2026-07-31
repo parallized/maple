@@ -34,6 +34,7 @@ function detectPlatform(): InstallPlatform {
 function workerKindToTargetId(kind: WorkerKind): "codex" | "claude" | "iflow" | "gemini" | "opencode" {
   // kimi/glm 暂无独立安装引导(glm 由 opencode 宿主运行),统一回退到 opencode 的说明入口。
   if (kind === "kimi" || kind === "glm") return "opencode";
+  if (kind === "deepseek") return "codex";
   return kind;
 }
 

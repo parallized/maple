@@ -2,10 +2,14 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ProjectManagerJob } from "@maple/protocol";
+import { DEFAULT_WORKSPACE_EXECUTION_SETTINGS, type ProjectManagerJob } from "@maple/protocol";
 import type { LocalProject } from "../src/config/types";
 import type { WorkerExecutor } from "../src/execution/process-executor";
-import { parseProjectManagerDecision, selectProjectManagerWorker } from "../src/manager/decision";
+import {
+  parseProjectManagerDecision,
+  selectProjectManagerWorker,
+  selectProjectManagerWorkerForJob
+} from "../src/manager/decision";
 import { buildProjectManagerPrompt } from "../src/manager/prompt";
 import {
   runProjectManager,
@@ -83,6 +87,7 @@ function managerJob(): ProjectManagerJob {
       updatedAt: now
     }],
     availableWorkers: ["codex", "kimi"],
+    attemptId: "manager-attempt-1",
     leaseToken: "manager-lease-token-123456789012345",
     leaseSeconds: 900
   };
@@ -115,16 +120,27 @@ describe("Project manager dispatch", () => {
       workingState: "Working tree clean."
     });
 
-    expect(prompt).toContain("严禁修改、创建、删除或格式化任何项目文件");
-    expect(prompt).toContain("不要输出实施 Plan");
-    expect(prompt).toContain("直接唤起 Maple CLI 中对应的 Worker tab");
-    expect(prompt).toContain("Worker 不属于你的决策范围，严禁替换或改派");
+    expect(prompt).toContain("只读，不修改项目，也不改派用户指定的 Worker");
+    expect(prompt).toContain("不要深度分析、搜索仓库或执行任务");
+    expect(prompt).toContain("不要 Markdown、解释或实施步骤");
+    expect(prompt).toContain("只返回 JSON");
+    expect(prompt).toContain("立即返回派单 JSON");
+    expect(prompt).toContain("不改派用户指定的 Worker");
     expect(prompt.indexOf("AGENTS.md")).toBeLessThan(prompt.indexOf("新 Todo"));
   });
 
   it("uses one configured available Agent as the persistent project manager", () => {
     expect(selectProjectManagerWorker(["codex", "kimi"], { MAPLE_MANAGER_WORKER: "kimi" })).toBe("kimi");
     expect(selectProjectManagerWorker(["codex", "kimi"], {})).toBe("codex");
+    expect(selectProjectManagerWorkerForJob({
+      availableWorkers: ["codex", "kimi"],
+      executionSettings: {
+        ...DEFAULT_WORKSPACE_EXECUTION_SETTINGS,
+        defaultWorker: "codex",
+        baseWorker: "codex",
+        leaderWorker: "kimi"
+      }
+    }, {})).toBe("kimi");
   });
 
   it("asks the Leader PM for a report when the required Worker is unavailable", async () => {
@@ -190,15 +206,29 @@ describe("Project manager dispatch", () => {
       report: "Kimi 当前不可用，任务未执行。"
     });
     expect(prompts[0]).toContain("不得改派、替换、调用或建议任何其他 Worker");
+    expect(prompts[0]).toContain("简短标题、项目符号或有序列表");
+    expect(prompts[0]).not.toContain("报告不得超过");
     expect(prompts[0]).toContain('"requiredWorkerKind":"kimi"');
     expect(prompts[0]).toContain('"availableWorkers":["codex"]');
   });
 
   it("launches supported manager adapters without automatic write permission", () => {
-    expect(buildWorkerCommand("codex", "route", "direct", {}, { readOnly: true }).args)
-      .toContain("read-only");
-    expect(buildWorkerCommand("claude", "route", "direct", {}, { readOnly: true }).args)
-      .toContain("plan");
+    const codexArgs = buildWorkerCommand("codex", "route", "direct", {}, { readOnly: true }).args;
+    expect(codexArgs).toContain("read-only");
+    expect(codexArgs.slice(0, 3)).toEqual(["--ask-for-approval", "never", "exec"]);
+
+    const deepSeekArgs = buildWorkerCommand("deepseek", "route", "direct", {}, { readOnly: true }).args;
+    expect(deepSeekArgs).toContain("read-only");
+    expect(deepSeekArgs.slice(0, 3)).toEqual(["--ask-for-approval", "never", "exec"]);
+
+    const claudeArgs = buildWorkerCommand("claude", "route", "direct", {}, { readOnly: true }).args;
+    expect(claudeArgs).toContain("plan");
+    expect(claudeArgs).not.toContain("auto");
+
+    const kimiArgs = buildWorkerCommand("kimi", "route", "direct", {}, { readOnly: true }).args;
+    expect(kimiArgs).toContain("--plan");
+    expect(kimiArgs).not.toContain("--auto");
+
     expect(buildWorkerCommand("opencode", "route", "direct", {}, { readOnly: true }).args)
       .not.toContain("--auto");
   });
@@ -224,10 +254,12 @@ describe("Project manager dispatch", () => {
       registeredAt: "2026-07-27T08:00:00.000Z"
     };
     const resumeIds: Array<string | undefined> = [];
+    const reasoningEfforts: Array<string | undefined> = [];
     const prompts: string[] = [];
     const diagnostics: ProjectManagerDiagnosticEvent[] = [];
     const executor: WorkerExecutor = async (options) => {
       resumeIds.push(options.resumeSessionId);
+      reasoningEfforts.push(options.reasoningEffort);
       prompts.push(options.prompt);
       await options.onLog({
         sequence: 0,
@@ -294,9 +326,12 @@ describe("Project manager dispatch", () => {
       title: "读取项目",
       content: "读取项目结构"
     });
-    expect(prompts[0]).toContain("你是 Maple 为这个项目长期保留的一线项目经理");
-    expect(prompts[1]).toContain("继续担任这个项目的一线项目经理");
-    expect(prompts[1]).not.toContain("受版本控制的文件（最多");
+    expect(prompts[0]).toContain("你是 Maple Leader，只负责快速归组和派单");
+    expect(prompts[1]).toContain("续接当前项目经理会话；只处理新 Todo");
+    expect(prompts.every((prompt) => !prompt.includes("受版本控制的文件（最多"))).toBe(true);
+    expect(prompts.every((prompt) => !prompt.includes("只读源码摘录"))).toBe(true);
+    expect(prompts.every((prompt) => prompt.length < 1_800)).toBe(true);
+    expect(reasoningEfforts).toEqual(["low", "low"]);
     expect(new AgentSessionStore(configPath).read("manager", "project-1", "codex")?.sessionId)
       .toBe("pm-session-1");
   });

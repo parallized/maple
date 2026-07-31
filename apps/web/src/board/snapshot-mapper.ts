@@ -49,6 +49,8 @@ export function mapTodoToTask(todo: Todo): Task {
     workerKind: toBoardWorkerKind(todo.workerKind),
     needsConfirmation: false,
     tags: todo.tags ?? [],
+    executionPhase: todo.executionPhase ?? null,
+    startedAt: todo.startedAt ?? null,
     createdAt: todo.createdAt,
     updatedAt: todo.updatedAt,
     reports: summary
@@ -107,6 +109,7 @@ export function mapSnapshotToProjects(snapshot: DashboardSnapshot, order: string
       id: project.id,
       name: project.name,
       directory: binding?.workspaceLabel || project.repositoryUrl || project.name,
+      createdAt: project.createdAt,
       tagCatalog: parseTagCatalog(project.tagCatalog),
       tasks,
       tokenUsage: usageByProject.get(project.id)

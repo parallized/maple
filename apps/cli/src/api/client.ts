@@ -1,5 +1,7 @@
 import type {
   AppendJobLogRequest,
+  AppendJobLogsRequest,
+  AppendJobLogsResponse,
   BlockProjectManagerJobRequest,
   BlockProjectManagerJobResponse,
   ClaimJobResponse,
@@ -16,6 +18,8 @@ import type {
   JobMutationResponse,
   RegisterProjectRequest,
   RegisterProjectResponse,
+  ReconcileRunnerAttemptsRequest,
+  ReconcileRunnerAttemptsResponse,
   RunnerHeartbeatResponse,
   RunnerCapability,
   RunnerCommand,
@@ -24,6 +28,7 @@ import type {
   StartJobRequest,
   TodoScreenshotMimeType,
   UploadTodoArtifactResponse,
+  WorkspaceExecutionSettings,
   WorkerInventoryItem,
   WorkerKind
 } from "@maple/protocol";
@@ -75,6 +80,10 @@ export class MapleApiClient {
     });
   }
 
+  reconcile(input: ReconcileRunnerAttemptsRequest): Promise<ReconcileRunnerAttemptsResponse> {
+    return this.request("POST", "/api/runner/reconcile", input);
+  }
+
   disconnectRunner(): Promise<{ revoked: true }> {
     return this.request("DELETE", "/api/runner/connection");
   }
@@ -109,6 +118,10 @@ export class MapleApiClient {
     return this.request("POST", "/api/runner/project-manager/claim");
   }
 
+  executionSettings(): Promise<WorkspaceExecutionSettings> {
+    return this.request("GET", "/api/settings/execution");
+  }
+
   completeProjectManagerJob(
     todoId: string,
     input: CompleteProjectManagerJobRequest
@@ -116,9 +129,7 @@ export class MapleApiClient {
     return this.request(
       "POST",
       `/api/runner/project-manager/${encodeURIComponent(todoId)}/complete`,
-      input,
-      true,
-      2
+      input
     );
   }
 
@@ -129,9 +140,7 @@ export class MapleApiClient {
     return this.request(
       "POST",
       `/api/runner/project-manager/${encodeURIComponent(todoId)}/block`,
-      input,
-      true,
-      2
+      input
     );
   }
 
@@ -147,6 +156,10 @@ export class MapleApiClient {
     return this.request("POST", `/api/runner/jobs/${encodeURIComponent(todoId)}/logs`, input);
   }
 
+  appendLogs(todoId: string, input: AppendJobLogsRequest): Promise<AppendJobLogsResponse> {
+    return this.request("POST", `/api/runner/jobs/${encodeURIComponent(todoId)}/logs/batch`, input);
+  }
+
   listRuns(limit = 50): Promise<RunnerRunListResponse> {
     return this.request("GET", `/api/runner/runs?limit=${encodeURIComponent(String(limit))}`);
   }
@@ -157,12 +170,13 @@ export class MapleApiClient {
   }
 
   completeJob(todoId: string, input: CompleteJobRequest): Promise<JobMutationResponse> {
-    return this.request("POST", `/api/runner/jobs/${encodeURIComponent(todoId)}/complete`, input, true, 4);
+    return this.request("POST", `/api/runner/jobs/${encodeURIComponent(todoId)}/complete`, input);
   }
 
   uploadScreenshot(
     todoId: string,
     leaseToken: string,
+    deliveryId: string,
     input: { fileName: string; mimeType: TodoScreenshotMimeType; bytes: Uint8Array }
   ): Promise<UploadTodoArtifactResponse> {
     return this.requestMultipart(
@@ -172,10 +186,10 @@ export class MapleApiClient {
         const bytes = new Uint8Array(input.bytes.byteLength);
         bytes.set(input.bytes);
         form.set("leaseToken", leaseToken);
+        form.set("deliveryId", deliveryId);
         form.set("file", new Blob([bytes.buffer], { type: input.mimeType }), input.fileName);
         return form;
-      },
-      2
+      }
     );
   }
 

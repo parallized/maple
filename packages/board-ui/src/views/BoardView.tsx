@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { InlineTaskInput } from "../components/InlineTaskInput";
 import { PopoverMenu, type PopoverMenuItem } from "../components/PopoverMenu";
+import { RunningElapsed } from "../components/RunningElapsed";
 import { FadeContent } from "../components/ReactBits";
 import { useArtifactObjectUrl } from "../components/TaskArtifactGallery";
 import { WorkerLogo } from "../components/WorkerLogo";
@@ -14,7 +15,9 @@ import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
 import { statusBadgeClass, statusDotClass } from "../lib/status-colors";
+import { useMediaQuery } from "../lib/use-media-query";
 import { getLastMentionTime, getTimeLevel, relativeTimeZh } from "../lib/utils";
+import type { SidebarWorkerItem } from "../lib/worker-sidebar";
 
 type BoardViewProps = {
   boardProject: Project | null;
@@ -25,6 +28,10 @@ type BoardViewProps = {
   detailMode: DetailMode;
   externalEditorApp: ExternalEditorApp;
   displayType: BoardDisplayType;
+  leaderWorker: WorkerKind;
+  workers: SidebarWorkerItem[];
+  /** 点击 Leader 状态条:跳转设置「模型和工具」页签。 */
+  onOpenLeaderSettings: () => void;
   onSetDisplayType: (type: BoardDisplayType) => void;
   onAddDraftTask: (projectId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => boolean | Promise<boolean>;
@@ -58,6 +65,9 @@ export function BoardView({
   detailMode,
   externalEditorApp,
   displayType,
+  leaderWorker,
+  workers,
+  onOpenLeaderSettings,
   onSetDisplayType,
   onAddDraftTask,
   onCommitTaskTitle,
@@ -107,6 +117,7 @@ export function BoardView({
   }
 
   const selectedTask = boardProject && selectedTaskId ? boardProject.tasks.find((task) => task.id === selectedTaskId) ?? null : null;
+  const isMobile = useMediaQuery("(max-width: 980px)");
 
   if (!boardProject) {
     return (
@@ -114,7 +125,7 @@ export function BoardView({
         <FadeContent duration={300}>
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted">
             <Icon icon="mingcute:folder-open-line" className="text-3xl" />
-            <p>从侧边栏选择一个项目</p>
+            <p>{isMobile ? "点底部「菜单」，选择一个项目" : "从侧边栏选择一个项目"}</p>
           </div>
         </FadeContent>
       </section>
@@ -201,6 +212,13 @@ export function BoardView({
   */
   return (
     <section className="h-full max-w-full flex flex-col relative">
+      <LeaderStatusBar
+        leaderWorker={leaderWorker}
+        leader={workers.find((worker) => worker.kind === leaderWorker) ?? null}
+        activeCount={boardProject.tasks.filter((task) => task.executionPhase === "planning").length}
+        uiLanguage={uiLanguage}
+        onOpenSettings={onOpenLeaderSettings}
+      />
       <EdgeTabs
         cardRef={cardRef}
         project={boardProject}
@@ -267,13 +285,55 @@ export function BoardView({
               transition={{ delay: 0.2 }}
               className="py-8 text-center"
             >
-              <p className="text-muted text-sm">还没有任务，点击左侧「+」添加。</p>
+              <p className="text-muted text-sm">
+                {isMobile ? "还没有任务，点击右下角「+」新建一个。" : "还没有任务，点击左侧「+」添加。"}
+              </p>
             </motion.div>
           ) : null}
 
         </motion.div>
       </AnimatePresence>
     </section>
+  );
+}
+
+/** Leader PM 状态条：位于看板卡片上方、与卡片同一层。
+    展示当前 Leader Worker、模型名、在线状态与规划中（PM 派单阶段）的任务数。 */
+function LeaderStatusBar({
+  leaderWorker,
+  leader,
+  activeCount,
+  uiLanguage,
+  onOpenSettings
+}: {
+  leaderWorker: WorkerKind;
+  leader: SidebarWorkerItem | null;
+  activeCount: number;
+  uiLanguage: UiLanguage;
+  onOpenSettings: () => void;
+}) {
+  const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
+  const online = leader?.state === "online";
+  const model = leader && leader.model !== "模型未解析" ? leader.model : null;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpenSettings}
+      title={t("前往「模型和工具」设置", "Open Models & Workflow settings")}
+      className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 mb-1 text-left text-[12px] leading-none text-(--color-secondary) transition-colors hover:bg-[linear-gradient(to_right,color-mix(in_srgb,var(--color-base-content)_5%,transparent)_0%,transparent_100%)] hover:text-(--color-base-content)"
+    >
+      <WorkerLogo kind={leaderWorker} size={13} className="opacity-80" />
+      <span className="font-semibold text-(--color-base-content)/85">{t("领导", "Leader")}</span>
+      {model ? <span className="text-(--color-secondary)/75">{model}</span> : null}
+      <span className="ml-auto flex items-center gap-1.5 text-(--color-secondary)/60">
+        {activeCount > 0 ? (
+          <span className="shimmer-metal text-[11px] font-semibold">x{activeCount}</span>
+        ) : null}
+        <span className={`size-1.5 rounded-full ${online ? "bg-(--color-success)" : "bg-(--color-secondary)/35"}`} />
+        {online ? t("在线", "Online") : leader ? t("离线", "Offline") : t("未接入", "Not connected")}
+      </span>
+    </button>
   );
 }
 
@@ -310,6 +370,8 @@ function EdgeTabs({
   const { capabilities } = platform;
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const editorMeta = EXTERNAL_EDITOR_META[externalEditorApp];
+  // ≤980px：页签锚定布局让位给右下角悬浮按钮。
+  const isMobile = useMediaQuery("(max-width: 980px)");
 
   useEffect(() => {
     const update = () => {
@@ -326,6 +388,10 @@ function EdgeTabs({
       setHost(frame);
       setPos({ top: cardRect.top - frameRect.top + header + 6, left: cardRect.left - frameRect.left });
     };
+    // 移动端 FAB 不需要等卡片动画，立即确认挂载宿主。
+    const card = cardRef.current;
+    const frame = card?.closest(".app-frame");
+    if (frame instanceof HTMLElement) setHost(frame);
     // 项目切换：先隐藏，等卡片入场动画（delay 0.05s + duration 0.3s = 0.35s 后才完全不透明）
     // 结束再测量定位并滑出，避免半透明卡片期间页签透出来，也避免动画期间位置抖动。
     setPos(null);
@@ -337,7 +403,7 @@ function EdgeTabs({
     };
   }, [cardRef, project.id]);
 
-  if (!host || !pos) return null;
+  if (!host) return null;
 
   const projectMenuItems: PopoverMenuItem[] = [
     { kind: "heading", label: "详情展示" },
@@ -385,6 +451,42 @@ function EdgeTabs({
     { kind: "heading", label: "" },
     { kind: "item", key: "remove-project", label: t("删除项目", "Remove project"), icon: "mingcute:delete-2-line", onSelect: () => onRemoveProject(project.id) }
   ];
+
+  /* 移动端：两个页签改为右下角悬浮按钮（新建在下，项目设置在上），
+     菜单由 PopoverMenu 自动翻转向上弹出，避免被屏幕底缘裁掉。 */
+  if (isMobile) {
+    return createPortal(
+      <>
+        <button
+          type="button"
+          className="board-edge-fab"
+          onClick={onAddTask}
+          title="新建任务"
+          aria-label="新建任务"
+        >
+          <Icon icon="mingcute:add-line" />
+        </button>
+        <PopoverMenu
+          label={t("项目设置", "Project settings")}
+          align="right"
+          style={{ position: "fixed", right: 14, bottom: 114, zIndex: 45 }}
+          triggerNode={
+            <span
+              className="board-edge-fab board-edge-fab--project"
+              style={{ position: "static" }}
+              title={t("项目设置", "Project settings")}
+            >
+              <Icon icon="mingcute:settings-3-line" />
+            </span>
+          }
+          items={projectMenuItems}
+        />
+      </>,
+      host
+    );
+  }
+
+  if (!pos) return null;
 
   return createPortal(
     <>
@@ -485,23 +587,47 @@ function TaskWorkerMenu({ task, projectId, onUpdateTaskWorker }: {
   );
 }
 
-/** 任务状态修改菜单（表格行 / 画廊卡片共用）。 */
+/** 任务状态修改菜单（表格行 / 画廊卡片共用）。
+    执行阶段只认服务端下发的 executionPhase：queued → 队列中，planning → 规划中（无 spinner/时间），
+    running → spinner + 运行时长（不显示文字）；缺失/null 时按旧 status 展示（兼容旧 Server）。 */
 function TaskStatusMenu({ task, projectId, onUpdateTaskStatus }: {
   task: Task;
   projectId: string;
   onUpdateTaskStatus: (projectId: string, taskId: string, status: TaskStatus) => void;
 }) {
+  // 徽标配色跟随「显示状态」：执行阶段优先，与展示文案口径一致。
+  const displayStatus =
+    task.executionPhase === "queued"
+      ? "队列中"
+      : task.executionPhase === "planning"
+        ? "规划中"
+        : task.executionPhase === "running"
+          ? "进行中"
+          : task.status;
   return (
     <PopoverMenu
       label="Status Selector"
       triggerNode={
         <div
-          className={`ui-badge cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${statusBadgeClass(task.status)}`}
+          className={`ui-badge cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${statusBadgeClass(displayStatus)}`}
         >
-          {task.status === "进行中" && (
-            <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin opacity-80 mr-0.5" />
+          {task.executionPhase === "queued" ? (
+            "队列中"
+          ) : task.executionPhase === "planning" ? (
+            "规划中"
+          ) : task.executionPhase === "running" ? (
+            <>
+              <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin opacity-80 mr-0.5" />
+              <RunningElapsed since={task.startedAt ?? task.updatedAt} />
+            </>
+          ) : task.status === "进行中" ? (
+            <>
+              <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin opacity-80 mr-0.5" />
+              <RunningElapsed since={task.startedAt ?? task.updatedAt} />
+            </>
+          ) : (
+            task.status
           )}
-          {task.status}
         </div>
       }
       align="left"
@@ -910,8 +1036,9 @@ function TaskGallery({
           >
             {/* 封面背景：截图或斜向渐变，铺满卡片 */}
             <GalleryCardCover taskId={task.id} />
-            {/* 底部磨砂玻璃：向卡片底部渐显的 backdrop 模糊，把截图柔化成雾面 */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[55%] backdrop-blur-[10px] [mask-image:linear-gradient(to_bottom,transparent,black_55%)]" />
+            {/* 底部磨砂玻璃：向卡片底部渐显的 backdrop 模糊，把截图柔化成雾面；
+                自身带圆角：backdrop-filter 层不受祖先 overflow-hidden 裁切，不圆角会在卡片下两角漏出尖刺 */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[55%] rounded-b-[10px] backdrop-blur-[10px] [mask-image:linear-gradient(to_bottom,transparent,black_55%)]" />
             {/* 渐变过渡层（竖向）：顶部薄压暗（避免截图白边炸光），向下渐变为卡片底色，文字与图片融为一体 */}
             <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-base-content)_10%,transparent)_0%,color-mix(in_srgb,var(--color-base-content)_6%,transparent)_26%,color-mix(in_srgb,var(--color-base-100)_78%,transparent)_62%,var(--color-base-100)_88%)]" />
             {/* 噪点质感：Vercel 式细碎颗粒，压在底部雾面上 */}

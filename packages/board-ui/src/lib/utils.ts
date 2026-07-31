@@ -16,6 +16,13 @@ export function deriveProjectName(path: string): string {
   return segments[segments.length - 1] ?? "新项目";
 }
 
+/** 任务是否处于执行流程中（队列中 → 规划中 → 运行中）。
+    优先认服务端 executionPhase；缺失时回退旧 status 判断（本地存储 / 旧 Server）。 */
+export function isTaskInFlight(task: Task): boolean {
+  if (task.executionPhase) return true;
+  return task.status === "队列中" || task.status === "进行中";
+}
+
 export function createTask(taskTitle: string, status: TaskStatus = "待办", workerKind: WorkerKind = DEFAULT_BASE_WORKER): Task {
   const now = new Date().toISOString();
   return {

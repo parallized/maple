@@ -19,7 +19,7 @@ export function formatReasoningEffort(value: string | null): string {
 }
 
 /** 行内已有 Worker 图标标识品牌，显示模型时省略品牌前缀（Claude / GPT / Kimi…），tooltip 仍保留完整 modelId。 */
-const BRAND_PREFIX_PATTERN = /^(?:claude|gpt|kimi|gemini|glm|iflow|codex|opencode)[-\s]+/i;
+const BRAND_PREFIX_PATTERN = /^(?:claude|gpt|deepseek|kimi|gemini|glm|iflow|codex|opencode)[-\s]+/i;
 
 function modelLabel(item: RunnerWorkerInventoryItem): string | null {
   const model = item.modelName?.trim() || item.modelId?.trim();
@@ -34,7 +34,7 @@ function unique(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value?.trim())).map((value) => value.trim()))];
 }
 
-/** 将多台 Runner 的 inventory 聚合成固定七种 Worker，模型不丢精度。 */
+/** 将多台 Runner 的 inventory 聚合成固定 Worker 列表，模型不丢精度。 */
 export function buildSidebarWorkers(runners: readonly RunnerSummary[]): SidebarWorkerItem[] {
   const onlineRunners = runners.filter((runner) => runner.state === "online");
   const relevantRunners = onlineRunners.length > 0 ? onlineRunners : [...runners];

@@ -1,5 +1,6 @@
 import type {
   AcceptanceSettings,
+  DeepSeekConnectionStatus,
   WorkspaceExecutionSettings,
   ExecutionJob,
   LogStream,
@@ -80,6 +81,12 @@ export interface DashboardSnapshot {
 
 export type UpdateAcceptanceSettingsRequest = Partial<AcceptanceSettings>;
 export type UpdateWorkspaceExecutionSettingsRequest = Partial<WorkspaceExecutionSettings>;
+
+export interface ConnectDeepSeekRequest {
+  apiKey: string;
+}
+
+export type DeepSeekConnectionResponse = DeepSeekConnectionStatus;
 
 /** 按项目 × Worker 类型聚合的 token 用量（用于概览柱状图）。 */
 export interface TokenUsageBreakdown {
@@ -244,8 +251,34 @@ export interface HeartbeatJobRequest {
   leaseToken: string;
 }
 
+export type RunnerAttemptScope = "execution" | "project_manager";
+export type RunnerAttemptReconcileState = "active" | "completed" | "superseded";
+
+export interface RunnerAttemptReference {
+  scope: RunnerAttemptScope;
+  todoId: string;
+  attemptId: string;
+  leaseToken: string;
+}
+
+export interface ReconcileRunnerAttemptsRequest {
+  attempts: RunnerAttemptReference[];
+}
+
+export interface RunnerAttemptReconcileResult {
+  attemptId: string;
+  state: RunnerAttemptReconcileState;
+  leaseSeconds: number;
+}
+
+export interface ReconcileRunnerAttemptsResponse {
+  attempts: RunnerAttemptReconcileResult[];
+}
+
 export interface AppendJobLogRequest {
   leaseToken: string;
+  /** Stable sender-generated ID. Omitted by older clients. */
+  deliveryId?: string;
   stream: LogStream;
   content: string;
   /** 新字段保持可选，允许旧版 CLI 向新版 Server 回传原始日志。 */
@@ -256,6 +289,20 @@ export interface AppendJobLogRequest {
   status?: RunLogStatus;
   title?: string;
   groupId?: string;
+}
+
+export type DeliveredJobLog = Omit<AppendJobLogRequest, "leaseToken" | "deliveryId"> & {
+  deliveryId: string;
+};
+
+export interface AppendJobLogsRequest {
+  leaseToken: string;
+  logs: DeliveredJobLog[];
+}
+
+export interface AppendJobLogsResponse {
+  ok: true;
+  accepted: number;
 }
 
 export interface CompleteJobRequest {

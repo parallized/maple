@@ -1,6 +1,7 @@
 import type { WorkerKind } from "@maple/protocol";
 import { claudeAdapter } from "./claude";
 import { codexAdapter } from "./codex";
+import { deepSeekAdapter } from "./deepseek";
 import { geminiAdapter } from "./gemini";
 import { glmAdapter } from "./glm";
 import { iflowAdapter } from "./iflow";
@@ -10,6 +11,7 @@ import type { CodingAgentAdapter } from "./types";
 
 const CODING_AGENT_ADAPTERS = {
   codex: codexAdapter,
+  deepseek: deepSeekAdapter,
   claude: claudeAdapter,
   kimi: kimiAdapter,
   glm: glmAdapter,

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   AppendJobLogRequest,
+  AppendJobLogsRequest,
   CompleteJobRequest,
   CompleteProjectManagerJobRequest,
   ExecutionJob,
@@ -95,6 +96,8 @@ function executionJob(): ExecutionJob {
 
 describe("Runner structured run events", () => {
   it("attributes live TUI records and persists the same structured event", async () => {
+    const root = mkdtempSync(join(tmpdir(), "maple-runner-records-"));
+    temporaryDirectories.push(root);
     const job = executionJob();
     const controller = new AbortController();
     const appended: AppendJobLogRequest[] = [];
@@ -111,9 +114,9 @@ describe("Runner structured run events", () => {
       },
       startJob: async () => ({ todo: job.todo, attempt: job.attempt }),
       heartbeatJob: async () => ({ ok: true as const }),
-      appendLog: async (_todoId: string, input: AppendJobLogRequest) => {
-        appended.push(input);
-        return { ok: true as const };
+      appendLogs: async (_todoId: string, input: AppendJobLogsRequest) => {
+        appended.push(...input.logs.map((log) => ({ leaseToken: input.leaseToken, ...log })));
+        return { ok: true as const, accepted: input.logs.length };
       },
       completeJob: async () => {
         controller.abort();
@@ -151,7 +154,7 @@ describe("Runner structured run events", () => {
     };
 
     const runner = new RunnerLoop(api as unknown as MapleApiClient, config, 1, {
-      configPath: join(import.meta.dir, "fixtures", "unused-cli.json"),
+      configPath: join(root, "cli.json"),
       output
     });
     await runner.run(controller.signal);
@@ -209,7 +212,7 @@ describe("Runner structured run events", () => {
       },
       startJob: async () => ({ todo: job.todo, attempt: job.attempt }),
       heartbeatJob: async () => ({ ok: true as const }),
-      appendLog: async () => ({ ok: true as const }),
+      appendLogs: async () => ({ ok: true as const, accepted: 1 }),
       completeJob: async (_todoId: string, input: CompleteJobRequest) => {
         completions.push(input);
         controller.abort();
@@ -270,8 +273,10 @@ describe("Runner structured run events", () => {
 
   it("wakes a Worker tab after the project manager dispatches the Todo", async () => {
     const controller = new AbortController();
-    const projectPath = mkdtempSync(join(tmpdir(), "maple-manager-tab-"));
-    temporaryDirectories.push(projectPath);
+    const root = mkdtempSync(join(tmpdir(), "maple-manager-tab-"));
+    temporaryDirectories.push(root);
+    const projectPath = join(root, "project");
+    mkdirSync(projectPath, { recursive: true });
     const execution = executionJob();
     execution.todo.workerKind = "kimi";
     execution.attempt.workerKind = "kimi";
@@ -282,6 +287,7 @@ describe("Runner structured run events", () => {
       workflows: [],
       history: [],
       availableWorkers: ["codex", "kimi"],
+      attemptId: "manager-attempt-1",
       leaseToken: "manager-lease-token-123456789012345",
       leaseSeconds: 900
     };
@@ -324,7 +330,7 @@ describe("Runner structured run events", () => {
       },
       startJob: async () => ({ todo: execution.todo, attempt: execution.attempt }),
       heartbeatJob: async () => ({ ok: true as const }),
-      appendLog: async () => ({ ok: true as const }),
+      appendLogs: async () => ({ ok: true as const, accepted: 1 }),
       completeJob: async () => {
         controller.abort();
         return { todo: execution.todo, attempt: execution.attempt };
@@ -353,7 +359,7 @@ describe("Runner structured run events", () => {
     const managerStatuses: ProjectManagerActivity[] = [];
     const managerRecords: ProjectManagerRunEvent[] = [];
     const runner = new RunnerLoop(api as unknown as MapleApiClient, config, 1, {
-      configPath: join(projectPath, "cli.json"),
+      configPath: join(root, ".maple", "cli.json"),
       output: {
         info: () => undefined,
         warn: () => undefined,
@@ -460,8 +466,8 @@ describe("Runner structured run events", () => {
       },
       startJob: async () => ({ todo: job.todo, attempt: job.attempt }),
       heartbeatJob: async () => ({ ok: true as const }),
-      appendLog: async () => ({ ok: true as const }),
-      uploadScreenshot: async (_todoId: string, _leaseToken: string, input: {
+      appendLogs: async () => ({ ok: true as const, accepted: 1 }),
+      uploadScreenshot: async (_todoId: string, _leaseToken: string, _deliveryId: string, input: {
         fileName: string;
         mimeType: "image/png";
         bytes: Uint8Array;
@@ -507,7 +513,7 @@ describe("Runner structured run events", () => {
       }]
     };
     const executor: WorkerExecutor = async (options) => {
-      const match = options.prompt.match(/到：([^\r\n]+)/);
+      const match = options.prompt.match(/存到 ([^；\r\n]+)/);
       expect(match?.[1]).toBeString();
       screenshotPath = join(match![1]!.trim(), "acceptance.png");
       expect(options.additionalWritableDirectories).toEqual([match![1]!.trim()]);
@@ -535,6 +541,219 @@ describe("Runner structured run events", () => {
     expect(existsSync(screenshotPath)).toBe(false);
     expect(screenshotPath).toStartWith(join(mapleHome, "artifacts"));
     expect(existsSync(join(projectPath, ".maple"))).toBe(false);
+  });
+
+  it("keeps successful Worker results when optional screenshots are absent or unavailable", async () => {
+    const scenarios = [
+      {
+        playwrightExecutable: "playwright",
+        expectedLog: "未发现适用的 Playwright 验收截图，本次任务继续按 Worker 结果完成。",
+        promptIncludesScreenshotInstructions: true
+      },
+      {
+        playwrightExecutable: null,
+        expectedLog: "可选截图验收暂不可用，本次任务继续按 Worker 结果执行",
+        promptIncludesScreenshotInstructions: false
+      }
+    ] as const;
+
+    for (const scenario of scenarios) {
+      const controller = new AbortController();
+      const root = mkdtempSync(join(tmpdir(), "maple-runner-optional-screenshot-"));
+      temporaryDirectories.push(root);
+      const projectPath = join(root, "project");
+      mkdirSync(projectPath, { recursive: true });
+      const job = executionJob();
+      job.acceptanceSettings = { backgroundPlaywrightScreenshot: true };
+      job.attempt.acceptanceSettings = { backgroundPlaywrightScreenshot: true };
+      job.managerWorkerKind = "codex";
+      let claimed = false;
+      let workerRuns = 0;
+      let failureReports = 0;
+      const completions: CompleteJobRequest[] = [];
+      const records: RunnerRunEvent[] = [];
+      const api = {
+        serverUrl: "http://maple.test",
+        heartbeat: async () => ({ id: "runner-1" }),
+        claimRunnerCommand: async () => ({ command: null, leaseToken: null, retryAfterMs: 1_500 }),
+        claimProjectManagerJob: async () => ({ job: null, retryAfterMs: 1_500 }),
+        claim: async () => {
+          if (claimed) return { job: null, retryAfterMs: 10 };
+          claimed = true;
+          return { job, retryAfterMs: 0 };
+        },
+        startJob: async () => ({ todo: job.todo, attempt: job.attempt }),
+        heartbeatJob: async () => ({ ok: true as const }),
+        appendLogs: async () => ({ ok: true as const, accepted: 1 }),
+        completeJob: async (_todoId: string, input: CompleteJobRequest) => {
+          completions.push(input);
+          controller.abort();
+          return { todo: job.todo, attempt: job.attempt };
+        }
+      };
+      const config: CliConfig = {
+        version: 1,
+        serverUrl: api.serverUrl,
+        runner: { id: "runner-1", token: "runner-token", name: "Test runner" },
+        projects: [{
+          localId: "local-project-1",
+          projectId: job.project.id,
+          bindingId: job.binding.id,
+          externalKey: job.project.externalKey,
+          name: job.project.name,
+          path: projectPath,
+          repositoryUrl: null,
+          defaultBranch: null,
+          gitBranch: null,
+          gitHead: null,
+          workerKind: "kimi",
+          registeredAt: job.todo.createdAt
+        }]
+      };
+      const runner = new RunnerLoop(api as unknown as MapleApiClient, config, 1, {
+        configPath: join(root, ".maple", "cli.json"),
+        playwrightExecutable: scenario.playwrightExecutable,
+        output: {
+          info: () => undefined,
+          warn: () => undefined,
+          worker: () => undefined,
+          record: (event) => records.push(event)
+        },
+        workerExecutor: async (options) => {
+          workerRuns += 1;
+          expect(options.prompt.includes("可选截图："))
+            .toBe(scenario.promptIncludesScreenshotInstructions);
+          return {
+            success: true,
+            exitCode: 0,
+            summary: "Worker 已完成。",
+            error: null,
+            usage: null,
+            sessionId: null,
+            sessionUnavailable: false
+          };
+        },
+        projectManagerFailureReporter: async () => {
+          failureReports += 1;
+          return "不应生成失败报告。";
+        }
+      });
+
+      await runner.run(controller.signal);
+
+      expect(workerRuns).toBe(1);
+      expect(failureReports).toBe(0);
+      expect(completions).toHaveLength(1);
+      expect(completions[0]).toMatchObject({
+        success: true,
+        exitCode: 0,
+        summary: "Worker 已完成。"
+      });
+      expect(records.some((record) => record.content.includes(scenario.expectedLog))).toBe(true);
+    }
+  });
+
+  it("keeps the Worker running while disconnected and flushes its result after recovery", async () => {
+    const controller = new AbortController();
+    const root = mkdtempSync(join(tmpdir(), "maple-runner-disconnect-"));
+    temporaryDirectories.push(root);
+    const projectPath = join(root, "project");
+    mkdirSync(projectPath, { recursive: true });
+    const job = executionJob();
+    let claimed = false;
+    let disconnected = false;
+    let workerFinished = false;
+    const deliveries: string[] = [];
+    const api = {
+      serverUrl: "http://maple.test",
+      heartbeat: async () => ({ id: "runner-1" }),
+      reconcile: async () => ({ attempts: [] }),
+      claimRunnerCommand: async () => {
+        if (disconnected) {
+          disconnected = false;
+          throw new Error("fetch failed");
+        }
+        return { command: null, leaseToken: null, retryAfterMs: 1_500 };
+      },
+      claimProjectManagerJob: async () => ({ job: null, retryAfterMs: 1_500 }),
+      claim: async () => {
+        if (claimed) return { job: null, retryAfterMs: 10 };
+        claimed = true;
+        disconnected = true;
+        return { job, retryAfterMs: 0 };
+      },
+      startJob: async () => {
+        if (disconnected) throw new Error("server offline");
+        deliveries.push("start");
+        return { todo: job.todo, attempt: job.attempt };
+      },
+      heartbeatJob: async () => ({ ok: true as const }),
+      appendLogs: async () => {
+        if (disconnected) throw new Error("server offline");
+        deliveries.push("log");
+        return { ok: true as const, accepted: 1 };
+      },
+      completeJob: async () => {
+        if (disconnected) throw new Error("server offline");
+        deliveries.push("complete");
+        controller.abort();
+        return { todo: job.todo, attempt: job.attempt };
+      }
+    };
+    const config: CliConfig = {
+      version: 1,
+      serverUrl: api.serverUrl,
+      runner: { id: "runner-1", token: "runner-token", name: "Test runner" },
+      projects: [{
+        localId: "local-project-1",
+        projectId: job.project.id,
+        bindingId: job.binding.id,
+        externalKey: job.project.externalKey,
+        name: job.project.name,
+        path: projectPath,
+        repositoryUrl: null,
+        defaultBranch: null,
+        gitBranch: null,
+        gitHead: null,
+        workerKind: "kimi",
+        registeredAt: job.todo.createdAt
+      }]
+    };
+    const warnings: string[] = [];
+    const runner = new RunnerLoop(api as unknown as MapleApiClient, config, 1, {
+      configPath: join(root, ".maple", "cli.json"),
+      output: {
+        info: () => undefined,
+        warn: (message) => warnings.push(message),
+        worker: () => undefined
+      },
+      workerExecutor: async (options) => {
+        await options.onLog?.({
+          sequence: 0,
+          occurredAt: "2026-07-28T00:00:01.000Z",
+          stream: "stdout",
+          kind: "assistant",
+          level: "info",
+          content: "finished offline"
+        });
+        workerFinished = true;
+        return {
+          success: true,
+          exitCode: 0,
+          summary: "done",
+          error: null,
+          usage: null,
+          sessionId: null,
+          sessionUnavailable: false
+        };
+      }
+    });
+
+    await runner.run(controller.signal);
+
+    expect(workerFinished).toBe(true);
+    expect(deliveries).toEqual(["start", "log", "complete"]);
+    expect(warnings.join("\n")).toContain("回传队列等待重试");
   });
 
   it("resumes a serial Workflow Worker session after restart but isolates parallel work", async () => {
@@ -591,13 +810,11 @@ describe("Runner structured run events", () => {
     const resumeIds: Array<string | undefined> = [];
     const prompts: string[] = [];
     const summaryModes: Array<string | undefined> = [];
-    const reportLimits: Array<number | undefined> = [];
     let freshSessionId = "workflow-session-1";
     const executor: WorkerExecutor = async (options) => {
       resumeIds.push(options.resumeSessionId);
       prompts.push(options.prompt);
       summaryModes.push(options.summaryMode);
-      reportLimits.push(options.reportMaxChars);
       if (options.resumeSessionId === "expired-session") {
         return {
           success: false,
@@ -636,7 +853,7 @@ describe("Runner structured run events", () => {
         },
         startJob: async () => ({ todo: job.todo, attempt: job.attempt }),
         heartbeatJob: async () => ({ ok: true as const }),
-        appendLog: async () => ({ ok: true as const }),
+        appendLogs: async () => ({ ok: true as const, accepted: 1 }),
         completeJob: async () => {
           controller.abort();
           return { todo: job.todo, attempt: job.attempt };
@@ -675,11 +892,116 @@ describe("Runner structured run events", () => {
       "expired-session",
       undefined
     ]);
-    expect(prompts[1]).toContain("正在续接这个 Maple Workflow 的 Worker 会话");
+    expect(prompts[1]).toContain("续接当前 Maple Workflow Worker 会话");
     expect(prompts[2]).not.toContain("正在续接这个 Maple Workflow 的 Worker 会话");
     expect(summaryModes).toEqual(["report", "report", "report", "report", "report"]);
-    expect(reportLimits).toEqual([30, 30, 30, 30, 30]);
+    expect(prompts.every((prompt) => !prompt.includes("最终报告不得超过"))).toBe(true);
     expect(new AgentSessionStore(configPath).read("workflow", "workflow-1", "codex")?.sessionId)
       .toBe("replacement-session");
+  });
+});
+
+describe("Runner force termination", () => {
+  it("keeps waiting after graceful stop and releases the Worker when force termination is requested", async () => {
+    const root = mkdtempSync(join(tmpdir(), "maple-runner-force-stop-"));
+    temporaryDirectories.push(root);
+    const projectPath = join(root, "project");
+    mkdirSync(projectPath, { recursive: true });
+    const job = executionJob();
+    let claimed = false;
+    let resolveStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve;
+    });
+    let normalStopObserved = false;
+    let forceStopObserved = false;
+
+    const api = {
+      serverUrl: "http://maple.test",
+      heartbeat: async () => ({ id: "runner-1" }),
+      claimRunnerCommand: async () => ({ command: null, leaseToken: null, retryAfterMs: 1_500 }),
+      claimProjectManagerJob: async () => ({ job: null, retryAfterMs: 1_500 }),
+      claim: async () => {
+        if (claimed) return { job: null, retryAfterMs: 1_500 };
+        claimed = true;
+        return { job, retryAfterMs: 0 };
+      },
+      startJob: async () => ({ todo: job.todo, attempt: job.attempt }),
+      heartbeatJob: async () => ({ ok: true as const }),
+      appendLogs: async () => ({ ok: true as const, accepted: 1 }),
+      completeJob: async () => ({ todo: job.todo, attempt: job.attempt })
+    };
+    const config: CliConfig = {
+      version: 1,
+      serverUrl: api.serverUrl,
+      runner: { id: "runner-1", token: "runner-token", name: "Test runner" },
+      projects: [{
+        localId: "local-project-1",
+        projectId: job.project.id,
+        bindingId: job.binding.id,
+        externalKey: job.project.externalKey,
+        name: job.project.name,
+        path: projectPath,
+        repositoryUrl: null,
+        defaultBranch: null,
+        gitBranch: null,
+        gitHead: null,
+        workerKind: "kimi",
+        registeredAt: job.todo.createdAt
+      }]
+    };
+    const runner = new RunnerLoop(api as unknown as MapleApiClient, config, 1, {
+      configPath: join(root, ".maple", "cli.json"),
+      output: { info: () => undefined, warn: () => undefined, worker: () => undefined },
+      workerExecutor: async (options) => {
+        expect(options.forceSignal).toBeDefined();
+        resolveStarted();
+        return await new Promise((resolve) => {
+          options.signal.addEventListener("abort", () => {
+            normalStopObserved = true;
+          }, { once: true });
+          const finish = () => {
+            forceStopObserved = true;
+            resolve({
+              success: false,
+              exitCode: null,
+              summary: "",
+              error: "force terminated",
+              usage: null,
+              sessionId: null,
+              sessionUnavailable: false
+            });
+          };
+          options.forceSignal!.addEventListener("abort", finish, { once: true });
+          if (options.forceSignal!.aborted) finish();
+        });
+      }
+    });
+
+    const controller = new AbortController();
+    const runPromise = runner.run(controller.signal);
+    await started;
+    controller.abort();
+    await Bun.sleep(20);
+    let settled = false;
+    void runPromise.then(() => {
+      settled = true;
+    });
+    await Bun.sleep(20);
+
+    expect(normalStopObserved).toBe(true);
+    expect(forceStopObserved).toBe(false);
+    expect(settled).toBe(false);
+
+    runner.forceTerminate();
+    await Promise.race([
+      runPromise,
+      Bun.sleep(2_000).then(() => {
+        throw new Error("Runner did not finish after force termination");
+      })
+    ]);
+
+    expect(forceStopObserved).toBe(true);
+    expect(settled).toBe(true);
   });
 });

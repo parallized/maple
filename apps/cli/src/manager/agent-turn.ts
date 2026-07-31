@@ -1,6 +1,5 @@
 import type { WorkerKind } from "@maple/protocol";
 import { executeWorker, type ProcessExecutionResult, type WorkerExecutor } from "../execution/process-executor";
-import type { ExecutionReportLimit } from "../execution/report";
 import type { WorkerShell } from "../execution/shells";
 import { AgentSessionStore } from "../session/store";
 import type { ProjectManagerDiagnosticHandler } from "./project-manager";
@@ -17,13 +16,13 @@ export interface ManagerAgentTurnOptions {
   managerWorkerKind: WorkerKind;
   managerWorkspace: string;
   signal: AbortSignal;
+  forceSignal?: AbortSignal;
   shell: WorkerShell;
   buildPrompt(context: ManagerPromptContext): string;
   contextFingerprint?: string | null;
   sessionStore?: AgentSessionStore;
   executor?: WorkerExecutor;
   summaryMode?: "raw" | "report" | "strict-report";
-  reportMaxChars?: ExecutionReportLimit;
   onDiagnostic?: ProjectManagerDiagnosticHandler;
 }
 
@@ -40,6 +39,7 @@ export async function runManagerAgentTurn(
   const controller = new AbortController();
   const abort = () => controller.abort();
   options.signal.addEventListener("abort", abort, { once: true });
+  if (options.signal.aborted) abort();
   const timeout = setTimeout(abort, MANAGER_TIMEOUT_MS);
 
   const run = (resumeSessionId?: string) => executor({
@@ -50,10 +50,11 @@ export async function runManagerAgentTurn(
       existingContextFingerprint: existingSession?.contextFingerprint ?? null
     }),
     signal: controller.signal,
+    forceSignal: options.forceSignal,
     shell: options.shell,
     readOnly: true,
+    reasoningEffort: "low",
     summaryMode: options.summaryMode,
-    reportMaxChars: options.reportMaxChars,
     resumeSessionId,
     onSession: (sessionId) => {
       options.sessionStore?.save({
@@ -71,11 +72,13 @@ export async function runManagerAgentTurn(
 
   try {
     let result = await run(existingSession?.sessionId);
-    if (existingSession && result.sessionUnavailable && !controller.signal.aborted) {
+    if (existingSession && result.sessionUnavailable && !controller.signal.aborted && !options.forceSignal?.aborted) {
       options.sessionStore?.remove("manager", options.projectId, options.managerWorkerKind);
       result = await run();
     }
-    if (options.signal.aborted) throw new Error("Maple CLI 已停止，项目经理任务已取消。");
+    if (options.signal.aborted || options.forceSignal?.aborted) {
+      throw new Error("Maple CLI 已停止，项目经理任务已取消。");
+    }
     if (!result.success) {
       throw new Error(result.error || "项目经理 Coding Agent 没有完成任务。");
     }

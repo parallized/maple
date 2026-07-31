@@ -87,9 +87,14 @@ export function PopoverMenu({ label, icon, triggerText, triggerNode, items, alig
   useLayoutEffect(() => {
     if (!open || !usePortal || !rootRef.current) return;
     const rect = rootRef.current.getBoundingClientRect();
+    // 菜单已在本轮 commit 挂载，可直接测量高度：下方空间不足时自动翻转到触发器上方，
+    // 避免移动端右下角悬浮按钮的菜单被屏幕底缘裁掉。
+    const menuHeight = portalMenuRef.current?.offsetHeight ?? 0;
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    const openUp = menuHeight > spaceBelow && rect.top - menuHeight - 8 > 0;
     setPortalPos({
       position: "fixed",
-      top: rect.bottom + 8,
+      top: openUp ? rect.top - menuHeight - 8 : rect.bottom + 8,
       ...(align === "left" ? { left: rect.left } : { right: window.innerWidth - rect.right }),
       zIndex: 9999,
     });

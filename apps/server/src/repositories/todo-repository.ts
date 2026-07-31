@@ -21,8 +21,12 @@ export class TodoRepository {
   list(workspaceId?: string): Todo[] {
     const rows = this.database
       .query(
-        `SELECT t.* FROM todos t
+        `SELECT t.*, route.state AS route_state,
+                CASE WHEN route.state = 'claimed' THEN route.attempt_id END AS manager_attempt_id,
+                CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at
+         FROM todos t
          JOIN projects p ON p.id = t.project_id
+         LEFT JOIN todo_routes route ON route.todo_id = t.id
          ${workspaceId ? "WHERE p.workspace_id = ?" : ""}
          ORDER BY t.priority DESC, t.created_at ASC`
       )
@@ -33,8 +37,12 @@ export class TodoRepository {
   listByProject(projectId: string, workspaceId?: string): Todo[] {
     const rows = this.database
       .query(
-        `SELECT t.* FROM todos t
+        `SELECT t.*, route.state AS route_state,
+                CASE WHEN route.state = 'claimed' THEN route.attempt_id END AS manager_attempt_id,
+                CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at
+         FROM todos t
          JOIN projects p ON p.id = t.project_id
+         LEFT JOIN todo_routes route ON route.todo_id = t.id
          WHERE t.project_id = ?${workspaceId ? " AND p.workspace_id = ?" : ""}
          ORDER BY t.priority DESC, t.created_at ASC`
       )
@@ -45,8 +53,12 @@ export class TodoRepository {
   get(todoId: string, workspaceId?: string): Todo | null {
     const row = this.database
       .query(
-        `SELECT t.* FROM todos t
+        `SELECT t.*, route.state AS route_state,
+                CASE WHEN route.state = 'claimed' THEN route.attempt_id END AS manager_attempt_id,
+                CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at
+         FROM todos t
          JOIN projects p ON p.id = t.project_id
+         LEFT JOIN todo_routes route ON route.todo_id = t.id
          WHERE t.id = ?${workspaceId ? " AND p.workspace_id = ?" : ""}`
       )
       .get(...(workspaceId ? [todoId, workspaceId] : [todoId])) as TodoRow | null;
@@ -130,6 +142,15 @@ export class TodoRepository {
            SET state = 'abandoned', error = ?, completed_at = ?
            WHERE id = ? AND state IN ('claimed', 'running')`,
           ["任务状态由看板更新，当前执行租约已撤销。", now, current.activeAttemptId]
+        );
+      }
+      if (input.status && input.status !== current.status) {
+        this.database.run(
+          `UPDATE todo_routes
+           SET state = 'routed', attempt_id = NULL, lease_token_hash = NULL,
+               lease_expires_at = NULL, completed_at = ?, updated_at = ?
+           WHERE todo_id = ? AND state = 'claimed'`,
+          [now, now, todoId]
         );
       }
 

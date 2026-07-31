@@ -27,38 +27,43 @@ const DOC_GROUPS: DocGroup[] = [
     items: [
       {
         id: "install",
-        title: "安装与接入",
+        title: "安装",
         blocks: [
-          { type: "p", text: "Maple 由 Server 与 Runner 组成：Server 提供看板与调度，Runner 在你的主机上真正执行任务。一条命令即可完成安装。" },
+          { type: "p", text: "Maple 有两种用法，看你要不要多人协作、随时随地用。只想在自己电脑上跑就装本地版：数据完全自持，端口都不对外开放。要多平台、多人，就装 CLI 连服务器。" },
+          { type: "p", text: "本地运行（Standalone），二选一：" },
+          { type: "code", lang: "macOS / Linux", text: "curl -fsSL https://maplecode.art/install-local.sh | sh" },
+          { type: "code", lang: "Windows (PowerShell)", text: "irm https://maplecode.art/install-local.ps1 | iex" },
+          { type: "p", text: "装完会自动弹出浏览器页面，直接开始工作，不用登录也不用配对。" },
+          { type: "p", text: "要接服务器的话，改装这个：" },
           { type: "code", lang: "macOS / Linux", text: "curl -fsSL https://maplecode.art/install.sh | sh" },
           { type: "code", lang: "Windows (PowerShell)", text: "irm https://maplecode.art/install.ps1 | iex" },
-          { type: "p", text: "安装完成后启动 CLI，主菜单会引导你完成后续配置。Runner 的执行环境（Node、Bun、各 Coding Agent CLI）由安装脚本自动检测并提示。" }
+          { type: "tip", text: "建议在装 Maple 的时候顺手把本机的 Codex、Claude 这些 AI 服务调通——任务最后是靠它们干的。" }
         ]
       },
       {
         id: "pairing",
         title: "配对 Runner",
         blocks: [
-          { type: "p", text: "Runner 通过一次性配对码绑定到工作区，整个过程只需要在浏览器里确认一次。" },
+          { type: "p", text: "CLI 连服务器靠一次性配对码，在浏览器里点一下确认就绑定了。" },
           { type: "list", items: [
-            "在 CLI 主菜单选择「配对执行端」，会得到一个短配对码",
-            "浏览器打开确认页（已登录时会直接跳转），核对主机名后确认",
-            "CLI 自动完成绑定并进入待命状态，无需重复配对"
+            "CLI 主菜单选「配对执行端」，拿到一个短配对码",
+            "浏览器打开确认页，核对主机名，确认",
+            "绑一次就行，以后 CLI 自动待命"
           ] },
-          { type: "tip", text: "配对凭证保存在本机 ~/.maple/cli.json，重装系统前无需解绑，重新配对会覆盖旧记录。" }
+          { type: "tip", text: "配对凭证存在本机 ~/.maple/cli.json。来源不明的配对请求，别确认。" }
         ]
       },
       {
         id: "first-task",
         title: "派发第一个任务",
         blocks: [
-          { type: "p", text: "绑定项目目录后，看板上的任务才会派发到对应主机。从绑定到完成，通常只要三步。" },
+          { type: "p", text: "任务只会派到绑定了项目目录的主机上，所以先绑目录，再下任务。" },
           { type: "list", items: [
-            "在 CLI「项目管理」里添加本机目录，或在看板侧栏绑定项目",
-            "在看板上新建任务，写清楚目标与验收标准，选择执行它的 Worker",
-            "任务完成后会收到提醒，报告与验收截图自动归档"
+            "在 CLI 里按 E 添加本机目录",
+            "看板上新建任务，写清楚要什么、怎么算做完，挑个 Worker",
+            "跑完会提醒你，报告和截图自动归档"
           ] },
-          { type: "tip", text: "任务描述越像「验收单」效果越好：要改什么、怎么算完成、需要跑哪些检查。" }
+          { type: "tip", text: "任务描述写得越像验收单越好使：改什么、怎么算完成、要跑哪些检查。" }
         ]
       }
     ]
@@ -70,19 +75,19 @@ const DOC_GROUPS: DocGroup[] = [
         id: "board",
         title: "看板与任务列表",
         blocks: [
-          { type: "p", text: "任务在看板上按状态流转：待办、进行中、待验收、已完成。拖拽卡片即可调整状态与顺序。" },
-          { type: "p", text: "习惯列表的话，可以在「设置 → 详情展示」里切换展示类型：自优化列表保持信息密度，任务画廊把验收截图铺成卡片墙。" }
+          { type: "p", text: "任务在看板上按状态流转：待办、进行中、待验收、已完成。拖卡片就能改状态、调顺序。" },
+          { type: "p", text: "看腻看板了可以换。「设置 → 详情展示」里有自优化列表和任务画廊，画廊会把验收截图铺成一堵卡片墙。" }
         ]
       },
       {
         id: "workers",
         title: "Worker 与模型",
         blocks: [
-          { type: "p", text: "每个 Worker 是一种 Coding Agent（Claude Code、Codex、Kimi 等），由你主机上的 Runner 启动。跑哪个模型、开多少并发，都由你自己决定。" },
+          { type: "p", text: "Worker 就是跑在你主机上的 Coding Agent——Claude Code、Codex、Kimi 这些。用哪个模型、开多少并发，你说了算。" },
           { type: "list", items: [
-            "按项目绑定执行端：不同项目可以跑在不同主机上",
-            "按任务选择 Worker：前端、后端、测试各配各的模型",
-            "会话上下文完整保留，不为窗口切换多花 token"
+            "不同项目可以绑不同主机",
+            "不同任务挑不同 Worker：前端、后端、测试各配各的模型",
+            "会话上下文一直在，不用为切窗口浪费 token"
           ] }
         ]
       },
@@ -90,8 +95,8 @@ const DOC_GROUPS: DocGroup[] = [
         id: "review",
         title: "验收与截图回传",
         blocks: [
-          { type: "p", text: "任务跑完不是终点。Worker 会附上执行报告，Web 任务还会自动用 Playwright 截图回写——改动到底长什么样，证据摆在那里。" },
-          { type: "p", text: "截图与报告归档在任务详情里，随时可以回看。确认无误后把卡片拖进「已完成」，一次闭环结束。" }
+          { type: "p", text: "跑完不算完。Worker 会交一份执行报告，Web 任务还会用 Playwright 自动截图——改动长什么样，证据都在。" },
+          { type: "p", text: "报告和截图存在任务详情里，随时回看。不喜欢自动截图可以在设置里关掉，嫌糊或嫌太清晰也有档位可调。" }
         ]
       }
     ]
@@ -103,19 +108,19 @@ const DOC_GROUPS: DocGroup[] = [
         id: "cli",
         title: "CLI 交互终端",
         blocks: [
-          { type: "p", text: "CLI 是 Runner 的控制中心：配对、项目绑定、领取任务、查看 Worker 运行记录都在里面完成。" },
+          { type: "p", text: "CLI 是 Runner 的控制中心：配对、绑项目、领任务、看 Worker 运行记录，都在这里面。" },
           { type: "code", lang: "源码运行", text: "bun apps/cli/src/index.ts" },
-          { type: "p", text: "连接并运行后，CLI 会进入全屏工作台：顶部是 Worker 页签，中间是实时运行记录，底部是连接状态与缓存占用。" }
+          { type: "p", text: "跑起来是个全屏工作台：顶部是 Worker 页签，中间是实时运行记录，底部是连接状态和缓存占用。" }
         ]
       },
       {
         id: "self-host",
         title: "自托管 Server",
         blocks: [
-          { type: "p", text: "Maple 可以完全自托管：数据保存在本地 SQLite，任务、截图、凭证都不出你的服务器。" },
+          { type: "p", text: "Maple 可以完全自托管：数据就在本地 SQLite 里，任务、截图、凭证都不出你的服务器。" },
           { type: "code", lang: "Docker Compose", text: "docker compose up -d" },
           { type: "code", lang: "源码运行", text: "bun server" },
-          { type: "tip", text: "默认端口 45820。对外提供服务时建议放在 Caddy / Nginx 之后，开启 HTTPS。" }
+          { type: "tip", text: "默认端口 45820，要对外服务就挂到 Caddy / Nginx 后面开 HTTPS。Maple 的缓存全在 ~/.maple 里，删掉这个目录就一干二净。" }
         ]
       }
     ]
@@ -150,7 +155,7 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
           {copied ? "已复制" : "复制"}
         </button>
       </div>
-      <p className="m-0 border-t border-white/[0.05] px-4 py-3.5 font-mono text-[12.5px] leading-6 text-zinc-200">
+      <p className="m-0 overflow-x-auto border-t border-white/[0.05] px-4 py-3.5 font-mono text-[12.5px] leading-6 whitespace-nowrap text-zinc-200">
         <span style={{ color: MORANDI_PURPLE }}>$</span> {text}
       </p>
     </div>
@@ -184,7 +189,7 @@ export function DocsPage({
   return (
     <div ref={scrollRef} className="h-screen overflow-y-auto font-sans text-zinc-200 antialiased" style={{ background: "#0b0b0d" }}>
       {/* ── 顶栏 ── */}
-      <header className="mx-auto flex w-full max-w-[1120px] items-center gap-4 px-6 py-5">
+      <header className="mx-auto flex w-full max-w-[1120px] items-center gap-3 px-4 py-4 sm:gap-4 sm:px-6 sm:py-5">
         <button type="button" onClick={() => onNavigate("/")} className="flex items-center gap-2">
           <Icon icon="mingcute:quill-pen-ai-fill" className="text-[18px]" style={{ color: MORANDI_PURPLE }} />
           <span className="text-[15px] font-semibold tracking-tight text-zinc-100">
@@ -201,7 +206,7 @@ export function DocsPage({
         </button>
       </header>
 
-      <div className="mx-auto flex w-full max-w-[1120px] items-start gap-10 px-6 pb-24 pt-6">
+      <div className="mx-auto flex w-full max-w-[1120px] items-start gap-10 px-4 pb-24 pt-4 sm:px-6 sm:pt-6">
         {/* ── 左侧树 ── */}
         <aside className="sticky top-6 hidden w-[220px] shrink-0 md:block">
           {DOC_GROUPS.map((group) => (
@@ -226,6 +231,27 @@ export function DocsPage({
             </div>
           ))}
         </aside>
+
+        <div className="min-w-0 flex-1">
+          {/* ── 移动端导航：横向滚动文章条（桌面端用左侧树） ── */}
+          <nav className="mb-6 flex gap-1.5 overflow-x-auto pb-1 md:hidden" aria-label="文档导航">
+            {ALL_ARTICLES.map((item) => {
+              const isActive = item.id === activeId;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onNavigate(`/docs/${item.id}`)}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-[12px] transition-colors ${
+                    isActive ? "bg-white/[0.08] font-medium" : "bg-white/[0.03] text-zinc-500"
+                  }`}
+                  style={isActive ? { color: MORANDI_PURPLE } : undefined}
+                >
+                  {item.title}
+                </button>
+              );
+            })}
+          </nav>
 
         {/* ── 右侧内容 ── */}
         <article key={active.id} className="min-w-0 flex-1 pt-1 md:max-w-[680px]">
@@ -257,6 +283,7 @@ export function DocsPage({
             );
           })}
         </article>
+        </div>
       </div>
     </div>
   );

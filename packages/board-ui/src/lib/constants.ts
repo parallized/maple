@@ -9,6 +9,7 @@ export const STORAGE_EDITOR_APP = "maple.desktop.editor-app";
 export const STORAGE_WORKER_RETRY_INTERVAL_SECONDS = "maple.desktop.worker-retry-interval-seconds";
 export const STORAGE_WORKER_RETRY_MAX_ATTEMPTS = "maple.desktop.worker-retry-max-attempts";
 export const STORAGE_CONSTITUTION = "maple.desktop.constitution";
+export const STORAGE_LEADER_CONSTITUTION = "maple.desktop.leader-constitution";
 export const STORAGE_CODEX_USAGE_CONFIG = "maple.desktop.codex-usage-config";
 export const STORAGE_UI_FONT = "maple.desktop.ui-font";
 export const STORAGE_BASE_WORKER = "maple.desktop.base-worker";
@@ -68,6 +69,7 @@ export const WORKER_KINDS: {
 }[] = [
   { kind: "claude", label: "Claude", color: "#d97757" },
   { kind: "codex", label: "Codex", color: "#ffffff" },
+  { kind: "deepseek", label: "DeepSeek Flash", color: "#4d6bfe" },
   { kind: "kimi", label: "Kimi", color: "#2563eb" },
   { kind: "glm", label: "GLM", color: "#db2777" },
   { kind: "iflow", label: "iFlow", color: "#a855f7" },
@@ -86,6 +88,13 @@ export const DEFAULT_WORKER_CONFIGS: Record<WorkerKind, WorkerConfig> = {
   codex: {
     executable: "codex",
     runArgs: "e --yolo --json",
+    consoleArgs: "",
+    probeArgs: "--version",
+    dangerMode: false,
+  },
+  deepseek: {
+    executable: "codex",
+    runArgs: "exec --model deepseek-v4-flash --json",
     consoleArgs: "",
     probeArgs: "--version",
     dangerMode: false,

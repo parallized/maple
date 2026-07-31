@@ -17,9 +17,13 @@ import { nowIso } from "../lib/time";
 
 const BACKGROUND_SCREENSHOT_KEY = "acceptance.background_playwright_screenshot";
 const SCREENSHOT_COMPRESSION_PRESET_KEY = "acceptance.screenshot_compression_preset";
+const DEFAULT_WORKER_KEY = "execution.default_worker";
+const LEADER_WORKER_KEY = "execution.leader_worker";
 const BASE_WORKER_KEY = "execution.base_worker";
 const AI_OUTPUT_LANGUAGE_KEY = "execution.ai_output_language";
 const CONSTITUTION_KEY = "execution.constitution";
+const LEADER_CONSTITUTION_KEY = "execution.leader_constitution";
+const CONCURRENCY_KEY = "execution.concurrency";
 const RETRY_INTERVAL_SECONDS_KEY = "execution.retry_interval_seconds";
 const RETRY_MAX_ATTEMPTS_KEY = "execution.retry_max_attempts";
 
@@ -29,12 +33,23 @@ const DEFAULT_VALUES: ReadonlyArray<readonly [string, string]> = [
   [BASE_WORKER_KEY, DEFAULT_WORKSPACE_EXECUTION_SETTINGS.baseWorker],
   [AI_OUTPUT_LANGUAGE_KEY, DEFAULT_WORKSPACE_EXECUTION_SETTINGS.aiOutputLanguage],
   [CONSTITUTION_KEY, DEFAULT_WORKSPACE_EXECUTION_SETTINGS.constitution],
+  [LEADER_CONSTITUTION_KEY, DEFAULT_WORKSPACE_EXECUTION_SETTINGS.leaderConstitution],
+  [CONCURRENCY_KEY, String(DEFAULT_WORKSPACE_EXECUTION_SETTINGS.concurrency)],
   [RETRY_INTERVAL_SECONDS_KEY, String(DEFAULT_WORKSPACE_EXECUTION_SETTINGS.retryIntervalSeconds)],
   [RETRY_MAX_ATTEMPTS_KEY, String(DEFAULT_WORKSPACE_EXECUTION_SETTINGS.retryMaxAttempts)]
 ];
 
 function parseCompressionPreset(value: string | undefined): ScreenshotCompressionPreset {
   return isScreenshotCompressionPreset(value) ? value : DEFAULT_SCREENSHOT_COMPRESSION_PRESET;
+}
+
+function parseWorker(
+  value: string | undefined,
+  fallback: WorkspaceExecutionSettings["defaultWorker"]
+): WorkspaceExecutionSettings["defaultWorker"] {
+  return value && (WORKER_KINDS as readonly string[]).includes(value)
+    ? value as WorkspaceExecutionSettings["defaultWorker"]
+    : fallback;
 }
 
 function parseBoundedInteger(value: string | undefined, fallback: number, minimum: number, maximum: number): number {
@@ -66,22 +81,38 @@ export class SettingsRepository {
 
   getExecution(workspaceId: string): WorkspaceExecutionSettings {
     const values = this.readValues(workspaceId, [
+      DEFAULT_WORKER_KEY,
+      LEADER_WORKER_KEY,
       BASE_WORKER_KEY,
       AI_OUTPUT_LANGUAGE_KEY,
       CONSTITUTION_KEY,
+      LEADER_CONSTITUTION_KEY,
+      CONCURRENCY_KEY,
       RETRY_INTERVAL_SECONDS_KEY,
       RETRY_MAX_ATTEMPTS_KEY
     ]);
-    const baseWorker = values.get(BASE_WORKER_KEY);
+    const legacyWorker = parseWorker(
+      values.get(BASE_WORKER_KEY),
+      DEFAULT_WORKSPACE_EXECUTION_SETTINGS.defaultWorker
+    );
+    const defaultWorker = parseWorker(values.get(DEFAULT_WORKER_KEY), legacyWorker);
+    const leaderWorker = parseWorker(values.get(LEADER_WORKER_KEY), legacyWorker);
     const aiOutputLanguage = values.get(AI_OUTPUT_LANGUAGE_KEY);
     return {
-      baseWorker: baseWorker && (WORKER_KINDS as readonly string[]).includes(baseWorker)
-        ? baseWorker as WorkspaceExecutionSettings["baseWorker"]
-        : DEFAULT_WORKSPACE_EXECUTION_SETTINGS.baseWorker,
+      defaultWorker,
+      leaderWorker,
+      baseWorker: defaultWorker,
       aiOutputLanguage: aiOutputLanguage && (AI_OUTPUT_LANGUAGES as readonly string[]).includes(aiOutputLanguage)
         ? aiOutputLanguage as WorkspaceExecutionSettings["aiOutputLanguage"]
         : DEFAULT_WORKSPACE_EXECUTION_SETTINGS.aiOutputLanguage,
       constitution: values.get(CONSTITUTION_KEY) ?? DEFAULT_WORKSPACE_EXECUTION_SETTINGS.constitution,
+      leaderConstitution: values.get(LEADER_CONSTITUTION_KEY) ?? DEFAULT_WORKSPACE_EXECUTION_SETTINGS.leaderConstitution,
+      concurrency: parseBoundedInteger(
+        values.get(CONCURRENCY_KEY),
+        DEFAULT_WORKSPACE_EXECUTION_SETTINGS.concurrency,
+        1,
+        16
+      ),
       retryIntervalSeconds: parseBoundedInteger(
         values.get(RETRY_INTERVAL_SECONDS_KEY),
         DEFAULT_WORKSPACE_EXECUTION_SETTINGS.retryIntervalSeconds,
@@ -106,6 +137,14 @@ export class SettingsRepository {
     for (const [key, value] of DEFAULT_VALUES) {
       changed += insert.run(workspaceId, key, value, updatedAt).changes;
     }
+    const legacyWorker = parseWorker(
+      (this.database
+        .query("SELECT value FROM workspace_settings WHERE workspace_id = ? AND key = ?")
+        .get(workspaceId, BASE_WORKER_KEY) as { value: string } | null)?.value,
+      DEFAULT_WORKSPACE_EXECUTION_SETTINGS.defaultWorker
+    );
+    changed += insert.run(workspaceId, DEFAULT_WORKER_KEY, legacyWorker, updatedAt).changes;
+    changed += insert.run(workspaceId, LEADER_WORKER_KEY, legacyWorker, updatedAt).changes;
     if (changed > 0) touchRevision(this.database);
   }
 
@@ -148,12 +187,25 @@ export class SettingsRepository {
   ): WorkspaceExecutionSettings {
     return this.database.transaction(() => {
       const current = this.getExecution(workspaceId);
+      const hasExplicitWorkerFields = input.defaultWorker !== undefined || input.leaderWorker !== undefined;
+      const defaultWorker = input.defaultWorker ?? input.baseWorker ?? current.defaultWorker;
+      const leaderWorker = input.leaderWorker
+        ?? (!hasExplicitWorkerFields ? input.baseWorker : undefined)
+        ?? current.leaderWorker;
       const next: WorkspaceExecutionSettings = {
-        baseWorker: input.baseWorker ?? current.baseWorker,
+        defaultWorker,
+        leaderWorker,
+        baseWorker: defaultWorker,
         aiOutputLanguage: input.aiOutputLanguage ?? current.aiOutputLanguage,
         constitution: input.constitution === undefined
           ? current.constitution
           : input.constitution.replace(/\r\n/g, "\n").slice(0, 100_000),
+        leaderConstitution: input.leaderConstitution === undefined
+          ? current.leaderConstitution
+          : input.leaderConstitution.replace(/\r\n/g, "\n").slice(0, 100_000),
+        concurrency: input.concurrency === undefined
+          ? current.concurrency
+          : clampInteger(input.concurrency, 1, 16),
         retryIntervalSeconds: input.retryIntervalSeconds === undefined
           ? current.retryIntervalSeconds
           : clampInteger(input.retryIntervalSeconds, 1, 600),
@@ -162,11 +214,21 @@ export class SettingsRepository {
           : clampInteger(input.retryMaxAttempts, 1, 20)
       };
       const writes: Array<readonly [string, string]> = [];
-      if (current.baseWorker !== next.baseWorker) writes.push([BASE_WORKER_KEY, next.baseWorker]);
+      if (input.defaultWorker !== undefined || input.leaderWorker !== undefined || input.baseWorker !== undefined) {
+        writes.push(
+          [DEFAULT_WORKER_KEY, next.defaultWorker],
+          [LEADER_WORKER_KEY, next.leaderWorker],
+          [BASE_WORKER_KEY, next.defaultWorker]
+        );
+      }
       if (current.aiOutputLanguage !== next.aiOutputLanguage) {
         writes.push([AI_OUTPUT_LANGUAGE_KEY, next.aiOutputLanguage]);
       }
       if (current.constitution !== next.constitution) writes.push([CONSTITUTION_KEY, next.constitution]);
+      if (current.leaderConstitution !== next.leaderConstitution) writes.push([LEADER_CONSTITUTION_KEY, next.leaderConstitution]);
+      if (current.concurrency !== next.concurrency) {
+        writes.push([CONCURRENCY_KEY, String(next.concurrency)]);
+      }
       if (current.retryIntervalSeconds !== next.retryIntervalSeconds) {
         writes.push([RETRY_INTERVAL_SECONDS_KEY, String(next.retryIntervalSeconds)]);
       }

@@ -1,7 +1,18 @@
 import type { TodoStatus } from "./statuses";
 
-export const WORKER_KINDS = ["codex", "claude", "kimi", "glm", "iflow", "gemini", "opencode"] as const;
+export const WORKER_KINDS = ["codex", "deepseek", "claude", "kimi", "glm", "iflow", "gemini", "opencode"] as const;
 export type WorkerKind = (typeof WORKER_KINDS)[number];
+
+export type DeepSeekCredentialSource = "windows_credential_manager" | "environment" | "unavailable";
+
+/** Maple Local 只公开连接状态；API Key 永远不会出现在响应或数据库中。 */
+export interface DeepSeekConnectionStatus {
+  provider: "deepseek";
+  supported: boolean;
+  configured: boolean;
+  source: DeepSeekCredentialSource;
+  message: string | null;
+}
 
 /** CLI 本机解析出的 Worker 默认模型；只包含可公开的模型元数据。 */
 export interface WorkerInventoryItem {
@@ -37,18 +48,31 @@ export const AI_OUTPUT_LANGUAGES = ["follow_ui", "zh", "en"] as const;
 export type AiOutputLanguage = (typeof AI_OUTPUT_LANGUAGES)[number];
 
 export interface WorkspaceExecutionSettings {
-  /** Default Worker for new tasks and the preferred project-manager agent. */
+  /** Default Coding Agent assigned to newly created tasks. */
+  defaultWorker: WorkerKind;
+  /** Coding Agent used by the Leader PM. */
+  leaderWorker: WorkerKind;
+  /** @deprecated Compatibility alias for defaultWorker. */
   baseWorker: WorkerKind;
   aiOutputLanguage: AiOutputLanguage;
+  /** Worker 宪法：所有 Worker 执行前阅读并遵守。 */
   constitution: string;
+  /** Leader 宪法：Leader PM 在归组派单前阅读并遵守。 */
+  leaderConstitution: string;
+  /** Maximum number of Worker Todo attempts a Runner may execute concurrently. */
+  concurrency: number;
   retryIntervalSeconds: number;
   retryMaxAttempts: number;
 }
 
 export const DEFAULT_WORKSPACE_EXECUTION_SETTINGS: WorkspaceExecutionSettings = {
+  defaultWorker: "claude",
+  leaderWorker: "claude",
   baseWorker: "claude",
   aiOutputLanguage: "follow_ui",
   constitution: "",
+  leaderConstitution: "",
+  concurrency: 2,
   retryIntervalSeconds: 10,
   retryMaxAttempts: 5
 };
@@ -61,6 +85,9 @@ export const RUNNER_CAPABILITIES = ["project_manager_v1"] as const;
 export type RunnerCapability = (typeof RUNNER_CAPABILITIES)[number];
 
 export type RunnerState = "online" | "offline";
+export type ExecutionConnection = "connected" | "interrupted";
+export const TODO_EXECUTION_PHASES = ["queued", "planning", "running"] as const;
+export type TodoExecutionPhase = (typeof TODO_EXECUTION_PHASES)[number];
 export type RunnerCommandType = "select_project_directory";
 export type RunnerCommandStatus = "pending" | "claimed" | "succeeded" | "cancelled" | "failed" | "expired";
 export type AttemptState = "claimed" | "running" | "succeeded" | "failed" | "abandoned";
@@ -174,6 +201,10 @@ export interface Todo {
   claimedByRunnerId: string | null;
   activeAttemptId: string | null;
   leaseExpiresAt: string | null;
+  /** Server-derived execution phase. Optional for rolling upgrades with older clients. */
+  executionPhase?: TodoExecutionPhase | null;
+  /** Transport health for the current Worker or project-manager attempt. */
+  executionConnection?: ExecutionConnection | null;
   /** Failed executions are not claimable before this server-side retry deadline. */
   retryAfter?: string | null;
   resultSummary: string | null;
@@ -275,6 +306,7 @@ export interface ProjectManagerJob {
   history: ProjectManagerHistoryItem[];
   availableWorkers: WorkerKind[];
   executionSettings?: WorkspaceExecutionSettings;
+  attemptId: string;
   leaseToken: string;
   leaseSeconds: number;
 }

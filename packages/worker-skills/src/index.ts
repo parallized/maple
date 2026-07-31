@@ -78,8 +78,8 @@ export function createWorkerExecutionPrompt(input: WorkerExecutionPromptInput): 
           "允许：代码/命令/路径/标识符保持原样。"
         ].join("\n");
   const reportHint = language === "en"
-    ? "Execution report: output only concise Markdown body without headings, categories, or sections. Keep simple tasks within 30 characters, normal tasks within 100, and complex tasks within 300; assess complexity silently."
-    : "执行报告：只输出极简 Markdown 正文，不加标题、分类或分节；自行判断复杂度但不要写出分类，简单任务 30 字内、一般任务 100 字内、复杂任务 300 字内。";
+    ? "Execution report: write concise but complete Markdown. Use brief headings, bullets, or numbered lists when they improve clarity. Do not omit necessary spacing, units, punctuation, or conclusions to shorten it."
+    : "执行报告：使用简洁但完整的 Markdown；可按需使用简短标题、项目符号或有序列表，不得为压缩篇幅省略必要的空格、单位、标点或结论。";
 
   // Gemini CLI resolves /maple via ~/.gemini/commands/maple.toml, so the
   // prompt passed to `-p` must be the bare trigger only (no extra text that

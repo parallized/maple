@@ -1,5 +1,6 @@
 import type {
   AcceptanceSettings,
+  DeepSeekConnectionStatus,
   McpTagCatalogUpdatedEvent,
   McpTaskUpdatedEvent,
   McpWorkerFinishedEvent,
@@ -71,8 +72,13 @@ export type BoardUserPreferences = {
 
 export type BoardExecutionSettings = {
   baseWorker: WorkerKind;
+  /** Leader PM 使用的 Coding Agent；状态条展示用。 */
+  leaderWorker: WorkerKind;
   aiOutputLanguage: AiLanguage;
+  /** Worker 宪法：所有 Worker 执行前阅读并遵守。 */
   constitution: string;
+  /** Leader 宪法：Leader PM 在归组派单前阅读并遵守。 */
+  leaderConstitution: string;
   retryIntervalSeconds: WorkerRetryConfig["intervalSeconds"];
   retryMaxAttempts: WorkerRetryConfig["maxAttempts"];
 };
@@ -122,6 +128,8 @@ export interface BoardPlatform {
   // ── 宪法 ──
   loadConstitution(): Promise<string | null>;
   saveConstitution(text: string): Promise<void>;
+  loadLeaderConstitution(): Promise<string | null>;
+  saveLeaderConstitution(text: string): Promise<void>;
 
   // ── 任务详情图片资产 ──
   /** 保存图片,返回资产 id(引用形如 maple://asset/<id>)。 */
@@ -134,6 +142,11 @@ export interface BoardPlatform {
   saveUserPreferences?(next: BoardUserPreferences): Promise<void>;
   loadExecutionSettings?(): Promise<BoardExecutionSettings>;
   saveExecutionSettings?(next: BoardExecutionSettings): Promise<void>;
+
+  // ── Local Provider connections ──
+  loadDeepSeekConnection?(): Promise<DeepSeekConnectionStatus>;
+  connectDeepSeek?(apiKey: string): Promise<DeepSeekConnectionStatus>;
+  disconnectDeepSeek?(): Promise<DeepSeekConnectionStatus>;
 
   // ── Worker 执行(仅 canExecuteWorkers)──
   runWorker(req: RunWorkerRequest): Promise<WorkerCommandResult>;

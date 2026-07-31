@@ -1,6 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { DEFAULT_WORKSPACE_EXECUTION_SETTINGS } from "@maple/protocol";
 import { parseCliArgs } from "../src/args";
-import { requiresProjectRebinding, requiresRunnerAuthorization } from "../src/commands";
+import type { MapleApiClient } from "../src/api/client";
+import {
+  concurrencyOption,
+  requiresProjectRebinding,
+  requiresRunnerAuthorization,
+  resolveRunnerConcurrency
+} from "../src/commands";
 import type { CliConfig } from "../src/config/types";
 import { browserOpenCommand } from "../src/auth/device-authorization";
 import { buildWorkerCommand } from "../src/execution/worker-command";
@@ -36,10 +43,38 @@ describe("Maple CLI core", () => {
     expect(args.options.concurrency).toBe("2");
   });
 
+  it("uses workspace concurrency by default and gives an explicit 1-16 integer override priority", async () => {
+    const api = {
+      executionSettings: async () => ({
+        ...DEFAULT_WORKSPACE_EXECUTION_SETTINGS,
+        concurrency: 7
+      })
+    } as MapleApiClient;
+
+    expect(await resolveRunnerConcurrency(api, parseCliArgs(["connect"]))).toBe(7);
+    expect(await resolveRunnerConcurrency(api, parseCliArgs(["connect", "--concurrency", "16"]))).toBe(16);
+    expect(concurrencyOption(parseCliArgs(["connect", "--concurrency", "1"]))).toBe(1);
+    expect(() => concurrencyOption(parseCliArgs(["connect", "--concurrency", "0"]))).toThrow();
+    expect(() => concurrencyOption(parseCliArgs(["connect", "--concurrency", "17"]))).toThrow();
+    expect(() => concurrencyOption(parseCliArgs(["connect", "--concurrency", "2.5"]))).toThrow();
+  });
+
+  it("falls back to concurrency 2 when workspace settings are temporarily unavailable", async () => {
+    const api = {
+      executionSettings: async () => {
+        throw new Error("offline");
+      }
+    } as unknown as MapleApiClient;
+
+    expect(await resolveRunnerConcurrency(api, parseCliArgs(["connect"]))).toBe(2);
+  });
+
   it("uses sandboxed Codex in non-Git projects and sends the prompt through stdin", () => {
     const command = buildWorkerCommand("codex", "Implement the Todo");
     expect(command.executable).toBe("codex");
     expect(command.args).toEqual([
+      "--ask-for-approval",
+      "never",
       "exec",
       "--sandbox",
       "workspace-write",

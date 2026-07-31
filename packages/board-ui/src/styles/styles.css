@@ -32,6 +32,7 @@
   --color-base-300: #e5e5e7;
   --color-base-content: #1d1d1f;
   --color-secondary: #6b7280;
+  --color-planning: #7c9ab8; /* Morandi 雾霾蓝:规划中 */
   --color-success: #4da872;
   --color-warning: #e3b341;
   --color-error: #d47049;
@@ -54,6 +55,7 @@
     --color-base-300: #2c2c2e;
     --color-base-content: #f5f5f7;
     --color-secondary: #9ca3af;
+    --color-planning: #a3bcd8; /* Morandi 雾霾蓝:规划中(dark) */
     --color-success: #4df07c;
     --color-warning: #ffd60a;
     --color-error: #ff7b72;
@@ -75,6 +77,7 @@
   --color-base-300: #2c2c2e;
   --color-base-content: #f5f5f7;
   --color-secondary: #9ca3af;
+  --color-planning: #a3bcd8; /* Morandi 雾霾蓝:规划中(dark) */
   --color-success: #4df07c;
   --color-warning: #ffd60a;
   --color-error: #ff7b72;
@@ -608,7 +611,6 @@ h3 {
   height: 1.1rem;
   padding: 0 0.35rem;
   border-radius: 0.3rem;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
   color: color-mix(in srgb, var(--color-primary) 78%, var(--color-base-content));
   font-size: 0.625rem;
@@ -1062,8 +1064,7 @@ h3 {
   transition: opacity 0.12s ease;
 }
 
-.task-row:hover .task-open-btn,
-.task-row.selected .task-open-btn {
+.task-row:hover .task-open-btn {
   opacity: 1;
   pointer-events: auto;
 }
@@ -1613,6 +1614,12 @@ h3 {
   padding: 0.5rem 0.5rem 0;
   height: 100%;
   background: transparent;
+}
+
+/* 移动端底部标签栏 / 抽屉遮罩：桌面端不渲染（≤980px 的媒体查询里恢复显示）。 */
+.mobile-tabbar,
+.mobile-nav-backdrop {
+  display: none;
 }
 
 /* Logo「Code」渐变文字:左上角主题紫 → 右下角白。 */
@@ -2401,15 +2408,172 @@ h3 {
 }
 
 @media (max-width: 980px) {
+  /* ── 全屏 bleed：去掉卡片套卡片，内容边到边 ── */
   .app-frame {
-    flex-direction: column;
-    margin: 0.5rem;
-    padding: 0.6rem;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
-  .board-sidebar {
+  /* ── 底部标签栏：iOS Tab Bar 质感，磨砂 + 发丝分隔 ── */
+  .mobile-tabbar {
+    display: flex;
+    align-items: stretch;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 70;
+    height: calc(50px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: color-mix(in srgb, var(--color-base-100) 76%, transparent);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    box-shadow: 0 -0.5px 0 color-mix(in srgb, var(--color-base-content) 9%, transparent);
+  }
+
+  .mobile-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+    color: var(--color-secondary);
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+
+  .mobile-tab.active {
+    color: var(--color-primary);
+  }
+
+  /* ── 侧栏变左侧抽屉：默认隐藏，nav-open 时滑出（z 序压在底栏之上）──
+     仅匹配 app-frame 直接子级，设置页里复用 .board-sidebar 的内嵌导航不受影响。 */
+  .app-frame > .board-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 95;
+    width: min(248px, 78vw);
+    height: 100vh;
+    height: 100dvh;
+    padding: 0.9rem 0.75rem 0.5rem;
+    background: var(--color-base-100);
+    border-radius: 0 18px 18px 0;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+    transform: translateX(-105%);
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .app-frame.nav-open > .board-sidebar {
+    transform: translateX(0);
+  }
+
+  .mobile-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 85;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: rgba(24, 24, 27, 0.28);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  .app-frame.nav-open .mobile-nav-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── 看板卡片：边到边占满全宽，列表允许横向滚动；
+     底部留白让内容能滚到标签栏之上（栏是磨砂半透明的，内容从栏下穿过）── */
+  .board-main {
+    border: none;
+    border-radius: 0;
+    padding: 0 0.75rem calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .overview-scroll {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .task-table {
+    min-width: 620px;
+  }
+
+  /* ── 卡片左缘页签在移动端改为右下角悬浮按钮（FAB），整体浮在底栏之上 ── */
+  .board-edge-fab {
+    position: fixed;
+    right: 14px;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: none;
+    border-radius: 14px;
+    background: #93a894;
+    color: rgba(255, 255, 255, 0.94);
+    font-size: 19px;
+    cursor: pointer;
+    box-shadow:
+      0 6px 18px rgba(0, 0, 0, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    transition: filter 0.12s ease, transform 0.12s ease;
+  }
+
+  .board-edge-fab:active {
+    transform: scale(0.94);
+  }
+
+  .board-edge-fab--project {
+    background: #c2ab7e;
+  }
+
+  /* ── 设置页：导航页签改为顶部横向滚动条 ── */
+  .settings-layout {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .settings-layout > .board-sidebar {
     width: 100%;
     height: auto;
+    flex: none;
+    padding: 0.5rem 0.75rem 0;
+  }
+
+  .settings-nav-title {
+    display: none;
+  }
+
+  .settings-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .settings-tabs > button {
+    flex: none;
+    white-space: nowrap;
   }
 
   .ui-modal {

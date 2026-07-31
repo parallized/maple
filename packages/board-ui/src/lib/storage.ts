@@ -16,6 +16,7 @@ import {
   STORAGE_BASE_WORKER,
   STORAGE_CODEX_USAGE_CONFIG,
   STORAGE_CONSTITUTION,
+  STORAGE_LEADER_CONSTITUTION,
   STORAGE_AI_LANGUAGE,
   STORAGE_EDITOR_APP,
   STORAGE_MCP_CONFIG,
@@ -159,6 +160,15 @@ export function loadWorkerRetryConfig(): WorkerRetryConfig {
 export function loadConstitution(): string {
   try {
     const raw = localStorage.getItem(STORAGE_CONSTITUTION);
+    return typeof raw === "string" ? raw : "";
+  } catch {
+    return "";
+  }
+}
+
+export function loadLeaderConstitution(): string {
+  try {
+    const raw = localStorage.getItem(STORAGE_LEADER_CONSTITUTION);
     return typeof raw === "string" ? raw : "";
   } catch {
     return "";

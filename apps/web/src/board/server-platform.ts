@@ -400,6 +400,24 @@ export function createServerPlatform(api: DashboardApi, options?: ServerPlatform
       }
     },
 
+    async loadLeaderConstitution() {
+      try {
+        return (await api.executionSettings()).leaderConstitution;
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+
+    async saveLeaderConstitution(text) {
+      try {
+        await api.updateExecutionSettings({ leaderConstitution: text });
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+
     async loadUserPreferences() {
       try {
         return await api.userPreferences();
@@ -430,6 +448,37 @@ export function createServerPlatform(api: DashboardApi, options?: ServerPlatform
     async saveExecutionSettings(next) {
       try {
         await api.updateExecutionSettings(next);
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+
+    async loadDeepSeekConnection() {
+      try {
+        return await api.deepSeekConnection();
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+
+    async connectDeepSeek(apiKey) {
+      try {
+        const status = await api.connectDeepSeek(apiKey);
+        void pollSnapshot();
+        return status;
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+
+    async disconnectDeepSeek() {
+      try {
+        const status = await api.disconnectDeepSeek();
+        void pollSnapshot();
+        return status;
       } catch (error) {
         handleApiError(error);
         throw error;

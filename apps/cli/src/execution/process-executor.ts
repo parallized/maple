@@ -1,7 +1,11 @@
 import type { RunLogEntry, TokenUsage, WorkerKind } from "@maple/protocol";
+import { readDeepSeekApiKey } from "../credentials/deepseek";
 import { getCodingAgentAdapter } from "./adapters/registry";
 import type { AgentOutputParser, AgentRunEventDraft } from "./adapters/types";
-import { ExecutionReportCollector, type ExecutionReportLimit } from "./report";
+import { detectPermissionBlocker } from "./permission-blocker";
+import { forceTerminateProcessTree, terminateProcessTree } from "./process-termination";
+import { ExecutionReportCollector } from "./report";
+import { createSecretRedactor } from "./secret-redaction";
 import type { WorkerShell } from "./shells";
 import { buildResolvedWorkerCommand } from "./worker-command";
 
@@ -13,10 +17,13 @@ export interface ProcessExecutionOptions {
   cwd: string;
   prompt: string;
   signal: AbortSignal;
+  /** 独立于正常取消的硬终止信号，用于杀掉不响应退出请求的完整 Worker 进程树。 */
+  forceSignal?: AbortSignal;
   shell?: WorkerShell;
   readOnly?: boolean;
+  /** Optional per-run reasoning override, primarily used for the lightweight Leader turn. */
+  reasoningEffort?: string;
   summaryMode?: "raw" | "report" | "strict-report";
-  reportMaxChars?: ExecutionReportLimit;
   resumeSessionId?: string;
   additionalWritableDirectories?: string[];
   /** Session 一经 Provider 确认就立即持久化，避免长任务中途退出后丢失续接点。 */
@@ -35,6 +42,17 @@ export interface ProcessExecutionResult {
 }
 
 export type WorkerExecutor = (options: ProcessExecutionOptions) => Promise<ProcessExecutionResult>;
+
+function executionEnvironment(workerKind: WorkerKind): Record<string, string | undefined> {
+  if (workerKind !== "deepseek") return process.env;
+  try {
+    const apiKey = readDeepSeekApiKey();
+    return apiKey ? { ...process.env, DEEPSEEK_API_KEY: apiKey } : process.env;
+  } catch {
+    // 凭据读取异常会让 DeepSeek CLI 返回标准鉴权错误；这里绝不打印或持久化密钥。
+    return process.env;
+  }
+}
 
 function stripAnsi(value: string): string {
   return value
@@ -101,21 +119,27 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
   const shell = options.shell ?? "direct";
   const adapter = getCodingAgentAdapter(options.workerKind);
   const parser = adapter.createOutputParser();
+  const workerEnv = executionEnvironment(options.workerKind);
   const command = buildResolvedWorkerCommand(
     options.workerKind,
     options.prompt,
     shell,
-    process.env,
+    workerEnv,
     undefined,
     {
       readOnly: options.readOnly,
+      reasoningEffort: options.reasoningEffort,
       resumeSessionId: options.resumeSessionId,
       additionalWritableDirectories: options.additionalWritableDirectories
     }
   );
+  const redact = createSecretRedactor([
+    options.workerKind === "deepseek" ? command.env?.DEEPSEEK_API_KEY : null
+  ]);
   let rawOutput = "";
   let assistantOutput = "";
-  const reportCollector = new ExecutionReportCollector(options.reportMaxChars);
+  let operationalOutput = "";
+  const reportCollector = new ExecutionReportCollector();
   let sequence = 0;
   let observedSessionId: string | null = null;
 
@@ -139,12 +163,20 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
   };
 
   const emit = async (drafts: AgentRunEventDraft[]): Promise<void> => {
-    for (const draft of drafts) {
+    for (const rawDraft of drafts) {
+      const draft: AgentRunEventDraft = {
+        ...rawDraft,
+        content: redact(rawDraft.content),
+        ...(rawDraft.title ? { title: redact(rawDraft.title) } : {})
+      };
       if (!draft.content) continue;
       reportCollector.push(draft);
       if (draft.kind === "assistant") {
         assistantOutput = `${assistantOutput}${assistantOutput ? "\n" : ""}${draft.content}`;
         if (assistantOutput.length > MAX_CAPTURE_CHARS) assistantOutput = assistantOutput.slice(-MAX_CAPTURE_CHARS);
+      } else if (draft.kind !== "reasoning" && draft.kind !== "lifecycle") {
+        operationalOutput = `${operationalOutput}${operationalOutput ? "\n" : ""}${draft.content}`;
+        if (operationalOutput.length > MAX_CAPTURE_CHARS) operationalOutput = operationalOutput.slice(-MAX_CAPTURE_CHARS);
       }
       for (const part of splitEvent(draft)) {
         const entry: RunLogEntry = {
@@ -170,8 +202,14 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
     }
   ]);
 
-  if (options.signal.aborted) {
-    const message = "Maple CLI 已停止，Worker 未启动。";
+  let forceRequested = options.forceSignal?.aborted ?? false;
+  const stopped = () => options.signal.aborted || forceRequested || Boolean(options.forceSignal?.aborted);
+  const interruptionMessage = () => forceRequested
+    ? "Maple CLI 已强制终止 Worker。"
+    : "Maple CLI 已停止，Worker 执行被中断。";
+
+  if (stopped()) {
+    const message = forceRequested ? "Maple CLI 已强制终止，Worker 未启动。" : "Maple CLI 已停止，Worker 未启动。";
     await emit([{
       stream: "system",
       kind: "error",
@@ -192,10 +230,20 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
   }
 
   let subprocess: ReturnType<typeof Bun.spawn> | null = null;
-  const abort = () => subprocess?.kill();
+  let forceTermination: Promise<void> | null = null;
+  const abort = () => {
+    const current = subprocess;
+    if (current) terminateProcessTree(current);
+  };
+  const forceAbort = () => {
+    forceRequested = true;
+    const current = subprocess;
+    if (current && !forceTermination) forceTermination = forceTerminateProcessTree(current);
+  };
   try {
     subprocess = Bun.spawn([command.executable, ...command.args], {
       cwd: options.cwd,
+      detached: process.platform !== "win32",
       stdin: command.stdin === undefined ? "ignore" : new Blob([command.stdin]),
       stdout: "pipe",
       stderr: "pipe",
@@ -207,6 +255,8 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
       }
     });
     options.signal.addEventListener("abort", abort, { once: true });
+    options.forceSignal?.addEventListener("abort", forceAbort, { once: true });
+    if (options.forceSignal?.aborted) forceAbort();
     if (options.signal.aborted) abort();
 
     const stdout = subprocess.stdout as ReadableStream<Uint8Array>;
@@ -216,7 +266,10 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
       consumeStream(stderr, "stderr", parser, appendRaw, emit, announceSession)
     ]);
     const exitCode = await subprocess.exited;
-    const success = exitCode === 0 && !options.signal.aborted;
+    const permissionBlocker = exitCode === 0 && !stopped()
+      ? detectPermissionBlocker({ operationalOutput, assistantOutput })
+      : null;
+    const success = exitCode === 0 && !stopped() && !permissionBlocker;
     const report = reportCollector.value();
     await emit([
       {
@@ -225,11 +278,13 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
         level: success ? "info" : "error",
         status: success ? "completed" : "failed",
         title: success ? `${adapter.label} 执行完成` : `${adapter.label} 执行失败`,
-        content: options.signal.aborted
-          ? "Maple CLI 已停止，Worker 执行被中断。"
-          : success
-            ? `${adapter.label} 已完成任务。`
-            : `${adapter.label} 退出，代码 ${exitCode}。`
+        content: stopped()
+          ? interruptionMessage()
+          : permissionBlocker
+            ? permissionBlocker
+            : success
+              ? `${adapter.label} 已完成任务。`
+              : `${adapter.label} 退出，代码 ${exitCode}。`
       }
     ]);
     return {
@@ -239,25 +294,37 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
         ? report
         : options.summaryMode === "report"
           ? report
-          : tail(assistantOutput, 8_000) || tail(rawOutput, 8_000) || (success ? "Worker 执行完成。" : "Worker 未返回可读输出。"),
-      error: success ? null : options.signal.aborted ? "Maple CLI 已停止，Worker 执行被中断。" : tail(rawOutput, 4_000),
+          : tail(assistantOutput, 8_000) || redact(tail(rawOutput, 8_000)) || (success ? "Worker 执行完成。" : "Worker 未返回可读输出。"),
+      error: success
+        ? null
+        : stopped()
+          ? interruptionMessage()
+          : permissionBlocker ?? redact(tail(rawOutput, 4_000)),
       usage: resolveFinalUsage(),
       sessionId: observedSessionId ?? options.resumeSessionId ?? null,
       sessionUnavailable: Boolean(options.resumeSessionId) && !success && sessionUnavailable(rawOutput)
     };
   } catch (error) {
     if (subprocess) {
-      subprocess.kill();
+      if (forceRequested) {
+        forceTermination ??= forceTerminateProcessTree(subprocess);
+        await forceTermination.catch(() => undefined);
+      } else {
+        terminateProcessTree(subprocess);
+      }
       await subprocess.exited.catch(() => undefined);
     }
-    const message = error instanceof Error ? error.message : String(error);
+    const interrupted = stopped();
+    const message = interrupted
+      ? interruptionMessage()
+      : redact(error instanceof Error ? error.message : String(error));
     await emit([
       {
         stream: "system",
         kind: "error",
         level: "error",
         status: "failed",
-        title: `无法启动 ${adapter.label}`,
+        title: interrupted ? `${adapter.label} 已取消` : `无法启动 ${adapter.label}`,
         content: message
       }
     ]).catch(() => undefined);
@@ -272,5 +339,7 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
     };
   } finally {
     options.signal.removeEventListener("abort", abort);
+    options.forceSignal?.removeEventListener("abort", forceAbort);
+    if (forceTermination) await forceTermination.catch(() => undefined);
   }
 }

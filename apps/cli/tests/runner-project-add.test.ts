@@ -21,10 +21,12 @@ import {
 import {
   bottomAlignLogLines,
   isAddProjectKey,
+  isForceTerminateKey,
   projectManagerLineLabel,
   projectManagerStatusLabel,
   projectManagerTabLabel,
   recentProjectNames,
+  runnerStoppingLabel,
   taskTabLabel
 } from "../src/tui/runner-view";
 
@@ -98,6 +100,14 @@ describe("runner project shortcut", () => {
     expect(isAddProjectKey({ name: "char", char: "e" })).toBe(true);
     expect(isAddProjectKey({ name: "char", char: "E" })).toBe(true);
     expect(isAddProjectKey({ name: "char", char: "q" })).toBe(false);
+  });
+
+  it("advertises and recognizes X only as the force-termination shortcut", () => {
+    expect(isForceTerminateKey({ name: "char", char: "x" })).toBe(true);
+    expect(isForceTerminateKey({ name: "char", char: "X" })).toBe(true);
+    expect(isForceTerminateKey({ name: "char", char: "q" })).toBe(false);
+    expect(runnerStoppingLabel(false)).toBe("正在终止，等待 Worker 收尾… 按 X 强制终止");
+    expect(runnerStoppingLabel(true)).toBe("正在强制终止 Worker…");
   });
 
   it("shows the two most recently registered project names", () => {

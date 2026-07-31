@@ -144,4 +144,40 @@ describe("Web Server task source", () => {
 
     expect(buildTodoUpdateRequest(previous, next)).toEqual({});
   });
+
+  it("forwards DeepSeek Provider connection lifecycle without exposing a stored key", async () => {
+    const calls: string[] = [];
+    let configured = false;
+    const status = () => ({
+      provider: "deepseek" as const,
+      supported: true,
+      configured,
+      source: "windows_credential_manager" as const,
+      message: configured ? "凭据已安全保存在此 Windows 用户下。" : null
+    });
+    const api = {
+      deepSeekConnection: async () => {
+        calls.push("load");
+        return status();
+      },
+      connectDeepSeek: async (apiKey: string) => {
+        calls.push(`connect:${apiKey}`);
+        configured = true;
+        return status();
+      },
+      disconnectDeepSeek: async () => {
+        calls.push("disconnect");
+        configured = false;
+        return status();
+      }
+    } as unknown as DashboardApi;
+    const platform = createServerPlatform(api);
+
+    expect(await platform.loadDeepSeekConnection!()).toMatchObject({ configured: false });
+    const connected = await platform.connectDeepSeek!("sk-ui-test");
+    expect(connected).toMatchObject({ configured: true, source: "windows_credential_manager" });
+    expect(JSON.stringify(connected)).not.toContain("sk-ui-test");
+    expect(await platform.disconnectDeepSeek!()).toMatchObject({ configured: false });
+    expect(calls).toEqual(["load", "connect:sk-ui-test", "disconnect"]);
+  });
 });

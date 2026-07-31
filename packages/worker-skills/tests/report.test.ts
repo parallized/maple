@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { buildWorkerArchiveReport, createWorkerExecutionPrompt } from "../src/index";
 
 describe("worker execution reports", () => {
-  it("adds the adaptive compact Markdown rule without a visible complexity category", () => {
+  it("requests concise but complete structured Markdown without a character limit", () => {
     const prompt = createWorkerExecutionPrompt({
       projectName: "Maple",
       directory: "E:/Codespace/maple",
@@ -10,9 +10,10 @@ describe("worker execution reports", () => {
       workerKind: "codex"
     });
 
-    expect(prompt).toContain("极简 Markdown 正文");
-    expect(prompt).toContain("简单任务 30 字内、一般任务 100 字内、复杂任务 300 字内");
-    expect(prompt).toContain("不要写出分类");
+    expect(prompt).toContain("简洁但完整的 Markdown");
+    expect(prompt).toContain("简短标题、项目符号或有序列表");
+    expect(prompt).toContain("不得为压缩篇幅省略必要的空格、单位、标点或结论");
+    expect(prompt).not.toContain("30 字内");
   });
 
   it("does not manufacture a failure report when no AI report exists", () => {

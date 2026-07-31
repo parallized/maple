@@ -27,6 +27,7 @@ interface ManagerCandidateRow {
 }
 
 interface ClaimedManagerJob extends ManagerCandidateRow {
+  attemptId: string;
   leaseToken: string;
 }
 
@@ -113,7 +114,7 @@ export class ProjectManagerService {
          SET workflow_id = NULL, source_status = ?, state = 'pending', manager_runner_id = NULL,
              manager_worker_kind = NULL, selected_worker_kind = NULL,
              execution_mode = NULL, dispatch_brief = NULL,
-             lease_token_hash = NULL, lease_expires_at = NULL,
+             attempt_id = NULL, lease_token_hash = NULL, lease_expires_at = NULL,
              completed_at = NULL, updated_at = ?
          WHERE todo_id = ?`,
         [todo.status, now, todoId]
@@ -137,7 +138,6 @@ export class ProjectManagerService {
 
     const claim = this.database.transaction((): ClaimedManagerJob | null => {
       const now = nowIso();
-      this.expire(now);
       const offlineBefore = subtractSeconds(now, this.runnerOfflineSeconds);
       const candidate = this.database
         .query(
@@ -169,13 +169,14 @@ export class ProjectManagerService {
       if (!candidate) return null;
 
       const leaseToken = createSecret();
+      const attemptId = crypto.randomUUID();
       const leaseExpiresAt = addSeconds(now, this.leaseSeconds);
       const updated = this.database.run(
         `UPDATE todo_routes
-         SET state = 'claimed', manager_runner_id = ?, lease_token_hash = ?,
+         SET state = 'claimed', manager_runner_id = ?, attempt_id = ?, lease_token_hash = ?,
              lease_expires_at = ?, updated_at = ?
          WHERE todo_id = ? AND state = 'pending'`,
-        [runnerId, hashSecret(leaseToken), leaseExpiresAt, now, candidate.todo_id]
+        [runnerId, attemptId, hashSecret(leaseToken), leaseExpiresAt, now, candidate.todo_id]
       );
       if (updated.changes !== 1) return null;
       const queued = this.database.run(
@@ -194,7 +195,7 @@ export class ProjectManagerService {
         [runnerId, now, candidate.project_id]
       );
       touchRevision(this.database);
-      return { ...candidate, leaseToken };
+      return { ...candidate, attemptId, leaseToken };
     }).immediate();
 
     if (!claim) return { job: null, retryAfterMs: 1_500 };
@@ -211,6 +212,7 @@ export class ProjectManagerService {
         history: this.listHistory(project.id, todo.id),
         availableWorkers,
         executionSettings: this.settings.getExecution(runner.workspaceId),
+        attemptId: claim.attemptId,
         leaseToken: claim.leaseToken,
         leaseSeconds: this.leaseSeconds
       },
@@ -235,7 +237,6 @@ export class ProjectManagerService {
 
     const completed = this.database.transaction(() => {
       const now = nowIso();
-      this.expire(now);
       const route = this.database
         .query(
           `SELECT tr.todo_id, t.project_id, t.worker_kind
@@ -243,13 +244,13 @@ export class ProjectManagerService {
            JOIN todos t ON t.id = tr.todo_id
            WHERE tr.todo_id = ? AND tr.state = 'claimed'
              AND tr.manager_runner_id = ?
-             AND tr.lease_token_hash = ? AND tr.lease_expires_at > ?
+             AND tr.lease_token_hash = ?
              AND (
                t.status IN ('todo', 'rework')
                OR (t.status = 'queued' AND t.active_attempt_id IS NULL)
              )`
         )
-        .get(todoId, runnerId, hashSecret(input.leaseToken), now) as {
+        .get(todoId, runnerId, hashSecret(input.leaseToken)) as {
           todo_id: string;
           project_id: string;
           worker_kind: string;
@@ -331,7 +332,6 @@ export class ProjectManagerService {
 
     const blocked = this.database.transaction((): { report: string | null } | null => {
       const now = nowIso();
-      this.expire(now);
       const route = this.database
         .query(
           `SELECT tr.todo_id, t.project_id, t.worker_kind
@@ -339,13 +339,13 @@ export class ProjectManagerService {
            JOIN todos t ON t.id = tr.todo_id
            WHERE tr.todo_id = ? AND tr.state = 'claimed'
              AND tr.manager_runner_id = ?
-             AND tr.lease_token_hash = ? AND tr.lease_expires_at > ?
+             AND tr.lease_token_hash = ?
              AND (
                t.status IN ('todo', 'rework')
                OR (t.status = 'queued' AND t.active_attempt_id IS NULL)
              )`
         )
-        .get(todoId, runnerId, hashSecret(input.leaseToken), now) as {
+        .get(todoId, runnerId, hashSecret(input.leaseToken)) as {
           todo_id: string;
           project_id: string;
           worker_kind: string;
@@ -447,28 +447,4 @@ export class ProjectManagerService {
     }));
   }
 
-  private expire(now: string): number {
-    const expiredTodos = this.database.run(
-      `UPDATE todos
-       SET status = CASE (
-             SELECT source_status FROM todo_routes WHERE todo_routes.todo_id = todos.id
-           ) WHEN 'rework' THEN 'rework' ELSE 'todo' END,
-           updated_at = ?
-       WHERE status = 'queued' AND active_attempt_id IS NULL
-         AND id IN (
-           SELECT todo_id FROM todo_routes
-           WHERE state = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?
-         )`,
-      [now, now]
-    );
-    const expiredRoutes = this.database.run(
-      `UPDATE todo_routes
-       SET state = 'pending', manager_runner_id = NULL,
-           lease_token_hash = NULL, lease_expires_at = NULL, updated_at = ?
-       WHERE state = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`,
-      [now, now]
-    );
-    if (expiredTodos.changes > 0 || expiredRoutes.changes > 0) touchRevision(this.database);
-    return expiredRoutes.changes;
-  }
 }

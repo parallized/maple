@@ -8,6 +8,7 @@ export interface StandaloneServerConfigOptions {
   dataDir: string;
   webRoot: string;
   port?: number;
+  allowedOrigins?: readonly string[];
 }
 
 export function createStandaloneServerConfig(options: StandaloneServerConfigOptions): ServerConfig {
@@ -24,7 +25,11 @@ export function createStandaloneServerConfig(options: StandaloneServerConfigOpti
     dataDir,
     databasePath: join(dataDir, "maple.sqlite"),
     webRoot: resolve(options.webRoot),
-    allowedOrigins: [publicUrl, `http://localhost:${port}`],
+    allowedOrigins: [...new Set([
+      publicUrl,
+      `http://localhost:${port}`,
+      ...(options.allowedOrigins ?? [])
+    ])],
     leaseSeconds: 45,
     runnerOfflineSeconds: 30,
     pairingTtlSeconds: 600,

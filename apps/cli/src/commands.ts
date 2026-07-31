@@ -1,6 +1,10 @@
 import { hostname } from "node:os";
 import { resolve } from "node:path";
-import { WORKER_KINDS, type WorkerKind } from "@maple/protocol";
+import {
+  DEFAULT_WORKSPACE_EXECUTION_SETTINGS,
+  WORKER_KINDS,
+  type WorkerKind
+} from "@maple/protocol";
 import { MapleApiClient, MapleApiError } from "./api/client";
 import { CLI_CAPABILITIES } from "./capabilities";
 import { stringOption, type ParsedArgs } from "./args";
@@ -31,10 +35,27 @@ export function shellOption(args: ParsedArgs): WorkerShell {
   return value;
 }
 
-function concurrencyOption(args: ParsedArgs): number {
-  const value = Number.parseInt(stringOption(args, "concurrency") ?? "1", 10);
-  if (!Number.isFinite(value) || value < 1 || value > 16) throw new Error("并发数必须在 1 到 16 之间。");
+export function concurrencyOption(args: ParsedArgs): number {
+  const value = Number(
+    stringOption(args, "concurrency") ?? String(DEFAULT_WORKSPACE_EXECUTION_SETTINGS.concurrency)
+  );
+  if (!Number.isSafeInteger(value) || value < 1 || value > 16) {
+    throw new Error("并发数必须是 1 到 16 之间的整数。");
+  }
   return value;
+}
+
+/** 命令行显式值优先，否则读取当前工作区设置；旧 Server 缺字段时回退到默认值。 */
+export async function resolveRunnerConcurrency(api: MapleApiClient, args: ParsedArgs): Promise<number> {
+  if (stringOption(args, "concurrency") !== undefined) return concurrencyOption(args);
+  try {
+    const settings = await api.executionSettings();
+    const value = settings.concurrency;
+    if (Number.isSafeInteger(value) && value >= 1 && value <= 16) return value;
+  } catch {
+    // Server 设置暂时不可读时，仍让 Runner 以安全默认值启动。
+  }
+  return DEFAULT_WORKSPACE_EXECUTION_SETTINGS.concurrency;
 }
 
 function requireConnection(config: CliConfig): { serverUrl: string; token: string } {
@@ -160,7 +181,7 @@ export async function connectCommand(
   options: ConnectionPreparationOptions = {}
 ): Promise<void> {
   const { api, config } = await prepareConnection(args, configPath, console.log, signal, options);
-  const runner = new RunnerLoop(api, config, concurrencyOption(args), {
+  const runner = new RunnerLoop(api, config, await resolveRunnerConcurrency(api, args), {
     configPath,
     workerShell: shellOption(args)
   });
@@ -245,7 +266,7 @@ export function helpText(): string {
   maple connect --server <URL>
   maple connect --server <URL> --project .
   maple connect [--concurrency 2] [--shell bash]
-  maple project add [目录] [--name 名称] [--worker codex|claude|kimi|glm|iflow|gemini|opencode]
+  maple project add [目录] [--name 名称] [--worker codex|deepseek|claude|kimi|glm|iflow|gemini|opencode]
   maple project list
   maple project remove <名称或项目ID>
   maple status

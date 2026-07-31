@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { WorkerKind } from "@maple/protocol";
 
 const DEFAULT_GLM_MODEL = "zai-coding-plan/glm-5.2";
+const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
 
 type ConfigRecord = Record<string, unknown>;
 
@@ -67,6 +68,7 @@ function displayToken(token: string): string {
   if (lower === "gemini") return "Gemini";
   if (lower === "claude") return "Claude";
   if (lower === "codex") return "Codex";
+  if (lower === "deepseek") return "DeepSeek";
   if (lower === "iflow") return "iFlow";
   if (/^k\d+$/.test(lower)) return lower.toUpperCase();
   if (/^\d+(?:\.\d+)*(?:k|m)$/.test(lower)) return `${lower.slice(0, -1)}${lower.at(-1)!.toUpperCase()}`;
@@ -89,6 +91,7 @@ export function formatWorkerModelName(kind: WorkerKind, modelId: string): string
   if (kind === "gemini" && !lower.startsWith("gemini ")) name = `Gemini ${name}`;
   if (kind === "glm" && !lower.startsWith("glm ")) name = `GLM ${name}`;
   if (kind === "iflow" && !lower.startsWith("iflow ")) name = `iFlow ${name}`;
+  if (kind === "deepseek" && !lower.startsWith("deepseek ")) name = `DeepSeek ${name}`;
   return name;
 }
 
@@ -103,6 +106,13 @@ function resolveConfigIdentity(
 ): { modelId: string | null; reasoningEffort: string | null } {
   if (kind === "glm") {
     return { modelId: envValue(env, "MAPLE_GLM_MODEL") ?? DEFAULT_GLM_MODEL, reasoningEffort: null };
+  }
+
+  if (kind === "deepseek") {
+    return {
+      modelId: envValue(env, "MAPLE_DEEPSEEK_MODEL") ?? DEFAULT_DEEPSEEK_MODEL,
+      reasoningEffort: envValue(env, "MAPLE_DEEPSEEK_REASONING_EFFORT") ?? "high"
+    };
   }
 
   if (kind === "codex") {

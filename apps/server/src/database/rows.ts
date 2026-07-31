@@ -101,6 +101,9 @@ export interface TodoRow {
   updated_at: string;
   started_at: string | null;
   completed_at: string | null;
+  route_state?: string | null;
+  manager_attempt_id?: string | null;
+  manager_lease_expires_at?: string | null;
 }
 
 export interface AttemptRow {
@@ -137,6 +140,7 @@ export interface LogRow {
   title: string | null;
   content: string;
   group_id: string | null;
+  delivery_id?: string | null;
   created_at: string;
 }
 
@@ -287,7 +291,20 @@ function parseTags(raw: string | null): string[] {
   }
 }
 
+function toExecutionPhase(row: TodoRow): NonNullable<Todo["executionPhase"]> | null {
+  if (row.status === "running") return "running";
+  if (row.status === "queued") {
+    return row.route_state === "claimed" || row.route_state === "routed" ? "planning" : "queued";
+  }
+  if ((row.status === "todo" || row.status === "rework") && row.route_state === "pending") {
+    return "queued";
+  }
+  return null;
+}
+
 export function toTodo(row: TodoRow): Todo {
+  const hasExecution = Boolean(row.active_attempt_id || row.manager_attempt_id);
+  const activeLease = row.active_attempt_id ? row.lease_expires_at : row.manager_lease_expires_at ?? null;
   return {
     id: row.id,
     projectId: row.project_id,
@@ -299,6 +316,10 @@ export function toTodo(row: TodoRow): Todo {
     claimedByRunnerId: row.claimed_by_runner_id,
     activeAttemptId: row.active_attempt_id,
     leaseExpiresAt: row.lease_expires_at,
+    executionPhase: toExecutionPhase(row),
+    executionConnection: hasExecution
+      ? (activeLease !== null && activeLease > new Date().toISOString() ? "connected" : "interrupted")
+      : null,
     retryAfter: row.retry_after,
     resultSummary: row.result_summary,
     lastError: row.last_error,

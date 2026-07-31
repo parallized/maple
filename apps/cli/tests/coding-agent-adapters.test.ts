@@ -3,6 +3,7 @@ import type { RunLogEntry, WorkerKind } from "@maple/protocol";
 import { getCodingAgentAdapter } from "../src/execution/adapters/registry";
 import { executeWorker } from "../src/execution/process-executor";
 import { formatRunLogEntry } from "../src/execution/run-log";
+import { createSecretRedactor } from "../src/execution/secret-redaction";
 import { detectCodingAgentTools } from "../src/execution/tool-availability";
 import { buildResolvedWorkerCommand, buildWorkerCommand } from "../src/execution/worker-command";
 
@@ -10,9 +11,9 @@ const PROMPT = "修复 \"quoted\" 行为\n并运行测试";
 
 describe("Coding Agent commands", () => {
   it.each([
-    ["codex", "codex", ["exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "-"], "stdin"],
-    ["claude", "claude", ["--print", "--permission-mode", "acceptEdits", "--verbose", "--output-format", "stream-json", PROMPT], "argument"],
-    ["kimi", "kimi", ["--prompt", PROMPT, "--output-format", "stream-json"], "argument"],
+    ["codex", "codex", ["--ask-for-approval", "never", "exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "-"], "stdin"],
+    ["claude", "claude", ["--print", "--permission-mode", "auto", "--verbose", "--output-format", "stream-json", PROMPT], "argument"],
+    ["kimi", "kimi", ["--auto", "--prompt", PROMPT, "--output-format", "stream-json"], "argument"],
     ["gemini", "gemini", ["-p", PROMPT, "--output-format", "stream-json", "--approval-mode=yolo"], "argument"],
     ["opencode", "opencode", ["run", "--auto", "--format", "json", PROMPT], "argument"],
     ["glm", "opencode", ["run", "--auto", "--format", "json", "--model", "zai-coding-plan/glm-5.2", PROMPT], "argument"],
@@ -27,17 +28,17 @@ describe("Coding Agent commands", () => {
     expect([...command.args, command.stdin].filter((value) => value === PROMPT)).toHaveLength(1);
   });
 
-  it("supports Kimi executable and model overrides without adding incompatible permission flags", () => {
+  it("supports Kimi executable and model overrides in autonomous mode", () => {
     const command = buildWorkerCommand("kimi", PROMPT, "direct", {
       MAPLE_KIMI_BIN: "kimi-code-custom",
       MAPLE_KIMI_MODEL: "kimi-for-coding"
     });
     expect(command).toEqual({
       executable: "kimi-code-custom",
-      args: ["--model", "kimi-for-coding", "--prompt", PROMPT, "--output-format", "stream-json"]
+      args: ["--model", "kimi-for-coding", "--auto", "--prompt", PROMPT, "--output-format", "stream-json"]
     });
-    expect(command.args).not.toContain("--auto");
-    expect(command.args).not.toContain("--yolo");
+    expect(command.args).toContain("--auto");
+    expect(command.args).not.toContain("--plan");
   });
 
   it("gives GLM its own model and executable override chain", () => {
@@ -61,8 +62,38 @@ describe("Coding Agent commands", () => {
     ]);
   });
 
+  it("runs DeepSeek Flash through a dedicated Codex Provider without exposing the key in arguments", () => {
+    const apiKey = "sk-deepseek-test-secret";
+    const command = buildWorkerCommand("deepseek", PROMPT, "direct", {
+      DEEPSEEK_API_KEY: apiKey,
+      MAPLE_DEEPSEEK_MODEL_CATALOG: "C:/maple/providers/deepseek/models.json"
+    });
+
+    expect(command.executable).toBe("codex");
+    expect(command.stdin).toBe(PROMPT);
+    expect(command.env).toEqual({ DEEPSEEK_API_KEY: apiKey });
+    expect(command.args).toContain("deepseek-v4-flash");
+    expect(command.args).toContain('model_provider="maple_deepseek"');
+    expect(command.args).toContain('model_providers.maple_deepseek.base_url="https://api.deepseek.com/"');
+    expect(command.args).toContain('model_providers.maple_deepseek.env_key="DEEPSEEK_API_KEY"');
+    expect(command.args).toContain('model_providers.maple_deepseek.wire_api="responses"');
+    expect(command.args).toContain('model_catalog_json="C:/maple/providers/deepseek/models.json"');
+    expect(command.args.slice(0, 3)).toEqual(["--ask-for-approval", "never", "exec"]);
+    expect(command.args).not.toContain("--ignore-user-config");
+    expect(command.args.join(" ")).not.toContain(apiKey);
+  });
+
+  it("allows Maple to lower reasoning for lightweight manager turns", () => {
+    const codex = buildWorkerCommand("codex", PROMPT, "direct", {}, { reasoningEffort: "low" });
+    expect(codex.args).toContain('model_reasoning_effort="low"');
+
+    const deepseek = buildWorkerCommand("deepseek", PROMPT, "direct", {}, { reasoningEffort: "low" });
+    expect(deepseek.args).toContain('model_reasoning_effort="low"');
+  });
+
   it.each([
     ["codex", "--add-dir"],
+    ["deepseek", "--add-dir"],
     ["claude", "--add-dir"],
     ["kimi", "--add-dir"],
     ["gemini", "--include-directories"],
@@ -78,9 +109,9 @@ describe("Coding Agent commands", () => {
   });
 
   it.each([
-    ["codex", ["exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "resume", "session-1", "-"]],
-    ["claude", ["--print", "--resume", "session-1", "--permission-mode", "acceptEdits", "--verbose", "--output-format", "stream-json", PROMPT]],
-    ["kimi", ["--resume", "session-1", "--prompt", PROMPT, "--output-format", "stream-json"]],
+    ["codex", ["--ask-for-approval", "never", "exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "resume", "session-1", "-"]],
+    ["claude", ["--print", "--resume", "session-1", "--permission-mode", "auto", "--verbose", "--output-format", "stream-json", PROMPT]],
+    ["kimi", ["--session", "session-1", "--auto", "--prompt", PROMPT, "--output-format", "stream-json"]],
     ["gemini", ["--resume", "session-1", "-p", PROMPT, "--output-format", "stream-json", "--approval-mode=yolo"]],
     ["opencode", ["run", "--auto", "--format", "json", "--session", "session-1", PROMPT]],
     ["glm", ["run", "--auto", "--format", "json", "--model", "zai-coding-plan/glm-5.2", "--session", "session-1", PROMPT]],
@@ -89,6 +120,12 @@ describe("Coding Agent commands", () => {
     const command = buildWorkerCommand(kind, PROMPT, "direct", {}, { resumeSessionId: "session-1" });
     expect(command.args).toEqual([...expectedArgs]);
     if (kind === "codex") expect(command.stdin).toBe(PROMPT);
+  });
+
+  it("resumes the exact DeepSeek Codex thread", () => {
+    const command = buildWorkerCommand("deepseek", PROMPT, "direct", {}, { resumeSessionId: "deepseek-session" });
+    expect(command.args.slice(-3)).toEqual(["resume", "deepseek-session", "-"]);
+    expect(command.stdin).toBe(PROMPT);
   });
 
   it("detects installed tools from every adapter's actual executable", () => {
@@ -105,6 +142,7 @@ describe("Coding Agent commands", () => {
       installed
     }))).toEqual([
       { kind: "codex", label: "Codex", executable: "codex-custom", installed: true },
+      { kind: "deepseek", label: "DeepSeek Flash", executable: "codex-custom", installed: false },
       { kind: "claude", label: "Claude", executable: "claude", installed: false },
       { kind: "kimi", label: "Kimi", executable: "kimi", installed: false },
       { kind: "glm", label: "GLM", executable: "opencode", installed: true },
@@ -114,8 +152,25 @@ describe("Coding Agent commands", () => {
     ]);
   });
 
+  it("reports DeepSeek only when Codex and a DeepSeek credential are both available", () => {
+    const resolver = (executable: string) => executable === "codex" ? "C:/tools/codex.cmd" : null;
+    const disconnected = detectCodingAgentTools({}, resolver).find((tool) => tool.kind === "deepseek");
+    const connected = detectCodingAgentTools({ DEEPSEEK_API_KEY: "sk-configured" }, resolver)
+      .find((tool) => tool.kind === "deepseek");
+
+    expect(disconnected).toMatchObject({ executable: "codex", available: false });
+    expect(connected).toMatchObject({
+      executable: "codex",
+      available: true,
+      modelId: "deepseek-v4-flash",
+      modelName: "DeepSeek V4 Flash",
+      reasoningEffort: "high"
+    });
+  });
+
   it.each([
     ["codex", "codex"],
+    ["deepseek", "codex"],
     ["claude", "claude"],
     ["kimi", "kimi"],
     ["glm", "opencode"],
@@ -161,6 +216,7 @@ function parse(kind: WorkerKind, lines: string[]) {
 describe("Coding Agent structured output", () => {
   it.each([
     ["codex", { type: "thread.started", thread_id: "codex-session" }, "codex-session"],
+    ["deepseek", { type: "thread.started", thread_id: "deepseek-session" }, "deepseek-session"],
     ["claude", { type: "system", subtype: "init", session_id: "claude-session" }, "claude-session"],
     ["kimi", { role: "meta", type: "session.resume_hint", session_id: "kimi-session" }, "kimi-session"],
     ["gemini", { type: "init", session_id: "gemini-session", model: "gemini" }, "gemini-session"],
@@ -410,6 +466,13 @@ describe("run log text fallback", () => {
 });
 
 describe("process execution lifecycle", () => {
+  it("redacts full DeepSeek keys and Provider-masked key suffixes before persistence", () => {
+    const redact = createSecretRedactor(["sk-maple-secret-heck"]);
+    expect(redact("Bearer sk-maple-secret-heck")).toBe("Bearer [REDACTED]");
+    expect(redact("Your api key: ****heck is invalid")).toBe("Your api key: [REDACTED] is invalid");
+    expect(redact("unexpected sk-another-secret-value")).toBe("unexpected [REDACTED]");
+  });
+
   it("does not launch an agent after cancellation and still emits ordered records", async () => {
     const controller = new AbortController();
     controller.abort();

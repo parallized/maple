@@ -2,7 +2,7 @@ import { WORKER_KINDS } from "@maple/protocol";
 import { MapleApiClient } from "../api/client";
 import type { ParsedArgs } from "../args";
 import { unbindRunner } from "../auth/unbind";
-import { helpText, prepareConnection, removeProjectBinding } from "../commands";
+import { helpText, prepareConnection, removeProjectBinding, resolveRunnerConcurrency } from "../commands";
 import { loadConfig, normalizeServerUrl } from "../config/store";
 import type { CliConfig } from "../config/types";
 import { selectProjectDirectory } from "../project/directory-picker";
@@ -163,8 +163,7 @@ async function connectWizard(
     positionals: [],
     options: {
       server: serverUrl,
-      shell: "direct",
-      concurrency: "1"
+      shell: "direct"
     }
   };
   const { api, config: prepared } = await prepareConnection(
@@ -174,12 +173,13 @@ async function connectWizard(
     undefined,
     { allowBrowserAuthorization: !options.standalone }
   );
+  const concurrency = await resolveRunnerConcurrency(api, args);
   await runRunnerView({
     cap,
     api,
     config: prepared,
     configPath,
-    concurrency: 1,
+    concurrency,
     workerShell: "direct",
     keys: ctx.keys
   });

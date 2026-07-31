@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { DEEPSEEK_CODEX_MODELS_JSON } from "./deepseek-models";
 
 const SKILL_CONTENT = `---
 name: maple
@@ -24,6 +25,7 @@ export interface RuntimeLayout {
   mcpConfigPath: string;
   mcpCommand: string;
   mcpArgs: string[];
+  deepSeekModelCatalogPath: string;
 }
 
 function writeIfChanged(path: string, content: string): void {
@@ -42,14 +44,16 @@ export function ensureRuntimeLayout(env: Record<string, string | undefined> = pr
   const mcpConfigPath = join(root, "mcp", "mcp.json");
   const mcpCommand = process.execPath;
   const mcpArgs = [resolve(process.argv[1] || import.meta.path), "mcp"];
+  const deepSeekModelCatalogPath = join(root, "providers", "deepseek", "models.json");
   writeIfChanged(skillPath, SKILL_CONTENT);
   writeIfChanged(mcpConfigPath, `${JSON.stringify({
     mcpServers: {
       maple: { command: mcpCommand, args: mcpArgs }
     }
   }, null, 2)}\n`);
+  writeIfChanged(deepSeekModelCatalogPath, DEEPSEEK_CODEX_MODELS_JSON);
   mkdirSync(join(root, "artifacts"), { recursive: true });
-  return { root, skillPath, mcpConfigPath, mcpCommand, mcpArgs };
+  return { root, skillPath, mcpConfigPath, mcpCommand, mcpArgs, deepSeekModelCatalogPath };
 }
 
 export function runtimeEnvironment(layout: RuntimeLayout): Record<string, string> {
@@ -58,6 +62,7 @@ export function runtimeEnvironment(layout: RuntimeLayout): Record<string, string
     MAPLE_SKILL_PATH: layout.skillPath,
     MAPLE_MCP_CONFIG: layout.mcpConfigPath,
     MAPLE_MCP_COMMAND: layout.mcpCommand,
-    MAPLE_MCP_ARGS: JSON.stringify(layout.mcpArgs)
+    MAPLE_MCP_ARGS: JSON.stringify(layout.mcpArgs),
+    MAPLE_DEEPSEEK_MODEL_CATALOG: layout.deepSeekModelCatalogPath
   };
 }

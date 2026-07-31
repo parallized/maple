@@ -3,6 +3,7 @@ import type { WorkerKind } from "../domain";
 
 import claudeLogo from "../assets/worker-claude.png";
 import codexLogo from "../assets/worker-codex.png";
+import deepseekLogo from "../assets/worker-deepseek.svg";
 import geminiLogo from "../assets/worker-gemini.png";
 import glmLogo from "../assets/worker-glm.png";
 import iflowLogo from "../assets/worker-iflow.png";
@@ -12,6 +13,7 @@ import opencodeLogo from "../assets/worker-opencode.png";
 const WORKER_LOGO_SRC: Partial<Record<WorkerKind, string>> = {
   claude: claudeLogo,
   codex: codexLogo,
+  deepseek: deepseekLogo,
   gemini: geminiLogo,
   glm: glmLogo,
   iflow: iflowLogo,
@@ -22,6 +24,7 @@ const WORKER_LOGO_SRC: Partial<Record<WorkerKind, string>> = {
 const WORKER_LOGO_ALT: Record<WorkerKind, string> = {
   claude: "Claude",
   codex: "Codex",
+  deepseek: "DeepSeek Flash",
   kimi: "Kimi",
   glm: "GLM",
   iflow: "iFlow",

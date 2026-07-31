@@ -68,8 +68,9 @@ export const kimiAdapter: CodingAgentAdapter = {
       executable: env.MAPLE_KIMI_BIN?.trim() || "kimi",
       args: [
         ...(model ? ["--model", model] : []),
-        ...(options?.resumeSessionId ? ["--resume", options.resumeSessionId] : []),
+        ...(options?.resumeSessionId ? ["--session", options.resumeSessionId] : []),
         ...(options?.additionalWritableDirectories ?? []).flatMap((directory) => ["--add-dir", directory]),
+        options?.readOnly ? "--plan" : "--auto",
         "--prompt",
         prompt,
         "--output-format",

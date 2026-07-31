@@ -8,6 +8,7 @@ import { createServerApp } from "../src/app";
 import { createDatabase } from "../src/database/client";
 import { createStandaloneServerConfig } from "../src/standalone/config";
 import { ensureStandaloneIdentity } from "../src/standalone/identity";
+import type { ProviderCredentialService } from "../src/services/provider-credential-service";
 
 const directories: string[] = [];
 const databases: Database[] = [];
@@ -19,7 +20,7 @@ afterEach(() => {
   }
 });
 
-async function setup() {
+async function setup(providerCredentials?: ProviderCredentialService) {
   const directory = mkdtempSync(join(tmpdir(), "maple-standalone-test-"));
   directories.push(directory);
   const webRoot = join(directory, "web");
@@ -29,13 +30,29 @@ async function setup() {
   const database = createDatabase(":memory:");
   databases.push(database);
   const identity = await ensureStandaloneIdentity(database);
-  const app = createServerApp({ config, database, standaloneIdentity: identity });
+  const app = createServerApp({ config, database, standaloneIdentity: identity, providerCredentials });
   return { app, config, database, identity };
 }
 
 function cookie(response: Response): string {
   return response.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
 }
+
+describe("Maple Local configuration", () => {
+  it("adds an explicit development dashboard origin without widening the defaults", () => {
+    const config = createStandaloneServerConfig({
+      dataDir: "C:/maple/data",
+      webRoot: "C:/maple/web",
+      allowedOrigins: ["http://127.0.0.1:5173", "http://127.0.0.1:5173"]
+    });
+
+    expect(config.allowedOrigins).toEqual([
+      "http://127.0.0.1:45821",
+      "http://localhost:45821",
+      "http://127.0.0.1:5173"
+    ]);
+  });
+});
 
 describe("Maple Local authentication", () => {
   it("creates one persistent local identity and signs the browser in without credentials", async () => {
@@ -125,5 +142,102 @@ describe("Maple Local authentication", () => {
       expect(response.status).toBe(403);
       expect((await response.json()).error.code).toBe("hosted_feature_unavailable");
     }
+  });
+});
+
+describe("Maple Local Provider connections", () => {
+  it("protects DeepSeek status and mutations with the local session and CSRF token", async () => {
+    let connected = false;
+    let receivedKey = "";
+    const status = () => ({
+      provider: "deepseek" as const,
+      supported: true,
+      configured: connected,
+      source: "windows_credential_manager" as const,
+      message: connected ? "凭据已安全保存在此 Windows 用户下。" : null
+    });
+    const providerCredentials: ProviderCredentialService = {
+      deepSeekStatus: async () => status(),
+      connectDeepSeek: async (apiKey) => {
+        receivedKey = apiKey;
+        connected = true;
+        return status();
+      },
+      disconnectDeepSeek: async () => {
+        connected = false;
+        return status();
+      }
+    };
+    const { app } = await setup(providerCredentials);
+    const sessionResponse = await app.handle(new Request("http://localhost/api/auth/session", {
+      headers: { "user-agent": "Chrome Local" }
+    }));
+    const session = await sessionResponse.clone().json() as AuthSessionResponse;
+    const sessionCookie = cookie(sessionResponse);
+    const baseHeaders = {
+      cookie: sessionCookie,
+      "x-maple-workspace": session.workspace.id,
+      "content-type": "application/json",
+      origin: "http://localhost"
+    };
+
+    const initial = await app.handle(new Request("http://localhost/api/provider-connections/deepseek", {
+      headers: baseHeaders
+    }));
+    expect(initial.status).toBe(200);
+    expect(await initial.json()).toMatchObject({ configured: false, source: "windows_credential_manager" });
+
+    const rejected = await app.handle(new Request("http://localhost/api/provider-connections/deepseek/connect", {
+      method: "POST",
+      headers: baseHeaders,
+      body: JSON.stringify({ apiKey: "sk-deepseek-test" })
+    }));
+    expect(rejected.status).toBe(403);
+    expect(receivedKey).toBe("");
+
+    const authorizedHeaders = { ...baseHeaders, "x-maple-csrf": session.csrfToken };
+    const connectedResponse = await app.handle(new Request("http://localhost/api/provider-connections/deepseek/connect", {
+      method: "POST",
+      headers: authorizedHeaders,
+      body: JSON.stringify({ apiKey: "sk-deepseek-test" })
+    }));
+    expect(connectedResponse.status).toBe(200);
+    expect(receivedKey).toBe("sk-deepseek-test");
+    const connectedBody = await connectedResponse.json();
+    expect(connectedBody).toMatchObject({ configured: true });
+    expect(JSON.stringify(connectedBody)).not.toContain(receivedKey);
+
+    const disconnectedResponse = await app.handle(new Request("http://localhost/api/provider-connections/deepseek", {
+      method: "DELETE",
+      headers: authorizedHeaders
+    }));
+    expect(disconnectedResponse.status).toBe(200);
+    expect(await disconnectedResponse.json()).toMatchObject({ configured: false });
+  });
+
+  it("does not expose credential mutation routes without a Local credential service", async () => {
+    const { app } = await setup();
+    const sessionResponse = await app.handle(new Request("http://localhost/api/auth/session", {
+      headers: { "user-agent": "Chrome Local" }
+    }));
+    const session = await sessionResponse.clone().json() as AuthSessionResponse;
+    const headers = {
+      cookie: cookie(sessionResponse),
+      "x-maple-workspace": session.workspace.id,
+      "x-maple-csrf": session.csrfToken,
+      "content-type": "application/json",
+      origin: "http://localhost"
+    };
+
+    const statusResponse = await app.handle(new Request("http://localhost/api/provider-connections/deepseek", { headers }));
+    expect(statusResponse.status).toBe(200);
+    expect(await statusResponse.json()).toMatchObject({ supported: false, source: "unavailable" });
+
+    const connectResponse = await app.handle(new Request("http://localhost/api/provider-connections/deepseek/connect", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ apiKey: "sk-must-not-be-accepted" })
+    }));
+    expect(connectResponse.status).toBe(404);
   });
 });

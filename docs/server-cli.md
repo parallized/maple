@@ -43,7 +43,7 @@ irm https://maple.example.com/install-local.ps1 | iex
 
 后续更新前退出正在运行的 Maple Local，然后执行 `maple-local update`。更新器会复用首次安装时保存的可信下载地址，原子替换程序文件并保留 `~/.maple/standalone` 中的数据。
 
-仓库内开发时只需运行 `bun local`：它会构建 WebUI、启动内嵌 Server、自动签发并连接本机 Runner，然后打开已登录的 Dashboard。无需再启动其他命令，也没有登录、OAuth 或配对步骤。
+仓库内开发时只需运行 `bun local`：它会启动支持热重载的 WebUI 与 Standalone，自动签发并连接本机 Runner，然后打开已登录的 Dashboard。WebUI 变更由 Vite 即时更新，Server 与 CLI 变更由 Bun 自动重启；无需再启动其他命令，也没有登录、OAuth 或配对步骤。
 
 ```bash
 bun run --filter @maple/cli build:standalone

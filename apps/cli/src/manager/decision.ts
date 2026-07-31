@@ -10,7 +10,7 @@ export type ProjectManagerDecision = Omit<
   "leaseToken" | "managerWorkerKind"
 >;
 
-const MANAGER_PREFERENCE: WorkerKind[] = ["codex", "claude", "gemini", "kimi", "glm", "opencode", "iflow"];
+const MANAGER_PREFERENCE: WorkerKind[] = ["codex", "deepseek", "claude", "gemini", "kimi", "glm", "opencode", "iflow"];
 
 export function selectProjectManagerWorker(
   availableWorkers: WorkerKind[],
@@ -26,6 +26,17 @@ export function selectProjectManagerWorker(
   if (preferred) return preferred;
   if (availableWorkers[0]) return availableWorkers[0];
   throw new Error("当前 CLI 没有可用于项目经理的 Coding Agent。");
+}
+
+export function selectProjectManagerWorkerForJob(
+  job: Pick<ProjectManagerJob, "availableWorkers" | "executionSettings">,
+  env: Record<string, string | undefined> = process.env
+): WorkerKind {
+  return selectProjectManagerWorker(
+    job.availableWorkers,
+    env,
+    job.executionSettings?.leaderWorker ?? job.executionSettings?.baseWorker
+  );
 }
 
 function parseJsonObject(output: string): Record<string, unknown> | null {
@@ -45,7 +56,8 @@ function parseJsonObject(output: string): Record<string, unknown> | null {
 }
 
 function boundedString(value: unknown, fallback: string, max: number): string {
-  return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : fallback;
+  const candidate = typeof value === "string" && value.trim() ? value.trim() : fallback;
+  return candidate.trim().slice(0, max);
 }
 
 export function parseProjectManagerDecision(output: string, job: ProjectManagerJob): ProjectManagerDecision {
@@ -63,17 +75,17 @@ export function parseProjectManagerDecision(output: string, job: ProjectManagerJ
   const workflowTitle = boundedString(
     parsed?.workflowTitle,
     existingWorkflow?.title ?? job.todo.title,
-    160
+    80
   );
   const workflowSummary = boundedString(
     parsed?.workflowSummary,
     existingWorkflow?.summary ?? `${job.todo.title}：${job.todo.details || "完成当前目标"}`,
-    4_000
+    600
   );
   const dispatchBrief = boundedString(
     parsed?.dispatchBrief,
     workflowId ? `延续“${workflowTitle}”工作流并完成当前 Todo。` : "完成当前 Todo，并遵守项目现有约束。",
-    2_000
+    600
   );
   return {
     selectedWorkerKind,

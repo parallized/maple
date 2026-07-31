@@ -6,6 +6,7 @@ import type {
   CreateRunnerCommandRequest,
   CreateTodoRequest,
   DashboardSnapshot,
+  DeepSeekConnectionResponse,
   DeviceAuthorizationApproveResponse,
   DeviceAuthorizationReview,
   HomeStatsResponse,
@@ -213,6 +214,18 @@ export class DashboardApi {
 
   executionSettings(signal?: AbortSignal): Promise<WorkspaceExecutionSettings> {
     return this.request("GET", "/api/settings/execution", undefined, signal);
+  }
+
+  deepSeekConnection(signal?: AbortSignal): Promise<DeepSeekConnectionResponse> {
+    return this.request("GET", "/api/provider-connections/deepseek", undefined, signal);
+  }
+
+  connectDeepSeek(apiKey: string): Promise<DeepSeekConnectionResponse> {
+    return this.request("POST", "/api/provider-connections/deepseek/connect", { apiKey });
+  }
+
+  disconnectDeepSeek(): Promise<DeepSeekConnectionResponse> {
+    return this.request("DELETE", "/api/provider-connections/deepseek");
   }
 
   updateExecutionSettings(

@@ -95,7 +95,7 @@ export function WorkerConfigCard({
 
   // kimi 暂无安装引导(MCP 注册流程未覆盖);glm 由 opencode 宿主运行,复用其安装目标。
   const installTargetKind: InstallTargetId | null =
-    kind === "kimi" ? null : kind === "glm" ? "opencode" : kind;
+    kind === "kimi" ? null : kind === "glm" ? "opencode" : kind === "deepseek" ? "codex" : kind;
 
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideRuntime, setGuideRuntime] = useState<"native" | "wsl">("native");

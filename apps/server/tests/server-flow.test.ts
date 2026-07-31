@@ -20,7 +20,8 @@ import type {
   RunnerRunLogResponse,
   Todo,
   TodoDetailResponse,
-  UploadTodoArtifactResponse
+  UploadTodoArtifactResponse,
+  WorkspaceExecutionSettings
 } from "@maple/protocol";
 import { createServerApp } from "../src/app";
 import {
@@ -276,6 +277,102 @@ describe("Maple Server execution flow", () => {
     expect(columns("runner_commands")).not.toContain("worker_kind");
   });
 
+  it("rebuilds the legacy Todo Worker constraint and preserves every public task field", () => {
+    const directory = mkdtempSync(join(tmpdir(), "maple-deepseek-worker-migration-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "maple.sqlite");
+    const initial = createDatabase(databasePath);
+    seedTestAccount(initial);
+    const now = "2026-07-31T00:00:00.000Z";
+    initial.run(
+      `INSERT INTO projects(id, workspace_id, external_key, workspace_external_key, name, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ["project-deepseek-migration", TEST_WORKSPACE_ID, "local:deepseek-migration", "local:deepseek-migration", "DeepSeek", now, now]
+    );
+    initial.exec("PRAGMA foreign_keys = OFF;");
+    initial.exec(`
+      DROP TABLE todos;
+      CREATE TABLE todos (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        details TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 0,
+        worker_kind TEXT NOT NULL CHECK(worker_kind IN ('codex', 'claude', 'kimi', 'glm', 'iflow', 'gemini', 'opencode')),
+        claimed_by_runner_id TEXT REFERENCES runners(id) ON DELETE SET NULL,
+        active_attempt_id TEXT,
+        lease_token_hash TEXT,
+        lease_expires_at TEXT,
+        retry_after TEXT,
+        result_summary TEXT,
+        last_error TEXT,
+        tags_json TEXT,
+        details_doc TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        started_at TEXT,
+        completed_at TEXT
+      );
+    `);
+    initial.run(
+      `INSERT INTO todos(
+         id, project_id, title, details, status, priority, worker_kind, retry_after,
+         result_summary, last_error, tags_json, details_doc, created_at, updated_at, started_at, completed_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "todo-before-deepseek",
+        "project-deepseek-migration",
+        "保留任务",
+        "保留详情",
+        "blocked",
+        7,
+        "codex",
+        "2026-07-31T00:01:00.000Z",
+        "保留结果",
+        "保留错误",
+        '["provider"]',
+        '{"type":"doc"}',
+        now,
+        now,
+        now,
+        now
+      ]
+    );
+    initial.close();
+
+    const migrated = createDatabase(databasePath);
+    databases.push(migrated);
+    expect(migrated.query("SELECT * FROM todos WHERE id = ?").get("todo-before-deepseek")).toMatchObject({
+      title: "保留任务",
+      details: "保留详情",
+      priority: 7,
+      worker_kind: "codex",
+      retry_after: "2026-07-31T00:01:00.000Z",
+      result_summary: "保留结果",
+      last_error: "保留错误",
+      tags_json: '["provider"]',
+      details_doc: '{"type":"doc"}'
+    });
+
+    migrated.run(
+      `INSERT INTO todos(id, project_id, title, status, worker_kind, created_at, updated_at)
+       VALUES (?, ?, ?, 'todo', 'deepseek', ?, ?)`,
+      ["todo-deepseek", "project-deepseek-migration", "DeepSeek Flash", now, now]
+    );
+    expect(migrated.query("SELECT worker_kind FROM todos WHERE id = ?").get("todo-deepseek"))
+      .toEqual({ worker_kind: "deepseek" });
+
+    const indexes = migrated
+      .query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'todos'")
+      .all() as Array<{ name: string }>;
+    expect(indexes.map((row) => row.name)).toEqual(expect.arrayContaining([
+      "idx_todos_project_status",
+      "idx_todos_lease",
+      "idx_todos_retry"
+    ]));
+  });
+
   it("migrates legacy raw log tables without losing compatibility", () => {
     const directory = mkdtempSync(join(tmpdir(), "maple-log-migration-test-"));
     temporaryDirectories.push(directory);
@@ -307,7 +404,8 @@ describe("Maple Server execution flow", () => {
       "level",
       "status",
       "title",
-      "group_id"
+      "group_id",
+      "delivery_id"
     ]);
 
     database.run(
@@ -759,6 +857,55 @@ describe("Maple Server execution flow", () => {
     expect(staleHeartbeat.status).toBe(409);
   });
 
+  it("stores the default Worker and Leader PM Worker independently", async () => {
+    const app = createTestApp();
+
+    const initial = (await (
+      await request(app, "/api/settings/execution", { token: ADMIN_TOKEN })
+    ).json()) as WorkspaceExecutionSettings;
+    expect(initial).toMatchObject({
+      defaultWorker: "claude",
+      leaderWorker: "claude",
+      baseWorker: "claude"
+    });
+
+    const defaultUpdate = await request(app, "/api/settings/execution", {
+      method: "PATCH",
+      token: ADMIN_TOKEN,
+      body: { defaultWorker: "kimi" }
+    });
+    expect(defaultUpdate.status).toBe(200);
+    expect(await defaultUpdate.json()).toMatchObject({
+      defaultWorker: "kimi",
+      leaderWorker: "claude",
+      baseWorker: "kimi"
+    });
+
+    const leaderUpdate = await request(app, "/api/settings/execution", {
+      method: "PATCH",
+      token: ADMIN_TOKEN,
+      body: { leaderWorker: "glm" }
+    });
+    expect(leaderUpdate.status).toBe(200);
+    expect(await leaderUpdate.json()).toMatchObject({
+      defaultWorker: "kimi",
+      leaderWorker: "glm",
+      baseWorker: "kimi"
+    });
+
+    const legacyUpdate = await request(app, "/api/settings/execution", {
+      method: "PATCH",
+      token: ADMIN_TOKEN,
+      body: { baseWorker: "opencode" }
+    });
+    expect(legacyUpdate.status).toBe(200);
+    expect(await legacyUpdate.json()).toMatchObject({
+      defaultWorker: "opencode",
+      leaderWorker: "opencode",
+      baseWorker: "opencode"
+    });
+  });
+
   it("persists screenshot acceptance and stores authenticated task artifacts", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "maple-artifact-test-"));
     temporaryDirectories.push(dataDir);
@@ -886,6 +1033,7 @@ describe("Maple Server execution flow", () => {
     }).png().toBuffer());
     const validForm = new FormData();
     validForm.set("leaseToken", job.leaseToken);
+    validForm.set("deliveryId", "artifact-delivery-1");
     validForm.set("file", new File([pngBytes], "acceptance.png", { type: "image/png" }));
     const validUpload = await app.handle(new Request(
       `http://maple.test/api/runner/jobs/${todo.id}/artifacts`,
@@ -1315,6 +1463,7 @@ describe("Maple Server execution flow", () => {
       })
     ).json()) as Todo;
     expect(firstTodo.status).toBe("todo");
+    expect(firstTodo.executionPhase).toBe("queued");
 
     const blockedClaim = (await (
       await request(app, "/api/runner/jobs/claim", { method: "POST", token: exchange.runnerToken })
@@ -1329,6 +1478,7 @@ describe("Maple Server execution flow", () => {
     ).json()) as ClaimProjectManagerJobResponse;
     expect(managerClaim.job?.todo.id).toBe(firstTodo.id);
     expect(managerClaim.job?.todo.status).toBe("queued");
+    expect(managerClaim.job?.todo.executionPhase).toBe("planning");
     expect(managerClaim.job?.todo.activeAttemptId).toBeNull();
     expect(managerClaim.job?.availableWorkers).toEqual(["codex", "kimi"]);
     expect(managerClaim.job?.workflows).toEqual([]);
@@ -1336,6 +1486,7 @@ describe("Maple Server execution flow", () => {
       await request(app, "/api/dashboard", { token: ADMIN_TOKEN })
     ).json()) as DashboardSnapshot;
     expect(diagnosingDashboard.todos.find((todo) => todo.id === firstTodo.id)?.status).toBe("queued");
+    expect(diagnosingDashboard.todos.find((todo) => todo.id === firstTodo.id)?.executionPhase).toBe("planning");
 
     const secondTodo = (await (
       await request(app, `/api/projects/${registration.project.id}/todos`, {
@@ -1349,6 +1500,7 @@ describe("Maple Server execution flow", () => {
         }
       })
     ).json()) as Todo;
+    expect(secondTodo.executionPhase).toBe("queued");
     const concurrentManagerClaim = (await (
       await request(app, "/api/runner/project-manager/claim", {
         method: "POST",
@@ -1392,6 +1544,7 @@ describe("Maple Server execution flow", () => {
     expect(firstDispatch.selectedWorkerKind).toBe("codex");
     expect(firstDispatch.todo.workerKind).toBe("codex");
     expect(firstDispatch.todo.status).toBe("queued");
+    expect(firstDispatch.todo.executionPhase).toBe("planning");
     const secondManagerClaim = (await (
       await request(app, "/api/runner/project-manager/claim", {
         method: "POST",
@@ -1399,6 +1552,7 @@ describe("Maple Server execution flow", () => {
       })
     ).json()) as ClaimProjectManagerJobResponse;
     expect(secondManagerClaim.job?.todo.status).toBe("queued");
+    expect(secondManagerClaim.job?.todo.executionPhase).toBe("planning");
     expect(secondManagerClaim.job?.workflows[0]?.id).toBe(firstDispatch.workflow.id);
     expect(secondManagerClaim.job?.history.some((item) => item.todoId === firstTodo.id)).toBe(true);
     expect((await request(app, `/api/runner/project-manager/${secondTodo.id}/complete`, {
@@ -1422,16 +1576,21 @@ describe("Maple Server execution flow", () => {
     ).json()) as ClaimJobResponse;
     expect(firstClaim.job?.todo.id).toBe(firstTodo.id);
     expect(firstClaim.job?.todo.status).toBe("queued");
+    expect(firstClaim.job?.todo.executionPhase).toBe("planning");
     expect(firstClaim.job?.todo.activeAttemptId).not.toBeNull();
     expect(firstClaim.job?.attempt.workerKind).toBe("codex");
     expect(firstClaim.job?.workflow?.id).toBe(firstDispatch.workflow.id);
     expect(firstClaim.job?.workflowExecutionMode).toBe("serial");
     expect(firstClaim.job?.dispatchBrief).toBe("Continue the authentication lifecycle work.");
-    expect((await request(app, `/api/runner/jobs/${firstTodo.id}/start`, {
+    const started = await request(app, `/api/runner/jobs/${firstTodo.id}/start`, {
       method: "POST",
       token: exchange.runnerToken,
       body: { leaseToken: firstClaim.job!.leaseToken }
-    })).status).toBe(200);
+    });
+    expect(started.status).toBe(200);
+    const startedMutation = (await started.json()) as { todo: Todo };
+    expect(startedMutation.todo.executionPhase).toBe("running");
+    expect(startedMutation.todo.startedAt).not.toBeNull();
 
     const seriallyBlocked = (await (
       await request(app, "/api/runner/jobs/claim", { method: "POST", token: exchange.runnerToken })

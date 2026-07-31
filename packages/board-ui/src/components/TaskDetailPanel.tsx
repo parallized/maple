@@ -15,6 +15,7 @@ import { InlineTaskInput } from "./InlineTaskInput";
 import { TaskArtifactGallery } from "./TaskArtifactGallery";
 import { TaskDetailsEditor } from "./TaskDetailsEditor";
 import { WorkerLogo } from "./WorkerLogo";
+import { RunningElapsed } from "./RunningElapsed";
 import { PopoverMenu } from "./PopoverMenu";
 
 type TaskDetailPanelProps = {
@@ -346,11 +347,32 @@ export function TaskDetailPanel({
               <PopoverMenu
                 label="Status Selector"
                 triggerNode={
-                  <span className={`ui-badge ui-badge--sm cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${statusBadgeClass(task.status)}`}>
-                    {task.status === "进行中" && (
-                      <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin opacity-80 mr-0.5" />
+                  <span className={`ui-badge ui-badge--sm cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${statusBadgeClass(
+                    task.executionPhase === "queued"
+                      ? "队列中"
+                      : task.executionPhase === "planning"
+                        ? "规划中"
+                        : task.executionPhase === "running"
+                          ? "进行中"
+                          : task.status,
+                  )}`}>
+                    {task.executionPhase === "queued" ? (
+                      "队列中"
+                    ) : task.executionPhase === "planning" ? (
+                      "规划中"
+                    ) : task.executionPhase === "running" ? (
+                      <>
+                        <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin opacity-80 mr-0.5" />
+                        <RunningElapsed since={task.startedAt ?? task.updatedAt} />
+                      </>
+                    ) : task.status === "进行中" ? (
+                      <>
+                        <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin opacity-80 mr-0.5" />
+                        <RunningElapsed since={task.startedAt ?? task.updatedAt} />
+                      </>
+                    ) : (
+                      task.status
                     )}
-                    {task.status}
                   </span>
                 }
                 align="left"
@@ -383,7 +405,7 @@ export function TaskDetailPanel({
               <Icon icon="mingcute:time-line" className="text-[15px] opacity-60" />
               创建
             </span>
-            <div className={`flex items-center text-[14px] ${(() => {
+            <div className={`flex items-center whitespace-nowrap text-[14px] ${(() => {
             const level = getTimeLevel(task.createdAt);
             return `time-level-${level}`;
           })()}`} title={formatAbsoluteTime(task.createdAt)}>
@@ -396,7 +418,7 @@ export function TaskDetailPanel({
               <Icon icon="mingcute:history-line" className="text-[15px] opacity-60" />
               更新
             </span>
-            <div className={`flex items-center text-[14px] ${(() => {
+            <div className={`flex items-center whitespace-nowrap text-[14px] ${(() => {
             const level = getTimeLevel(task.updatedAt);
             return `time-level-${level}`;
           })()}`} title={formatAbsoluteTime(task.updatedAt)}>

@@ -20,6 +20,7 @@ import {
   STORAGE_AI_LANGUAGE,
   STORAGE_BASE_WORKER,
   STORAGE_CONSTITUTION,
+  STORAGE_LEADER_CONSTITUTION,
   STORAGE_EDITOR_APP,
   STORAGE_THEME,
   STORAGE_UI_FONT,
@@ -34,6 +35,7 @@ import {
   parseArgs,
   createTask,
   createTaskReport,
+  isTaskInFlight,
   normalizeProjects
 } from "./lib/utils";
 import { applyUiFont } from "./lib/ui-font";
@@ -46,6 +48,7 @@ import {
   loadBaseWorker,
   loadConstitution,
   loadExternalEditorApp,
+  loadLeaderConstitution,
   loadTheme,
   loadUiFont,
   loadUiLanguage,
@@ -93,6 +96,7 @@ type PromptPlacementStrategy = {
 const PROMPT_PLACEMENT_BY_KIND: Record<WorkerKind, PromptPlacementStrategy> = {
   claude: { flag: "--print", mode: "append_tail" },
   codex: { flag: "e", mode: "append_tail" },
+  deepseek: { flag: "exec", mode: "append_tail" },
   kimi: { flag: "--prompt", mode: "after_flag" },
   glm: { flag: "run", mode: "append_tail" },
   iflow: { flag: "-p", mode: "after_flag" },
@@ -190,6 +194,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
   const [aiLanguage, setAiLanguage] = useState<AiLanguage>(() => isTauri ? loadAiLanguage() : "follow_ui");
   const [externalEditorApp, setExternalEditorApp] = useState<ExternalEditorApp>(() => loadExternalEditorApp());
   const [constitution, setConstitution] = useState<string>(() => isTauri ? loadConstitution() : "");
+  const [leaderConstitution, setLeaderConstitution] = useState<string>(() => isTauri ? loadLeaderConstitution() : "");
   const [workerConfigs, setWorkerConfigs] = useState<Record<WorkerKind, WorkerConfig>>(() => cloneDefaultWorkerConfigs());
   const [workerRuntimeByKind, setWorkerRuntimeByKind] = useState<Record<WorkerKind, WorkerRuntime>>(() =>
     WORKER_KINDS.reduce((acc, worker) => {
@@ -207,6 +212,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
   const [boardDisplayType, setBoardDisplayType] = useState<BoardDisplayType>("list");
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [workerConsoleOpen, setWorkerConsoleOpen] = useState(false);
   const [workerConsoleWorkerId, setWorkerConsoleWorkerId] = useState<string>(() => buildWorkerId(WORKER_KINDS[0]?.kind ?? "claude"));
   const [executingWorkers, setExecutingWorkers] = useState<Set<string>>(() => new Set());
@@ -217,6 +223,14 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
   const [theme, setThemeState] = useState<ThemeMode>(() => isTauri ? loadTheme() : "system");
   const [uiFont, setUiFont] = useState<UiFont>(() => isTauri ? loadUiFont() : "chill-round");
   const [baseWorker, setBaseWorker] = useState<WorkerKind>(() => isTauri ? loadBaseWorker() : DEFAULT_BASE_WORKER);
+  const [leaderWorker, setLeaderWorker] = useState<WorkerKind>(DEFAULT_BASE_WORKER);
+  // 外部请求设置页切到指定页签(如看板 Leader 状态条 →「模型和工具」)。
+  const [settingsTabRequest, setSettingsTabRequest] = useState<{ tab: string; nonce: number } | null>(null);
+
+  function openSettingsTab(tab: string) {
+    setSettingsTabRequest({ tab, nonce: Date.now() });
+    setView("settings");
+  }
   const [userPreferencesReady, setUserPreferencesReady] = useState(false);
   const [executionSettingsReady, setExecutionSettingsReady] = useState(false);
   const [windowMaximized, setWindowMaximized] = useState(false);
@@ -307,12 +321,14 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
     const allTasks = projects.flatMap((p) => p.tasks);
     const pending = allTasks.filter((t) => t.status !== "已完成").length;
     const completedCount = allTasks.filter((t) => t.status === "已完成").length;
-    const inProgressCount = allTasks.filter((t) => t.status === "进行中" || t.status === "队列中").length;
+    const inProgressCount = allTasks.filter((t) => isTaskInFlight(t)).length;
     const runningCount = executingWorkers.size;
 
+    // 分布按「显示状态」分桶:规划中/排队阶段从原始 status 中拆出,与任务徽标口径一致。
     const statusDistribution: Record<string, number> = {};
     allTasks.forEach(t => {
-      statusDistribution[t.status] = (statusDistribution[t.status] || 0) + 1;
+      const key = t.executionPhase === "planning" ? "规划中" : t.executionPhase === "queued" ? "队列中" : t.status;
+      statusDistribution[key] = (statusDistribution[key] || 0) + 1;
     });
 
     // 按项目聚合 token 用量（按 Worker 类型分桶），用于概览柱状图。
@@ -447,6 +463,9 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
     if (!platform.loadExecutionSettings) localStorage.setItem(STORAGE_CONSTITUTION, constitution);
   }, [platform, constitution]);
   useEffect(() => {
+    if (!platform.loadExecutionSettings) localStorage.setItem(STORAGE_LEADER_CONSTITUTION, leaderConstitution);
+  }, [platform, leaderConstitution]);
+  useEffect(() => {
     if (platform.loadExecutionSettings) return;
     localStorage.setItem(STORAGE_WORKER_RETRY_INTERVAL_SECONDS, String(workerRetryConfig.intervalSeconds));
     localStorage.setItem(STORAGE_WORKER_RETRY_MAX_ATTEMPTS, String(workerRetryConfig.maxAttempts));
@@ -486,6 +505,11 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
           if (!cancelled && typeof text === "string") setConstitution(text);
         })
         .catch(() => {});
+      platform.loadLeaderConstitution()
+        .then((text) => {
+          if (!cancelled && typeof text === "string") setLeaderConstitution(text);
+        })
+        .catch(() => {});
       return () => { cancelled = true; };
     }
     let cancelled = false;
@@ -493,8 +517,10 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
       .then((settings) => {
         if (cancelled) return;
         setBaseWorker(settings.baseWorker);
+        setLeaderWorker(settings.leaderWorker);
         setAiLanguage(settings.aiOutputLanguage);
         setConstitution(settings.constitution);
+        setLeaderConstitution(settings.leaderConstitution);
         setWorkerRetryConfigState(normalizeWorkerRetryConfig({
           intervalSeconds: settings.retryIntervalSeconds,
           maxAttempts: settings.retryMaxAttempts
@@ -509,8 +535,10 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
     if (!platform.saveExecutionSettings || !executionSettingsReady) return;
     void platform.saveExecutionSettings({
       baseWorker,
+      leaderWorker,
       aiOutputLanguage: aiLanguage,
       constitution,
+      leaderConstitution,
       retryIntervalSeconds: workerRetryConfig.intervalSeconds,
       retryMaxAttempts: workerRetryConfig.maxAttempts
     }).catch(() => {});
@@ -519,7 +547,10 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
     platform,
     executionSettingsReady,
     baseWorker,
+    leaderWorker,
     aiLanguage,
+    constitution,
+    leaderConstitution,
     workerRetryConfig.intervalSeconds,
     workerRetryConfig.maxAttempts
   ]);
@@ -561,15 +592,18 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
     return () => clearTimeout(timer);
   }, [notice]);
 
-  async function saveConstitution(next: string): Promise<void> {
-    const normalized = next.replace(/\r\n/g, "\n");
-    setConstitution(normalized);
+  async function saveConstitution(workerText: string, leaderText: string): Promise<void> {
+    const normalizedWorker = workerText.replace(/\r\n/g, "\n");
+    const normalizedLeader = leaderText.replace(/\r\n/g, "\n");
+    setConstitution(normalizedWorker);
+    setLeaderConstitution(normalizedLeader);
 
     const savedText = uiLanguage === "en" ? "Constitution saved." : "宪法已保存。";
     const failedText = uiLanguage === "en" ? "Failed to save constitution." : "宪法保存失败。";
 
     try {
-      await platform.saveConstitution(normalized);
+      await platform.saveConstitution(normalizedWorker);
+      await platform.saveLeaderConstitution(normalizedLeader);
       setNotice(savedText);
     } catch {
       setNotice(failedText);
@@ -1657,12 +1691,13 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
   }
 
   // ── Render ──
+  const mobileTabT = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   return (
     <PlatformProvider value={platform}>
     <div className={`app-root${windowMaximized ? " maximized" : ""}`}>
       <AppBackground />
       <div className="shell">
-        <div className="app-frame">
+        <div className={`app-frame${mobileNavOpen ? " nav-open" : ""}`}>
         <AppSidebar
           view={view}
           projects={projects}
@@ -1673,14 +1708,65 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
           uiLanguage={uiLanguage}
           isTauri={isTauri}
           windowMaximized={windowMaximized}
-          onViewChange={setView}
-          onProjectSelect={(id) => { setBoardProjectId(id); setView("board"); setSelectedTaskId(null); }}
+          onViewChange={(nextView) => { setView(nextView); setMobileNavOpen(false); }}
+          onProjectSelect={(id) => { setBoardProjectId(id); setView("board"); setSelectedTaskId(null); setMobileNavOpen(false); }}
           onReorderProjects={reorderProjects}
           onMinimize={minimizeWindow}
           onToggleMaximize={toggleWindowMaximize}
           onClose={closeWindow}
-          footer={typeof sidebarFooter === "function" ? sidebarFooter({ openSettings: () => setView("settings") }) : sidebarFooter}
+          footer={typeof sidebarFooter === "function" ? sidebarFooter({ openSettings: () => { setView("settings"); setMobileNavOpen(false); } }) : sidebarFooter}
         />
+
+        {/* 移动端导航抽屉的半透明遮罩（仅 ≤980px 显示，点按关闭抽屉） */}
+        <button
+          type="button"
+          className="mobile-nav-backdrop"
+          aria-label="关闭导航菜单"
+          onClick={() => setMobileNavOpen(false)}
+        />
+
+        {/* 移动端底部标签栏（iOS Tab Bar 质感，仅 ≤980px 显示） */}
+        <nav className="mobile-tabbar" aria-label="主导航">
+          <button
+            type="button"
+            className={`mobile-tab${view === "overview" ? " active" : ""}`}
+            onClick={() => setView("overview")}
+          >
+            <Icon icon="mingcute:home-4-line" className="text-[21px]" />
+            <span>{mobileTabT("概览", "Overview")}</span>
+          </button>
+          <button
+            type="button"
+            className={`mobile-tab${view === "board" ? " active" : ""}`}
+            onClick={() => {
+              if (!boardProjectId && projects.length > 0) {
+                setBoardProjectId(projects[0].id);
+                setSelectedTaskId(null);
+              }
+              setView("board");
+            }}
+          >
+            <Icon icon="mingcute:board-line" className="text-[21px]" />
+            <span>{mobileTabT("看板", "Board")}</span>
+          </button>
+          <button
+            type="button"
+            className={`mobile-tab${view === "settings" || view === "progress" ? " active" : ""}`}
+            onClick={() => setView("settings")}
+          >
+            <Icon icon="mingcute:settings-3-line" className="text-[21px]" />
+            <span>{mobileTabT("设置", "Settings")}</span>
+          </button>
+          <button
+            type="button"
+            className={`mobile-tab${mobileNavOpen ? " active" : ""}`}
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen((open) => !open)}
+          >
+            <Icon icon="mingcute:menu-line" className="text-[21px]" />
+            <span>{mobileTabT("菜单", "Menu")}</span>
+          </button>
+        </nav>
 
         <div className="main-column">
           <main className="flex-1 overflow-hidden flex flex-col relative bg-transparent">
@@ -1725,6 +1811,9 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
                     detailMode={detailMode}
                     externalEditorApp={externalEditorApp}
                     displayType={boardDisplayType}
+                    leaderWorker={leaderWorker}
+                    workers={visibleSidebarWorkers}
+                    onOpenLeaderSettings={() => openSettingsTab("models")}
                     onSetDisplayType={setBoardDisplayType}
                     onAddDraftTask={addDraftTask}
                     onCommitTaskTitle={commitTaskTitle}
@@ -1758,8 +1847,10 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
                     uiLanguage={uiLanguage}
                     aiLanguage={aiLanguage}
                     baseWorker={baseWorker}
+                    leaderWorker={leaderWorker}
                     externalEditorApp={externalEditorApp}
                     constitution={constitution}
+                    leaderConstitution={leaderConstitution}
                     workerAvailability={workerAvailability}
                     installProbes={installProbes}
                     onThemeChange={setThemeState}
@@ -1767,8 +1858,9 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
                     onUiLanguageChange={setUiLanguage}
                     onAiLanguageChange={setAiLanguage}
                     onBaseWorkerChange={setBaseWorker}
+                    onLeaderWorkerChange={setLeaderWorker}
                     onExternalEditorAppChange={setExternalEditorApp}
-                    onSaveConstitution={(next) => void saveConstitution(next)}
+                    onSaveConstitution={(worker, leader) => void saveConstitution(worker, leader)}
                     onDetailModeChange={setDetailMode}
                     workerRetryIntervalSeconds={workerRetryConfig.intervalSeconds}
                     workerRetryMaxAttempts={workerRetryConfig.maxAttempts}
@@ -1776,6 +1868,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
                     onWorkerRetryMaxAttemptsChange={(count) => setWorkerRetryConfig({ maxAttempts: count })}
                     onRefreshProbes={() => setInstallProbeToken((n) => n + 1)}
                     extraTabs={settingsExtraTabs}
+                    tabRequest={settingsTabRequest}
                   />
                 </motion.div>
               ) : null}
