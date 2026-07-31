@@ -1,6 +1,7 @@
 import { BoardApp } from "@maple/board-ui";
 import type { AuthSessionResponse } from "@maple/protocol";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import pkg from "../package.json";
 import { DashboardApi, DashboardApiError } from "./api/client";
 import { createServerPlatform } from "./board/server-platform";
 import { AccountControl } from "./components/AccountControl";
@@ -169,6 +170,7 @@ export function App() {
     <BoardApp
       key={session.workspace.id}
       platform={platform}
+      version={pkg.version}
       settingsExtraTabs={buildAccountSettingsTabs({ api, session, onSession: adoptSession, onSignedOut: signedOut })}
       sidebarFooter={({ openSettings }) => (
         <AccountControl

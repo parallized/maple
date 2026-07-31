@@ -527,7 +527,7 @@ export function TaskDetailPanel({
                         transition={{ type: "spring", stiffness: 400, damping: 30 }}
                         className="flex flex-col"
                       >
-                        <div className="report-content text-[14px] leading-[1.55] text-secondary/85">
+                        <div className="report-content text-[13px] leading-[1.55] text-secondary/85">
                           <div className="flex-1 min-w-0">
                             {parsed
                               ? renderTaskMarkdown(parsed.description, "无", task.id)

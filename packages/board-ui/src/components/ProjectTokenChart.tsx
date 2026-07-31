@@ -11,7 +11,10 @@ export interface ProjectTokenChartEntry {
   projectId: string;
   name: string;
   totalTokens: number;
+  /** Worker（任务执行）产生的用量，按 Worker 类型分桶。 */
   byWorker: Partial<Record<WorkerKind, number>>;
+  /** Leader（调度决策）产生的用量，按 Worker 类型分桶。 */
+  byLeader: Partial<Record<WorkerKind, number>>;
 }
 
 interface ProjectTokenChartProps {
@@ -34,15 +37,29 @@ const WORKER_LABEL: Record<WorkerKind, string> = WORKER_KINDS.reduce(
   {} as Record<WorkerKind, string>
 );
 
-/** 出现在数据中的 worker 类型（用于 legend，保持稳定顺序）。 */
-function usedWorkerKinds(data: ProjectTokenChartEntry[]): WorkerKind[] {
-  const set = new Set<WorkerKind>();
+/** 堆叠 key 前缀：同一柱子上 Leader 段排在 Worker 段之上。 */
+const LEADER_KEY_PREFIX = "leader:";
+const kindOfKey = (key: string): WorkerKind => key.replace(LEADER_KEY_PREFIX, "") as WorkerKind;
+const isLeaderKey = (key: string): boolean => key.startsWith(LEADER_KEY_PREFIX);
+
+/** 出现在数据中的 worker 类型（用于 legend 与堆叠顺序，保持稳定）。 */
+function usedStackKeys(data: ProjectTokenChartEntry[]): { workerKinds: WorkerKind[]; keys: string[] } {
+  const workerSet = new Set<WorkerKind>();
+  const leaderSet = new Set<WorkerKind>();
   for (const entry of data) {
     for (const key of Object.keys(entry.byWorker) as WorkerKind[]) {
-      if ((entry.byWorker[key] ?? 0) > 0) set.add(key);
+      if ((entry.byWorker[key] ?? 0) > 0) workerSet.add(key);
+    }
+    for (const key of Object.keys(entry.byLeader) as WorkerKind[]) {
+      if ((entry.byLeader[key] ?? 0) > 0) leaderSet.add(key);
     }
   }
-  return ALL_WORKER_KINDS.filter((kind) => set.has(kind));
+  const workerKinds = ALL_WORKER_KINDS.filter((kind) => workerSet.has(kind));
+  const leaderKinds = ALL_WORKER_KINDS.filter((kind) => leaderSet.has(kind));
+  return {
+    workerKinds,
+    keys: [...workerKinds, ...leaderKinds.map((kind) => `${LEADER_KEY_PREFIX}${kind}`)]
+  };
 }
 
 /** 数字 → 带 K/M 的简短形式，用于坐标轴与图例。 */
@@ -73,7 +90,7 @@ function useContainerWidth(deps: unknown[] = []): [React.RefObject<HTMLDivElemen
 const MARGIN = { top: 12, right: 8, bottom: 28, left: 40 };
 
 export function ProjectTokenChart({ data }: ProjectTokenChartProps) {
-  const kinds = usedWorkerKinds(data);
+  const { workerKinds, keys } = usedStackKeys(data);
   const maxValue = Math.max(1, ...data.map((entry) => entry.totalTokens));
 
   const [containerRef, width] = useContainerWidth([data.length]);
@@ -143,22 +160,28 @@ export function ProjectTokenChart({ data }: ProjectTokenChartProps) {
               </g>
             ))}
 
-            <BarStack<ProjectTokenChartEntry, WorkerKind>
+            <BarStack<ProjectTokenChartEntry, string>
               data={data}
-              keys={kinds}
+              keys={keys}
               x={(entry) => entry.projectId}
-              value={(entry, kind) => entry.byWorker[kind] ?? 0}
+              value={(entry, key) =>
+                isLeaderKey(key) ? entry.byLeader[kindOfKey(key)] ?? 0 : entry.byWorker[kindOfKey(key)] ?? 0
+              }
               xScale={xScale}
               yScale={yScale}
-              color={(kind) => WORKER_COLOR[kind]}
+              color={(key) => WORKER_COLOR[kindOfKey(key)]}
             >
               {(barStacks) =>
                 barStacks.map((bar) =>
                   bar.bars.map((barPart) => {
-                    const kind = barPart.key as WorkerKind;
+                    const leader = isLeaderKey(barPart.key);
+                    const kind = kindOfKey(barPart.key);
                     const datum = barPart.bar.data as ProjectTokenChartEntry;
                     // codex 品牌色为纯白，浅色主题下在白色卡片上不可见；改用前景色（深色主题下本来就是近白）。
                     const isWhite = WORKER_COLOR[kind].toLowerCase() === "#ffffff";
+                    const color = isWhite ? "var(--color-base-content)" : barPart.color;
+                    const value = leader ? datum.byLeader[kind] ?? 0 : datum.byWorker[kind] ?? 0;
+                    // 同一柱子上的两种设计：Worker 段实心品牌色；Leader 段半透明 + 同色虚线描边。
                     return (
                       <motion.rect
                         key={`bar-${bar.index}-${barPart.key}`}
@@ -166,14 +189,18 @@ export function ProjectTokenChart({ data }: ProjectTokenChartProps) {
                         y={barPart.y}
                         width={barPart.width}
                         height={Math.max(0, barPart.height)}
-                        fill={isWhite ? "var(--color-base-content)" : barPart.color}
+                        fill={color}
+                        fillOpacity={leader ? 0.16 : 1}
+                        stroke={leader ? color : "none"}
+                        strokeWidth={leader ? 1 : 0}
+                        strokeDasharray={leader ? "3 2" : undefined}
                         initial={{ opacity: 0, scaleY: 0.6 }}
-                        animate={{ opacity: 0.92, scaleY: 1 }}
+                        animate={{ opacity: leader ? 1 : 0.92, scaleY: 1 }}
                         transition={{ duration: 0.4, delay: bar.index * 0.04 }}
                         style={{ transformOrigin: "bottom" }}
                       >
                         <title>
-                          {datum.name} · {WORKER_LABEL[kind]}：{formatTokens(datum.byWorker[kind] ?? 0)}
+                          {datum.name} · {WORKER_LABEL[kind]} · {leader ? "Leader" : "Worker"}：{formatTokens(value)}
                         </title>
                       </motion.rect>
                     );
@@ -203,9 +230,9 @@ export function ProjectTokenChart({ data }: ProjectTokenChartProps) {
         </svg>
       </div>
 
-      {/* Legend */}
+      {/* Legend：颜色区分 Worker 类型；实心 / 虚线区分 Worker / Leader 角色 */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 flex-none">
-        {kinds.map((kind) => (
+        {workerKinds.map((kind) => (
           <span key={kind} className="flex items-center gap-1.5">
             <span
               className="w-2 h-2 rounded-sm flex-none"
@@ -217,6 +244,14 @@ export function ProjectTokenChart({ data }: ProjectTokenChartProps) {
             <span className="text-[10px] lg:text-[11px] text-muted font-sans">{WORKER_LABEL[kind]}</span>
           </span>
         ))}
+        <span className="flex items-center gap-1.5 ml-auto">
+          <span className="w-2 h-2 rounded-sm flex-none bg-(--color-secondary)/70" />
+          <span className="text-[10px] lg:text-[11px] text-muted font-sans">Worker</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-sm flex-none border border-dashed border-(--color-secondary)/70 bg-(--color-secondary)/15" />
+          <span className="text-[10px] lg:text-[11px] text-muted font-sans">Leader</span>
+        </span>
       </div>
     </div>
   );

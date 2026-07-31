@@ -85,7 +85,9 @@ export const claudeAdapter: CodingAgentAdapter = {
       executable: env.MAPLE_CLAUDE_BIN?.trim() || "claude",
       args: [
         "--print",
-        ...(env.MAPLE_MCP_CONFIG?.trim() ? ["--mcp-config", env.MAPLE_MCP_CONFIG.trim()] : []),
+        ...(!options?.disableMcp && env.MAPLE_MCP_CONFIG?.trim()
+          ? ["--mcp-config", env.MAPLE_MCP_CONFIG.trim()]
+          : []),
         ...(model ? ["--model", model] : []),
         ...(effort ? ["--effort", effort] : []),
         ...(options?.resumeSessionId ? ["--resume", options.resumeSessionId] : []),

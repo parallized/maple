@@ -4,6 +4,10 @@ export interface KillableSubprocess {
   kill(signal?: number | NodeJS.Signals): void;
 }
 
+export interface ReapableSubprocess extends KillableSubprocess {
+  readonly exited: Promise<unknown>;
+}
+
 const WINDOWS_TREE_KILL_TIMEOUT_MS = 2_000;
 const KILLER_SHUTDOWN_TIMEOUT_MS = 250;
 
@@ -86,4 +90,25 @@ export async function forceTerminateProcessTree(subprocess: KillableSubprocess):
     signalProcessGroup(subprocess.pid, "SIGKILL");
   }
   signalSubprocess(subprocess, "SIGKILL");
+}
+
+/**
+ * 给已完成协议交互的 CLI 一个很短的自然退出窗口，然后在后台收掉完整进程树。
+ * 调用方可以不等待该 Promise，从而不让 Provider 的慢退出阻塞业务完成。
+ */
+export async function reapCompletedProcessTree(
+  subprocess: ReapableSubprocess,
+  graceMs = 250
+): Promise<void> {
+  if (subprocess.exitCode !== null) return;
+  if (await settlesWithin(subprocess.exited, graceMs)) return;
+  if (process.platform === "win32") {
+    await forceTerminateProcessTree(subprocess);
+    await settlesWithin(subprocess.exited, WINDOWS_TREE_KILL_TIMEOUT_MS);
+    return;
+  }
+  terminateProcessTree(subprocess);
+  if (await settlesWithin(subprocess.exited, graceMs)) return;
+  await forceTerminateProcessTree(subprocess);
+  await settlesWithin(subprocess.exited, WINDOWS_TREE_KILL_TIMEOUT_MS);
 }

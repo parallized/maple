@@ -246,7 +246,12 @@ describe("Runner structured run events", () => {
         exitCode: 2,
         summary: "这段 Worker 文本不能成为报告。",
         error: "unknown option --legacy-flag",
-        usage: null,
+        usage: {
+          inputTokens: 900,
+          cachedInputTokens: 300,
+          outputTokens: 80,
+          reasoningOutputTokens: 20
+        },
         sessionId: null,
         sessionUnavailable: false
       }),
@@ -255,6 +260,12 @@ describe("Runner structured run events", () => {
         expect(options.failure.requiredWorkerKind).toBe("kimi");
         expect(options.failure.exitCode).toBe(2);
         expect(options.failure.error).toBe("unknown option --legacy-flag");
+        options.onUsage?.({
+          inputTokens: 120,
+          cachedInputTokens: 40,
+          outputTokens: 18,
+          reasoningOutputTokens: 7
+        });
         return "Kimi 参数无效，任务未完成。";
       }
     });
@@ -267,6 +278,18 @@ describe("Runner structured run events", () => {
       exitCode: 2,
       summary: "Kimi 参数无效，任务未完成。",
       error: "unknown option --legacy-flag",
+      usage: {
+        inputTokens: 900,
+        cachedInputTokens: 300,
+        outputTokens: 80,
+        reasoningOutputTokens: 20
+      },
+      leaderUsage: {
+        inputTokens: 120,
+        cachedInputTokens: 40,
+        outputTokens: 18,
+        reasoningOutputTokens: 7
+      },
       failureDisposition: "blocked"
     });
   });
@@ -294,6 +317,12 @@ describe("Runner structured run events", () => {
     let managerClaimed = false;
     let routed = false;
     let workerClaimed = false;
+    let releaseManager: (() => void) | null = null;
+    const workerPollStarted = new Promise<void>((resolve) => {
+      releaseManager = resolve;
+    });
+    let firstEmptyClaimAt = 0;
+    let workerStartedAt = 0;
     const managerCompletions: CompleteProjectManagerJobRequest[] = [];
     const api = {
       serverUrl: "http://maple.test",
@@ -324,7 +353,14 @@ describe("Runner structured run events", () => {
         };
       },
       claim: async () => {
-        if (!routed || workerClaimed) return { job: null, retryAfterMs: 10 };
+        if (!routed) {
+          if (!firstEmptyClaimAt) {
+            firstEmptyClaimAt = performance.now();
+            releaseManager?.();
+          }
+          return { job: null, retryAfterMs: 1_500 };
+        }
+        if (workerClaimed) return { job: null, retryAfterMs: 1_500 };
         workerClaimed = true;
         return { job: execution, retryAfterMs: 0 };
       },
@@ -364,7 +400,10 @@ describe("Runner structured run events", () => {
         info: () => undefined,
         warn: () => undefined,
         worker: () => undefined,
-        jobStarted: (slot, _title, _projectName, workerKind) => started.push({ slot, workerKind }),
+        jobStarted: (slot, _title, _projectName, workerKind) => {
+          workerStartedAt = performance.now();
+          started.push({ slot, workerKind });
+        },
         managerStatus: (activity) => managerStatuses.push(activity),
         managerRecord: (event) => managerRecords.push(event)
       },
@@ -378,6 +417,7 @@ describe("Runner structured run events", () => {
         _executor,
         onDiagnostic
       ) => {
+        await workerPollStarted;
         await onDiagnostic?.({
           sequence: 0,
           occurredAt: "2026-07-27T08:00:01.000Z",
@@ -392,6 +432,12 @@ describe("Runner structured run events", () => {
         return {
           outcome: "dispatched",
           managerWorkerKind: "codex",
+          usage: {
+            inputTokens: 120,
+            cachedInputTokens: 40,
+            outputTokens: 18,
+            reasoningOutputTokens: 7
+          },
           decision: {
             selectedWorkerKind: "kimi",
             workflowId: null,
@@ -408,6 +454,12 @@ describe("Runner structured run events", () => {
 
     expect(managerCompletions).toHaveLength(1);
     expect(managerCompletions[0]?.selectedWorkerKind).toBe("kimi");
+    expect(managerCompletions[0]?.usage).toEqual({
+      inputTokens: 120,
+      cachedInputTokens: 40,
+      outputTokens: 18,
+      reasoningOutputTokens: 7
+    });
     expect(managerStatuses).toEqual([
       {
         projectId: "project-1",
@@ -439,6 +491,8 @@ describe("Runner structured run events", () => {
       projectName: "Adapter Project"
     }]);
     expect(started).toEqual([{ slot: 0, workerKind: "kimi" }]);
+    expect(firstEmptyClaimAt).toBeGreaterThan(0);
+    expect(workerStartedAt - firstEmptyClaimAt).toBeLessThan(750);
   });
 
   it("uploads enabled acceptance screenshots before completing the Todo", async () => {

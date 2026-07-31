@@ -312,6 +312,23 @@ export class DispatchService {
          WHERE id = ?`,
         [todoStatus, retryAfter, summary, error, shouldRetry ? null : now, now, todoId]
       );
+      if (input.leaderUsage) {
+        this.database.run(
+          `UPDATE todo_routes
+           SET manager_usage_input_tokens = manager_usage_input_tokens + ?,
+               manager_usage_cached_input_tokens = manager_usage_cached_input_tokens + ?,
+               manager_usage_output_tokens = manager_usage_output_tokens + ?,
+               manager_usage_reasoning_output_tokens = manager_usage_reasoning_output_tokens + ?
+           WHERE todo_id = ? AND manager_worker_kind IS NOT NULL`,
+          [
+            input.leaderUsage.inputTokens,
+            input.leaderUsage.cachedInputTokens,
+            input.leaderUsage.outputTokens,
+            input.leaderUsage.reasoningOutputTokens,
+            todoId
+          ]
+        );
+      }
       touchRevision(this.database);
       return this.readMutation(todoId, lease.active_attempt_id);
     });

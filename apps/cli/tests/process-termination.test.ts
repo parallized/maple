@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   forceTerminateProcessTree,
+  reapCompletedProcessTree,
   windowsForceKillCommand
 } from "../src/execution/process-termination";
 
@@ -35,6 +36,29 @@ describe("Worker process termination", () => {
         Bun.sleep(2_000).then(() => false)
       ]);
       expect(exited).toBe(true);
+    } finally {
+      if (subprocess.exitCode === null) subprocess.kill("SIGKILL");
+    }
+  });
+
+  it("reaps a process that stays alive after protocol completion", async () => {
+    const subprocess = Bun.spawn([
+      process.execPath,
+      "-e",
+      "setInterval(() => undefined, 1000)"
+    ], {
+      detached: process.platform !== "win32",
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore"
+    });
+
+    try {
+      await reapCompletedProcessTree(subprocess, 10);
+      expect(await Promise.race([
+        subprocess.exited.then(() => true),
+        Bun.sleep(2_000).then(() => false)
+      ])).toBe(true);
     } finally {
       if (subprocess.exitCode === null) subprocess.kill("SIGKILL");
     }

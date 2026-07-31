@@ -16,6 +16,7 @@ import {
   type ExchangePairingRequest,
   type HealthResponse,
   type HomeStatsResponse,
+  type ModelPricingResponse,
   type RecordInstallShDownloadResponse,
   type RunnerCapability,
   type VersionHistoryResponse,
@@ -32,6 +33,10 @@ import { apiError, conflict, HttpError, notFound, unauthorized } from "./http/re
 import { ArtifactRepository, ArtifactValidationError } from "./repositories/artifact-repository";
 import { DownloadRateLimitError } from "./repositories/download-statistics-repository";
 import { ProjectRepository } from "./repositories/project-repository";
+import {
+  DEFAULT_MODEL_PRICING_SOURCE_URL,
+  ModelPricingRepository
+} from "./repositories/model-pricing-repository";
 import { RunnerCommandRepository } from "./repositories/runner-command-repository";
 import { RunnerRepository } from "./repositories/runner-repository";
 import { RunRepository } from "./repositories/run-repository";
@@ -43,6 +48,7 @@ import { ProjectManagerService } from "./services/project-manager-service";
 import { DeviceAuthorizationService } from "./services/device-authorization-service";
 import { ReleaseService } from "./services/release-service";
 import { RunnerReconciliationService } from "./services/runner-reconciliation-service";
+import type { ModelPricingSyncService } from "./services/model-pricing-sync-service";
 import {
   ProviderCredentialServiceError,
   type ProviderCredentialService
@@ -52,6 +58,13 @@ import { DashboardAssets } from "./web/dashboard-assets";
 import type { StandaloneIdentity } from "./standalone/identity";
 
 const workerKindSchema = t.Union(WORKER_KINDS.map((kind) => t.Literal(kind)));
+const tokenUsageSchema = t.Object({
+  inputTokens: t.Integer({ minimum: 0 }),
+  cachedInputTokens: t.Integer({ minimum: 0 }),
+  outputTokens: t.Integer({ minimum: 0 }),
+  reasoningOutputTokens: t.Integer({ minimum: 0 })
+});
+const optionalTokenUsageSchema = t.Optional(t.Union([t.Null(), tokenUsageSchema]));
 const supportedWorkersSchema = t.Optional(t.Array(t.String({ maxLength: 40 }), { maxItems: 32 }));
 const workerInventorySchema = t.Optional(t.Array(t.Object({
   kind: t.String({ maxLength: 40 }),
@@ -131,6 +144,7 @@ export interface CreateServerAppOptions {
   database: Database;
   standaloneIdentity?: StandaloneIdentity;
   providerCredentials?: ProviderCredentialService;
+  modelPricingSync?: ModelPricingSyncService;
 }
 
 export function createServerApp(options: CreateServerAppOptions) {
@@ -145,6 +159,8 @@ export function createServerApp(options: CreateServerAppOptions) {
   const runHistory = new RunRepository(database);
   const todos = new TodoRepository(database);
   const settings = new SettingsRepository(database);
+  const modelPricing = new ModelPricingRepository(database);
+  modelPricing.configureSource(config.modelPricingSourceUrl?.trim() || DEFAULT_MODEL_PRICING_SOURCE_URL);
   const artifacts = new ArtifactRepository(database, config.dataDir);
   const taskAssets = new TaskAssetRepository(database, config.dataDir);
   const projectManager = new ProjectManagerService(
@@ -561,6 +577,34 @@ export function createServerApp(options: CreateServerAppOptions) {
       };
       return snapshot;
     })
+    .get("/api/model-pricing", ({ request }) => {
+      webAccess(request);
+      const limit = readIntegerQuery(request, "limit", 1_000, 1, 5_000);
+      const offset = readIntegerQuery(request, "offset", 0, 0, Number.MAX_SAFE_INTEGER);
+      if (limit === null || offset === null) {
+        return apiError(422, "invalid_pagination", "价格矩阵分页参数无效。");
+      }
+      const query = new URL(request.url).searchParams;
+      const providerId = query.get("provider")?.trim() || undefined;
+      const modelId = query.get("model")?.trim() || undefined;
+      if ((providerId && providerId.length > 200) || (modelId && modelId.length > 300)) {
+        return apiError(422, "invalid_model_pricing_filter", "价格矩阵筛选条件无效。");
+      }
+      const response: ModelPricingResponse = modelPricing.list({
+        providerId,
+        modelId,
+        limit,
+        offset,
+        enabled: options.modelPricingSync?.isEnabled === true
+      });
+      return response;
+    })
+    .get("/api/model-pricing/status", ({ request }) => {
+      webAccess(request);
+      return modelPricing.status(
+        options.modelPricingSync?.isEnabled === true
+      );
+    })
     .get("/api/settings/acceptance", ({ request }) => {
       const { workspaceId } = webAccess(request);
       return settings.getAcceptance(workspaceId);
@@ -859,6 +903,7 @@ export function createServerApp(options: CreateServerAppOptions) {
         body: t.Object({
           leaseToken: t.String({ minLength: 20, maxLength: 200 }),
           managerWorkerKind: workerKindSchema,
+          usage: optionalTokenUsageSchema,
           selectedWorkerKind: workerKindSchema,
           workflowId: t.Union([t.String({ minLength: 1, maxLength: 100 }), t.Null()]),
           workflowTitle: t.String({ minLength: 1, maxLength: 160 }),
@@ -880,6 +925,7 @@ export function createServerApp(options: CreateServerAppOptions) {
         body: t.Object({
           leaseToken: t.String({ minLength: 20, maxLength: 200 }),
           managerWorkerKind: workerKindSchema,
+          usage: optionalTokenUsageSchema,
           report: t.Optional(t.String({ minLength: 1, maxLength: 100_000 })),
           technicalError: t.Optional(t.String({ minLength: 1, maxLength: 100_000 }))
         })
@@ -1080,17 +1126,8 @@ export function createServerApp(options: CreateServerAppOptions) {
           summary: t.Optional(t.String({ maxLength: 100_000 })),
           error: t.Optional(t.String({ maxLength: 100_000 })),
           failureDisposition: t.Optional(t.Union([t.Literal("retry"), t.Literal("blocked")])),
-          usage: t.Optional(
-            t.Union([
-              t.Null(),
-              t.Object({
-                inputTokens: t.Integer({ minimum: 0 }),
-                cachedInputTokens: t.Integer({ minimum: 0 }),
-                outputTokens: t.Integer({ minimum: 0 }),
-                reasoningOutputTokens: t.Integer({ minimum: 0 })
-              })
-            ])
-          )
+          usage: optionalTokenUsageSchema,
+          leaderUsage: optionalTokenUsageSchema
         })
       }
     )

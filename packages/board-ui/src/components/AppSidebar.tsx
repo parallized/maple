@@ -8,6 +8,7 @@ import { runnerPlatformIcon } from "../lib/runner-icon";
 import { useMediaQuery } from "../lib/use-media-query";
 import { isTaskInFlight } from "../lib/utils";
 import type { SidebarWorkerItem } from "../lib/worker-sidebar";
+import { VersionHistory } from "./VersionHistory";
 import { WorkerLogo } from "./WorkerLogo";
 import type { ReactNode } from "react";
 
@@ -40,6 +41,8 @@ type AppSidebarProps = {
   onToggleMaximize: () => void;
   onClose: () => void;
   footer?: ReactNode;
+  /** 应用版本号，显示在侧栏最底部。 */
+  version?: string;
 };
 
 /** 全局左侧导航栏(Linear 风):Logo / 概览 / 项目列表 / 设置。 */
@@ -59,7 +62,8 @@ export function AppSidebar({
   onMinimize,
   onToggleMaximize,
   onClose,
-  footer
+  footer,
+  version
 }: AppSidebarProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const [seenProjects, setSeenProjects] = useState<Set<string>>(loadSeenProjects);
@@ -281,6 +285,9 @@ export function AppSidebar({
               <Icon icon="mingcute:close-line" />
             </button>
           </div>
+        ) : null}
+        {version ? (
+          <VersionHistory version={version} uiLanguage={uiLanguage} />
         ) : null}
       </div>
     </aside>

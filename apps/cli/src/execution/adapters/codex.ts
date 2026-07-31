@@ -111,8 +111,8 @@ export const codexAdapter: CodingAgentAdapter = {
     const resume = options?.resumeSessionId
       ? ["resume", options.resumeSessionId, "-"]
       : ["-"];
-    const mcpCommand = env.MAPLE_MCP_COMMAND?.trim();
-    const mcpArgs = env.MAPLE_MCP_ARGS?.trim();
+    const mcpCommand = options?.disableMcp ? undefined : env.MAPLE_MCP_COMMAND?.trim();
+    const mcpArgs = options?.disableMcp ? undefined : env.MAPLE_MCP_ARGS?.trim();
     return {
       executable: env.MAPLE_CODEX_BIN?.trim() || "codex",
       args: [
@@ -128,6 +128,7 @@ export const codexAdapter: CodingAgentAdapter = {
         "--json",
         ...resume
       ],
+      ...(options?.isolatedHome ? { env: { CODEX_HOME: options.isolatedHome } } : {}),
       stdin: prompt
     };
   },

@@ -91,6 +91,35 @@ describe("Coding Agent commands", () => {
     expect(deepseek.args).toContain('model_reasoning_effort="low"');
   });
 
+  it("isolates a DeepSeek Leader from user-global and Maple MCP configuration", () => {
+    const isolatedHome = "C:\\maple\\managers\\project-1\\deepseek-codex-home";
+    const command = buildWorkerCommand("deepseek", PROMPT, "direct", {
+      DEEPSEEK_API_KEY: "sk-deepseek-test-secret",
+      MAPLE_MCP_COMMAND: "maple-mcp",
+      MAPLE_MCP_ARGS: '["serve"]'
+    }, {
+      readOnly: true,
+      disableMcp: true,
+      isolatedHome
+    });
+
+    expect(command.env).toEqual({
+      DEEPSEEK_API_KEY: "sk-deepseek-test-secret",
+      CODEX_HOME: isolatedHome
+    });
+    expect(command.args.join(" ")).not.toContain("mcp_servers.maple");
+    expect(command.args).toContain("read-only");
+
+    const codex = buildWorkerCommand("codex", PROMPT, "direct", {
+      MAPLE_MCP_COMMAND: "maple-mcp"
+    }, { disableMcp: true });
+    const claude = buildWorkerCommand("claude", PROMPT, "direct", {
+      MAPLE_MCP_CONFIG: "C:\\maple\\mcp.json"
+    }, { disableMcp: true });
+    expect(codex.args.join(" ")).not.toContain("mcp_servers.maple");
+    expect(claude.args).not.toContain("--mcp-config");
+  });
+
   it.each([
     ["codex", "--add-dir"],
     ["deepseek", "--add-dir"],
@@ -142,7 +171,7 @@ describe("Coding Agent commands", () => {
       installed
     }))).toEqual([
       { kind: "codex", label: "Codex", executable: "codex-custom", installed: true },
-      { kind: "deepseek", label: "DeepSeek Flash", executable: "codex-custom", installed: false },
+      { kind: "deepseek", label: "DeepSeek-Flash", executable: "codex-custom", installed: false },
       { kind: "claude", label: "Claude", executable: "claude", installed: false },
       { kind: "kimi", label: "Kimi", executable: "kimi", installed: false },
       { kind: "glm", label: "GLM", executable: "opencode", installed: true },
@@ -490,5 +519,100 @@ describe("process execution lifecycle", () => {
     expect(entries.map((entry) => entry.sequence)).toEqual([0, 1]);
     expect(entries.map((entry) => entry.kind)).toEqual(["lifecycle", "error"]);
     expect(entries.every((entry) => Number.isFinite(Date.parse(entry.occurredAt)))).toBe(true);
+  });
+
+  it("uses an explicit cancellation reason for a Leader PM run", async () => {
+    const controller = new AbortController();
+    controller.abort("Leader PM 执行超过 30 秒，已自动停止本次派单。");
+
+    const result = await executeWorker({
+      workerKind: "codex",
+      cwd: import.meta.dir,
+      prompt: "route",
+      signal: controller.signal,
+      readOnly: true,
+      onLog: async () => undefined
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      exitCode: null,
+      error: "Leader PM 执行超过 30 秒，已自动停止本次派单。"
+    });
+  });
+
+  it("returns on the Leader terminal event without waiting for process exit", async () => {
+    const decision = JSON.stringify({
+      workflowId: null,
+      workflowTitle: "Fast route",
+      workflowSummary: "Route immediately.",
+      executionMode: "serial",
+      workerKind: "codex",
+      dispatchBrief: "Start the Worker."
+    });
+    const output = [
+      JSON.stringify({ type: "thread.started", thread_id: "fast-leader-session" }),
+      JSON.stringify({ type: "turn.started" }),
+      JSON.stringify({
+        type: "item.completed",
+        item: { id: "message-1", type: "agent_message", text: decision }
+      }),
+      JSON.stringify({
+        type: "turn.completed",
+        usage: {
+          input_tokens: 7157,
+          cached_input_tokens: 6656,
+          output_tokens: 254,
+          reasoning_output_tokens: 162
+        }
+      })
+    ].join("\n") + "\n";
+    let subprocess: Bun.Subprocess<"ignore", "pipe", "pipe"> | null = null;
+    const startedAt = performance.now();
+
+    const result = await executeWorker({
+      workerKind: "codex",
+      cwd: import.meta.dir,
+      prompt: "route",
+      signal: new AbortController().signal,
+      readOnly: true,
+      completeOnTerminalEvent: true,
+      spawnProcess: () => {
+        subprocess = Bun.spawn([
+          process.execPath,
+          "-e",
+          `process.stdout.write(${JSON.stringify(output)}); setInterval(() => {}, 1000);`
+        ], {
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          detached: process.platform !== "win32"
+        });
+        return subprocess;
+      },
+      onLog: async () => undefined
+    });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(1_000);
+    expect(result).toMatchObject({
+      success: true,
+      exitCode: 0,
+      summary: decision,
+      sessionId: "fast-leader-session",
+      usage: {
+        inputTokens: 7157,
+        cachedInputTokens: 6656,
+        outputTokens: 254,
+        reasoningOutputTokens: 162
+      }
+    });
+    expect(subprocess).not.toBeNull();
+    const reaped = await Promise.race([
+      subprocess!.exited.then(() => true),
+      Bun.sleep(3_000).then(() => false)
+    ]);
+    if (subprocess!.exitCode === null) subprocess!.kill("SIGKILL");
+    expect(reaped).toBe(true);
   });
 });

@@ -138,6 +138,8 @@ function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
             item.children.push({ checked: null, text: (subMatch[2] ?? "").trim(), children: [] });
             index += 1;
           } else if (/^\s+\S/.test(subLine)) {
+            // 缩进续行属于当前条目（如冒号后的命令行），不能丢弃。
+            item.text += `\n${subLine.trim()}`;
             index += 1;
           } else {
             break;
@@ -270,7 +272,7 @@ export function renderTaskMarkdown(markdown: string, emptyText = "无", taskId =
                         className="mt-[0.2rem] h-3.5 w-3.5 shrink-0 accent-(--color-primary) pointer-events-none"
                       />
                     )}
-                    <span className={item.checked ? "opacity-65 line-through" : ""}>
+                    <span className={`whitespace-pre-wrap ${item.checked ? "opacity-65 line-through" : ""}`}>
                       {renderInlineMarkdown(item.text)}
                     </span>
                     {item.children.length > 0 && (
@@ -291,7 +293,7 @@ export function renderTaskMarkdown(markdown: string, emptyText = "无", taskId =
             <ListTag key={`list-${blockIndex}`} className={`${block.ordered ? "list-decimal" : "list-disc"} pl-5 space-y-1`}>
               {block.items.map((item, itemIndex) => (
                 <li key={`${blockIndex}-${itemIndex}`}>
-                  {renderInlineMarkdown(item.text)}
+                  <span className="whitespace-pre-wrap">{renderInlineMarkdown(item.text)}</span>
                   {item.children.length > 0 && (
                     <ul className="list-disc pl-5 space-y-1 mt-1">
                       {item.children.map((child, childIndex) => (

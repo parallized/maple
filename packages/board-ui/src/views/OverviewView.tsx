@@ -278,7 +278,7 @@ export function OverviewView({ uiLanguage, metrics, runners, workerAvailability,
               <Icon icon="mingcute:chart-bar-line" className="text-[16px] lg:text-lg opacity-60 group-hover:opacity-100 transition-opacity" />
               <span>{t("Token 用量", "Token Usage")}</span>
               <span className="ml-auto text-[10px] lg:text-[11px] text-muted opacity-60 font-normal hidden sm:inline">
-                {t("按项目统计，颜色区分 Worker", "By project, colored by worker")}
+                {t("按项目统计，实心 Worker · 虚线 Leader", "By project — solid: worker, dashed: leader")}
               </span>
             </div>
             <div className="min-h-[180px]">

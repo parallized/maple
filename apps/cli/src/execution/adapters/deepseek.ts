@@ -11,7 +11,7 @@ function tomlString(value: string): string {
 /** DeepSeek 是独立 Worker；执行与 JSONL 会话协议复用 Codex CLI。 */
 export const deepSeekAdapter: CodingAgentAdapter = {
   kind: "deepseek",
-  label: "DeepSeek Flash",
+  label: "DeepSeek-Flash",
   buildCommand(prompt, env, options) {
     const model = env.MAPLE_DEEPSEEK_MODEL?.trim() || DEFAULT_MODEL;
     const reasoningEffort = options?.reasoningEffort?.trim()
@@ -19,8 +19,11 @@ export const deepSeekAdapter: CodingAgentAdapter = {
       || "high";
     const catalog = env.MAPLE_DEEPSEEK_MODEL_CATALOG?.trim();
     const apiKey = env.DEEPSEEK_API_KEY?.trim();
-    const mcpCommand = env.MAPLE_MCP_COMMAND?.trim();
-    const mcpArgs = env.MAPLE_MCP_ARGS?.trim();
+    const mcpCommand = options?.disableMcp ? undefined : env.MAPLE_MCP_COMMAND?.trim();
+    const mcpArgs = options?.disableMcp ? undefined : env.MAPLE_MCP_ARGS?.trim();
+    const commandEnv: Record<string, string> = {};
+    if (apiKey) commandEnv.DEEPSEEK_API_KEY = apiKey;
+    if (options?.isolatedHome) commandEnv.CODEX_HOME = options.isolatedHome;
     const resume = options?.resumeSessionId
       ? ["resume", options.resumeSessionId, "-"]
       : ["-"];
@@ -58,7 +61,7 @@ export const deepSeekAdapter: CodingAgentAdapter = {
         "--json",
         ...resume
       ],
-      ...(apiKey ? { env: { DEEPSEEK_API_KEY: apiKey } } : {}),
+      ...(Object.keys(commandEnv).length > 0 ? { env: commandEnv } : {}),
       stdin: prompt
     };
   },

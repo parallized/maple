@@ -284,14 +284,22 @@ export class ProjectManagerService {
 
       this.database.run(
         `UPDATE todo_routes
-         SET workflow_id = ?, state = 'routed', manager_worker_kind = ?,
-             selected_worker_kind = ?, execution_mode = ?, dispatch_brief = ?,
+          SET workflow_id = ?, state = 'routed', manager_worker_kind = ?,
+              manager_usage_input_tokens = manager_usage_input_tokens + ?,
+              manager_usage_cached_input_tokens = manager_usage_cached_input_tokens + ?,
+              manager_usage_output_tokens = manager_usage_output_tokens + ?,
+              manager_usage_reasoning_output_tokens = manager_usage_reasoning_output_tokens + ?,
+              selected_worker_kind = ?, execution_mode = ?, dispatch_brief = ?,
              lease_token_hash = NULL, lease_expires_at = NULL,
              completed_at = ?, updated_at = ?
          WHERE todo_id = ?`,
         [
           workflowId,
           input.managerWorkerKind,
+          input.usage?.inputTokens ?? 0,
+          input.usage?.cachedInputTokens ?? 0,
+          input.usage?.outputTokens ?? 0,
+          input.usage?.reasoningOutputTokens ?? 0,
           input.selectedWorkerKind,
           input.executionMode,
           input.dispatchBrief.trim(),
@@ -356,11 +364,25 @@ export class ProjectManagerService {
       const technicalError = input.technicalError?.trim() || null;
       this.database.run(
         `UPDATE todo_routes
-         SET state = 'routed', manager_worker_kind = ?, selected_worker_kind = ?,
-             lease_token_hash = NULL, lease_expires_at = NULL,
+          SET state = 'routed', manager_worker_kind = ?, selected_worker_kind = ?,
+              manager_usage_input_tokens = manager_usage_input_tokens + ?,
+              manager_usage_cached_input_tokens = manager_usage_cached_input_tokens + ?,
+              manager_usage_output_tokens = manager_usage_output_tokens + ?,
+              manager_usage_reasoning_output_tokens = manager_usage_reasoning_output_tokens + ?,
+              lease_token_hash = NULL, lease_expires_at = NULL,
              completed_at = ?, updated_at = ?
          WHERE todo_id = ?`,
-        [input.managerWorkerKind, route.worker_kind, now, now, todoId]
+        [
+          input.managerWorkerKind,
+          route.worker_kind,
+          input.usage?.inputTokens ?? 0,
+          input.usage?.cachedInputTokens ?? 0,
+          input.usage?.outputTokens ?? 0,
+          input.usage?.reasoningOutputTokens ?? 0,
+          now,
+          now,
+          todoId
+        ]
       );
       this.database.run(
         `UPDATE todos

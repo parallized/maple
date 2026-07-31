@@ -88,6 +88,7 @@ export function mapSnapshotToProjects(snapshot: DashboardSnapshot, order: string
     const list = usageByProject.get(entry.projectId);
     const bucket: ProjectTokenUsage = {
       workerKind: toBoardWorkerKind(entry.workerKind),
+      agentRole: entry.agentRole,
       totalTokens:
         entry.inputTokens + entry.cachedInputTokens + entry.outputTokens + entry.reasoningOutputTokens,
       inputTokens: entry.inputTokens,

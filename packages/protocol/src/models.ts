@@ -31,6 +31,26 @@ export interface TokenUsage {
   reasoningOutputTokens: number;
 }
 
+/** A provider-specific model price snapshot sourced from models.dev. */
+export interface ModelPricingEntry {
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  modelName: string;
+  /** USD per million tokens; null means models.dev did not publish this rate. */
+  inputUsdPerMillion: number | null;
+  reasoningUsdPerMillion: number | null;
+  outputUsdPerMillion: number | null;
+  cacheReadUsdPerMillion: number | null;
+  cacheWriteUsdPerMillion: number | null;
+  inputAudioUsdPerMillion: number | null;
+  outputAudioUsdPerMillion: number | null;
+  /** Retains tiers and other pricing dimensions added by models.dev. */
+  cost: Record<string, unknown>;
+  lastUpdated: string | null;
+  fetchedAt: string;
+}
+
 export const SCREENSHOT_COMPRESSION_PRESETS = ["high", "balanced", "compact"] as const;
 export type ScreenshotCompressionPreset = (typeof SCREENSHOT_COMPRESSION_PRESETS)[number];
 export const DEFAULT_SCREENSHOT_COMPRESSION_PRESET: ScreenshotCompressionPreset = "balanced";

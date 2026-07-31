@@ -2,6 +2,7 @@ import type {
   AiOutputLanguage,
   RunLogEntry,
   Todo,
+  TokenUsage,
   WorkerKind
 } from "@maple/protocol";
 import type { WorkerExecutor } from "../execution/process-executor";
@@ -35,6 +36,7 @@ export interface ProjectManagerFailureReportOptions {
   sessionStore?: AgentSessionStore;
   executor?: WorkerExecutor;
   onDiagnostic?: ProjectManagerDiagnosticHandler;
+  onUsage?: (usage: TokenUsage | null) => void;
 }
 
 function languageInstruction(language: AiOutputLanguage | undefined): string {
@@ -87,6 +89,7 @@ export async function runProjectManagerFailureReport(
       options.outputLanguage
     )
   });
+  options.onUsage?.(result.usage);
   const report = result.summary.trim();
   if (!report) throw new Error("Leader PM 没有返回失败报告。");
   return report;

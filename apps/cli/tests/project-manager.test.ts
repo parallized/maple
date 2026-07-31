@@ -15,6 +15,7 @@ import {
   runProjectManager,
   type ProjectManagerDiagnosticEvent
 } from "../src/manager/project-manager";
+import { DEFAULT_MANAGER_TIMEOUT_MS, runManagerAgentTurn } from "../src/manager/agent-turn";
 import { buildWorkerCommand } from "../src/execution/worker-command";
 import { AgentSessionStore } from "../src/session/store";
 
@@ -94,6 +95,106 @@ function managerJob(): ProjectManagerJob {
 }
 
 describe("Project manager dispatch", () => {
+  it("limits a Leader turn to 30 seconds and reports its own timeout cause", async () => {
+    expect(DEFAULT_MANAGER_TIMEOUT_MS).toBe(30_000);
+    const executor: WorkerExecutor = async (options) => await new Promise((resolve) => {
+      const finish = () => resolve({
+        success: false,
+        exitCode: null,
+        summary: "",
+        error: typeof options.signal.reason === "string" ? options.signal.reason : "cancelled",
+        usage: null,
+        sessionId: null,
+        sessionUnavailable: false
+      });
+      options.signal.addEventListener("abort", finish, { once: true });
+      if (options.signal.aborted) finish();
+    });
+
+    await expect(runManagerAgentTurn({
+      projectId: "project-1",
+      managerWorkerKind: "codex",
+      managerWorkspace: ".",
+      signal: new AbortController().signal,
+      shell: "direct",
+      buildPrompt: () => "route",
+      executor,
+      timeoutMs: 5
+    })).rejects.toThrow("Leader PM 执行超过 1 秒，已自动停止本次派单。");
+  });
+
+  it("keeps an external CLI stop distinct from a Leader timeout", async () => {
+    const controller = new AbortController();
+    const executor: WorkerExecutor = async (options) => await new Promise((resolve) => {
+      const finish = () => resolve({
+        success: false,
+        exitCode: null,
+        summary: "",
+        error: typeof options.signal.reason === "string" ? options.signal.reason : "cancelled",
+        usage: null,
+        sessionId: null,
+        sessionUnavailable: false
+      });
+      options.signal.addEventListener("abort", finish, { once: true });
+      if (options.signal.aborted) finish();
+    });
+    const turn = runManagerAgentTurn({
+      projectId: "project-1",
+      managerWorkerKind: "codex",
+      managerWorkspace: ".",
+      signal: controller.signal,
+      shell: "direct",
+      buildPrompt: () => "route",
+      executor,
+      timeoutMs: 10_000
+    });
+
+    controller.abort();
+
+    await expect(turn).rejects.toThrow("Maple CLI 已停止，Leader PM 派单已取消。");
+  });
+
+  it("runs a DeepSeek Leader with terminal completion and an isolated provider home", async () => {
+    const root = mkdtempSync(join(tmpdir(), "maple-deepseek-leader-"));
+    temporaryDirectories.push(root);
+    let captured: {
+      disableMcp?: boolean;
+      completeOnTerminalEvent?: boolean;
+      isolatedHome?: string;
+    } | null = null;
+    let capturedResumeSessionId: string | undefined;
+    const executor: WorkerExecutor = async (options) => {
+      captured = options;
+      capturedResumeSessionId = options.resumeSessionId;
+      return {
+        success: true,
+        exitCode: 0,
+        summary: "{}",
+        error: null,
+        usage: null,
+        sessionId: "fresh-deepseek-session",
+        sessionUnavailable: false
+      };
+    };
+
+    await runManagerAgentTurn({
+      projectId: "project-1",
+      managerWorkerKind: "deepseek",
+      managerWorkspace: root,
+      signal: new AbortController().signal,
+      shell: "direct",
+      buildPrompt: () => "route",
+      executor
+    });
+
+    expect(captured).toMatchObject({
+      disableMcp: true,
+      completeOnTerminalEvent: true,
+      isolatedHome: join(root, "deepseek-codex-home")
+    });
+    expect(capturedResumeSessionId).toBeUndefined();
+  });
+
   it("parses a compact decision that continues an existing Workflow", () => {
     const decision = parseProjectManagerDecision(JSON.stringify({
       workflowId: "workflow-auth",
@@ -164,13 +265,20 @@ describe("Project manager dispatch", () => {
       expect(options.workerKind).toBe("codex");
       expect(options.readOnly).toBe(true);
       expect(options.summaryMode).toBe("strict-report");
-      expect(options.resumeSessionId).toBe("leader-pm-session");
+      expect(options.resumeSessionId).toBeUndefined();
+      expect(options.disableMcp).toBe(true);
+      expect(options.completeOnTerminalEvent).toBe(true);
       return {
         success: true,
         exitCode: 0,
         summary: "Kimi 当前不可用，任务未执行。",
         error: null,
-        usage: null,
+        usage: {
+          inputTokens: 120,
+          cachedInputTokens: 40,
+          outputTokens: 18,
+          reasoningOutputTokens: 7
+        },
         sessionId: "leader-pm-session",
         sessionUnavailable: false
       };
@@ -203,6 +311,12 @@ describe("Project manager dispatch", () => {
     expect(result).toEqual({
       outcome: "blocked",
       managerWorkerKind: "codex",
+      usage: {
+        inputTokens: 120,
+        cachedInputTokens: 40,
+        outputTokens: 18,
+        reasoningOutputTokens: 7
+      },
       report: "Kimi 当前不可用，任务未执行。"
     });
     expect(prompts[0]).toContain("不得改派、替换、调用或建议任何其他 Worker");
@@ -210,6 +324,7 @@ describe("Project manager dispatch", () => {
     expect(prompts[0]).not.toContain("报告不得超过");
     expect(prompts[0]).toContain('"requiredWorkerKind":"kimi"');
     expect(prompts[0]).toContain('"availableWorkers":["codex"]');
+    expect(store.read("manager", job.project.id, "codex")).toBeNull();
   });
 
   it("launches supported manager adapters without automatic write permission", () => {
@@ -233,7 +348,7 @@ describe("Project manager dispatch", () => {
       .not.toContain("--auto");
   });
 
-  it("resumes the same per-project manager session after a CLI restart", async () => {
+  it("starts a fresh Leader session for each Todo after a CLI restart", async () => {
     const root = mkdtempSync(join(tmpdir(), "maple-project-manager-session-"));
     temporaryDirectories.push(root);
     const projectPath = join(root, "project");
@@ -255,11 +370,15 @@ describe("Project manager dispatch", () => {
     };
     const resumeIds: Array<string | undefined> = [];
     const reasoningEfforts: Array<string | undefined> = [];
+    const terminalCompletionFlags: Array<boolean | undefined> = [];
+    const mcpFlags: Array<boolean | undefined> = [];
     const prompts: string[] = [];
     const diagnostics: ProjectManagerDiagnosticEvent[] = [];
     const executor: WorkerExecutor = async (options) => {
       resumeIds.push(options.resumeSessionId);
       reasoningEfforts.push(options.reasoningEffort);
+      terminalCompletionFlags.push(options.completeOnTerminalEvent);
+      mcpFlags.push(options.disableMcp);
       prompts.push(options.prompt);
       await options.onLog({
         sequence: 0,
@@ -291,6 +410,12 @@ describe("Project manager dispatch", () => {
     };
 
     const firstStore = new AgentSessionStore(configPath);
+    firstStore.save({
+      scope: "manager",
+      scopeId: "project-1",
+      workerKind: "codex",
+      sessionId: "stale-pm-session"
+    });
     const managerWorkspace = firstStore.workspace("manager", "project-1");
     mkdirSync(managerWorkspace, { recursive: true });
     await runProjectManager(
@@ -318,7 +443,7 @@ describe("Project manager dispatch", () => {
       }
     );
 
-    expect(resumeIds).toEqual([undefined, "pm-session-1"]);
+    expect(resumeIds).toEqual([undefined, undefined]);
     expect(diagnostics).toHaveLength(2);
     expect(diagnostics[0]).toMatchObject({
       managerWorkerKind: "codex",
@@ -326,17 +451,19 @@ describe("Project manager dispatch", () => {
       title: "读取项目",
       content: "读取项目结构"
     });
-    expect(prompts[0]).toContain("你是 Maple Leader，只负责快速归组和派单");
-    expect(prompts[1]).toContain("续接当前项目经理会话；只处理新 Todo");
+    expect(prompts[0]).toContain("你是 Maple Leader，只负责快速归组和任务分发");
+    expect(prompts[1]).toContain("你是 Maple Leader，只负责快速归组和任务分发");
+    expect(prompts.every((prompt) => !prompt.includes("续接当前项目经理会话"))).toBe(true);
     expect(prompts.every((prompt) => !prompt.includes("受版本控制的文件（最多"))).toBe(true);
     expect(prompts.every((prompt) => !prompt.includes("只读源码摘录"))).toBe(true);
     expect(prompts.every((prompt) => prompt.length < 1_800)).toBe(true);
     expect(reasoningEfforts).toEqual(["low", "low"]);
-    expect(new AgentSessionStore(configPath).read("manager", "project-1", "codex")?.sessionId)
-      .toBe("pm-session-1");
+    expect(terminalCompletionFlags).toEqual([true, true]);
+    expect(mcpFlags).toEqual([true, true]);
+    expect(new AgentSessionStore(configPath).read("manager", "project-1", "codex")).toBeNull();
   });
 
-  it("rebuilds a missing Provider session from the project context", async () => {
+  it("can rebuild a missing Provider session when reuse is explicitly enabled", async () => {
     const root = mkdtempSync(join(tmpdir(), "maple-project-manager-recovery-"));
     temporaryDirectories.push(root);
     const projectPath = join(root, "project");
@@ -380,32 +507,20 @@ describe("Project manager dispatch", () => {
         sessionUnavailable: false
       };
     };
-    const project: LocalProject = {
-      localId: "local-project-1",
-      projectId: "project-1",
-      bindingId: "binding-1",
-      externalKey: "local:project-1",
-      name: "Managed project",
-      path: projectPath,
-      repositoryUrl: null,
-      defaultBranch: null,
-      gitBranch: null,
-      gitHead: null,
-      workerKind: "codex",
-      registeredAt: "2026-07-27T08:00:00.000Z"
-    };
     const managerWorkspace = store.workspace("manager", "project-1");
     mkdirSync(managerWorkspace, { recursive: true });
 
-    await runProjectManager(
-      managerJob(),
-      project,
-      new AbortController().signal,
-      "direct",
+    await runManagerAgentTurn({
+      projectId: "project-1",
+      managerWorkerKind: "codex",
       managerWorkspace,
-      store,
-      executor
-    );
+      signal: new AbortController().signal,
+      shell: "direct",
+      sessionStore: store,
+      executor,
+      reuseSession: true,
+      buildPrompt: () => "route"
+    });
 
     expect(attempts).toEqual(["expired-session", undefined]);
     expect(store.read("manager", "project-1", "codex")?.sessionId).toBe("replacement-session");

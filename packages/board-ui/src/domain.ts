@@ -146,6 +146,8 @@ export type Task = {
 /** 单个项目的 token 用量按 Worker 类型分桶（用于概览柱状图）。 */
 export type ProjectTokenUsage = {
   workerKind: WorkerKind;
+  /** 产生该用量的 Maple 角色：Leader（调度决策）或 Worker（任务执行）。 */
+  agentRole: "leader" | "worker";
   /** 4 项 token 之和，柱状图 y 轴高度。 */
   totalTokens: number;
   inputTokens: number;

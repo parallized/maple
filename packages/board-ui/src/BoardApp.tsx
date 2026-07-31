@@ -141,6 +141,8 @@ export type BoardAppProps = {
   sidebarFooter?: ReactNode | ((actions: { openSettings: () => void }) => ReactNode);
   /** 平台层注入的额外设置页签(Web 端:账户 / 工作区 / 安全)。 */
   settingsExtraTabs?: SettingsExtraTab[];
+  /** 应用版本号，由平台层注入，显示在侧栏最底部。 */
+  version?: string;
 };
 
 function mergeExternalProjects(prev: Project[], incoming: Project[], preserveTaskIds: ReadonlySet<string>): Project[] {
@@ -181,7 +183,7 @@ function mergeExternalProjects(prev: Project[], incoming: Project[], preserveTas
   return next;
 }
 
-export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAppProps) {
+export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version }: BoardAppProps) {
   const { capabilities } = platform;
   const isTauri = capabilities.isDesktop;
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
@@ -331,17 +333,18 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
       statusDistribution[key] = (statusDistribution[key] || 0) + 1;
     });
 
-    // 按项目聚合 token 用量（按 Worker 类型分桶），用于概览柱状图。
+    // 按项目聚合 token 用量（按 Worker 类型 × Leader/Worker 角色分桶），用于概览柱状图。
     const projectTokenUsage = projects
       .map((project) => {
         const byWorker: Partial<Record<WorkerKind, number>> = {};
+        const byLeader: Partial<Record<WorkerKind, number>> = {};
         let total = 0;
         for (const bucket of project.tokenUsage ?? []) {
-          const prev = byWorker[bucket.workerKind] ?? 0;
-          byWorker[bucket.workerKind] = prev + bucket.totalTokens;
+          const target = bucket.agentRole === "leader" ? byLeader : byWorker;
+          target[bucket.workerKind] = (target[bucket.workerKind] ?? 0) + bucket.totalTokens;
           total += bucket.totalTokens;
         }
-        return { projectId: project.id, name: project.name, totalTokens: total, byWorker };
+        return { projectId: project.id, name: project.name, totalTokens: total, byWorker, byLeader };
       })
       .filter((entry) => entry.totalTokens > 0);
 
@@ -1715,6 +1718,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs }: BoardAp
           onToggleMaximize={toggleWindowMaximize}
           onClose={closeWindow}
           footer={typeof sidebarFooter === "function" ? sidebarFooter({ openSettings: () => { setView("settings"); setMobileNavOpen(false); } }) : sidebarFooter}
+          version={version}
         />
 
         {/* 移动端导航抽屉的半透明遮罩（仅 ≤980px 显示，点按关闭抽屉） */}

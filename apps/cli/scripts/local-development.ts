@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { stringOption } from "../src/args";
 import { openBrowser } from "../src/auth/device-authorization";
 import { resolveStandalonePort } from "../src/standalone/layout";
+import { cleanupLocalPorts } from "../src/standalone/port-cleanup";
 import {
   parseStandaloneArgs,
   shouldOpenStandaloneBrowser
@@ -26,6 +27,7 @@ export interface LocalDevelopmentPlan {
   prepareWeb: LocalProcessPlan;
   web: LocalProcessPlan;
   standalone: LocalProcessPlan;
+  ports: number[];
   webUrl: string;
   serverUrl: string;
   openBrowser: boolean;
@@ -106,6 +108,7 @@ export function createLocalDevelopmentPlan(
       stdout: "inherit",
       stderr: "inherit"
     },
+    ports: [WEB_PORT, port],
     webUrl,
     serverUrl,
     openBrowser: shouldOpenStandaloneBrowser(env)
@@ -213,6 +216,23 @@ export async function runLocalDevelopment(plan: LocalDevelopmentPlan): Promise<n
   process.once("SIGTERM", requestStop);
 
   try {
+    const cleanup = await cleanupLocalPorts(plan.ports);
+    if (cleanup.targetedPids.length > 0 && cleanup.remainingPids.length === 0) {
+      console.log(
+        `[maple-local] 已释放开发端口 ${plan.ports.join("、")}，终止进程 ${cleanup.targetedPids.join("、")}。`
+      );
+    } else if (cleanup.targetedPids.length > 0) {
+      console.log(
+        `[maple-local] 已尝试清理开发端口 ${plan.ports.join("、")} 的占用进程。`
+      );
+    }
+    if (cleanup.remainingPids.length > 0) {
+      console.warn(
+        `[maple-local] 开发端口仍被进程 ${cleanup.remainingPids.join("、")} 占用，服务可能无法启动。`
+      );
+    }
+    if (stopping) return 0;
+
     console.log("[maple-local] [1/2] 正在启动 WebUI 热重载...");
     webPreparation = spawnProcess(plan.prepareWeb);
     const preparationExitCode = await webPreparation.exited;

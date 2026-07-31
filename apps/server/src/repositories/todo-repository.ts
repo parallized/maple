@@ -213,27 +213,46 @@ export class TodoRepository {
     return "deleted";
   }
 
-  /** 按项目 × Worker 类型聚合所有执行尝试的 token 用量，供概览柱状图使用。 */
+  /** 按项目、模型与 Maple 角色分别聚合 token 用量。 */
   sumTokenUsage(workspaceId?: string): TokenUsageBreakdown[] {
     const rows = this.database
       .query(
-        `SELECT t.project_id AS projectId, a.worker_kind AS workerKind,
-                SUM(a.usage_input_tokens) AS inputTokens,
-                SUM(a.usage_cached_input_tokens) AS cachedInputTokens,
-                SUM(a.usage_output_tokens) AS outputTokens,
-                SUM(a.usage_reasoning_output_tokens) AS reasoningOutputTokens
-         FROM todo_attempts a
-         JOIN todos t ON t.id = a.todo_id
-         JOIN projects p ON p.id = t.project_id
-         WHERE a.usage_input_tokens + a.usage_cached_input_tokens
-             + a.usage_output_tokens + a.usage_reasoning_output_tokens > 0
+        `SELECT usage.projectId, usage.workerKind, usage.agentRole,
+                SUM(usage.inputTokens) AS inputTokens,
+                SUM(usage.cachedInputTokens) AS cachedInputTokens,
+                SUM(usage.outputTokens) AS outputTokens,
+                SUM(usage.reasoningOutputTokens) AS reasoningOutputTokens
+         FROM (
+           SELECT t.project_id AS projectId, a.worker_kind AS workerKind, 'worker' AS agentRole,
+                  a.usage_input_tokens AS inputTokens,
+                  a.usage_cached_input_tokens AS cachedInputTokens,
+                  a.usage_output_tokens AS outputTokens,
+                  a.usage_reasoning_output_tokens AS reasoningOutputTokens
+           FROM todo_attempts a
+           JOIN todos t ON t.id = a.todo_id
+
+           UNION ALL
+
+           SELECT t.project_id AS projectId, route.manager_worker_kind AS workerKind, 'leader' AS agentRole,
+                  route.manager_usage_input_tokens AS inputTokens,
+                  route.manager_usage_cached_input_tokens AS cachedInputTokens,
+                  route.manager_usage_output_tokens AS outputTokens,
+                  route.manager_usage_reasoning_output_tokens AS reasoningOutputTokens
+           FROM todo_routes route
+           JOIN todos t ON t.id = route.todo_id
+           WHERE route.manager_worker_kind IS NOT NULL
+         ) usage
+         JOIN projects p ON p.id = usage.projectId
+         WHERE usage.inputTokens + usage.cachedInputTokens
+             + usage.outputTokens + usage.reasoningOutputTokens > 0
            ${workspaceId ? "AND p.workspace_id = ?" : ""}
-         GROUP BY t.project_id, a.worker_kind
-         ORDER BY t.project_id, a.worker_kind`
+         GROUP BY usage.projectId, usage.workerKind, usage.agentRole
+         ORDER BY usage.projectId, usage.workerKind, usage.agentRole`
       )
       .all(...(workspaceId ? [workspaceId] : [])) as Array<{
         projectId: string;
         workerKind: string;
+        agentRole: string;
         inputTokens: number;
         cachedInputTokens: number;
         outputTokens: number;
@@ -242,6 +261,7 @@ export class TodoRepository {
     return rows.map((row) => ({
       projectId: row.projectId,
       workerKind: row.workerKind as WorkerKind,
+      agentRole: row.agentRole === "leader" ? "leader" : "worker",
       inputTokens: row.inputTokens,
       cachedInputTokens: row.cachedInputTokens,
       outputTokens: row.outputTokens,

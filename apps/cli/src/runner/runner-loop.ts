@@ -5,6 +5,7 @@ import type {
   LogStream,
   RunLogEntry,
   RunnerAttemptReconcileResult,
+  TokenUsage,
   WorkerKind
 } from "@maple/protocol";
 import { MapleApiClient } from "../api/client";
@@ -125,16 +126,18 @@ export const consoleRunnerOutput: RunnerOutput = {
   managerRecord: (event) => console.log(`[PM · ${event.projectName}] ${formatRunLogEntry(event)}`)
 };
 
-function wait(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
+function wait(ms: number, signal: AbortSignal, wakeSignal?: AbortSignal): Promise<void> {
+  if (signal.aborted || wakeSignal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
     const timeout = setTimeout(done, ms);
     function done() {
       clearTimeout(timeout);
       signal.removeEventListener("abort", done);
+      wakeSignal?.removeEventListener("abort", done);
       resolve();
     }
     signal.addEventListener("abort", done, { once: true });
+    wakeSignal?.addEventListener("abort", done, { once: true });
   });
 }
 
@@ -166,6 +169,7 @@ export class RunnerLoop {
   private readonly attemptControllers = new Map<string, AttemptController>();
   private forceTerminationRequested = false;
   private readonly deliveryFailures = new Map<string, string>();
+  private claimWakeController = new AbortController();
 
   constructor(
     private readonly api: MapleApiClient,
@@ -218,6 +222,7 @@ export class RunnerLoop {
     let credentialRevision = deepSeekCredentialRevision();
     while (!signal.aborted && !this.forceTerminationRequested) {
       try {
+        const claimWakeSignal = this.claimWakeController.signal;
         const nextCredentialRevision = deepSeekCredentialRevision();
         if (nextCredentialRevision !== credentialRevision) {
           credentialRevision = nextCredentialRevision;
@@ -264,7 +269,9 @@ export class RunnerLoop {
         while (!signal.aborted && this.active.size < this.concurrency) {
           const response = await this.api.claim();
           if (!response.job) {
-            if (!claimedAny) await wait(Math.min(response.retryAfterMs, RUNNER_COMMAND_POLL_MS), signal);
+            if (!claimedAny) {
+              await wait(Math.min(response.retryAfterMs, RUNNER_COMMAND_POLL_MS), signal, claimWakeSignal);
+            }
             break;
           }
           claimedAny = true;
@@ -280,7 +287,7 @@ export class RunnerLoop {
         }
         this.setConnection("online", `已连接 ${this.api.serverUrl}`);
         if (this.active.size >= this.concurrency) {
-          await Promise.race([...this.active, wait(RUNNER_COMMAND_POLL_MS, signal)]);
+          await Promise.race([...this.active, wait(RUNNER_COMMAND_POLL_MS, signal, claimWakeSignal)]);
         }
       } catch (error) {
         const detail = describeConnectionError(error);
@@ -522,6 +529,7 @@ export class RunnerLoop {
       }
 
       let failureReport: string | null = null;
+      let leaderUsage: TokenUsage | null = null;
       if (!result.success && job.managerWorkerKind && !jobController.signal.aborted && !leaseLost) {
         try {
           const managerWorkspace = this.sessionStore.workspace("manager", job.project.id);
@@ -537,6 +545,9 @@ export class RunnerLoop {
             sessionStore: this.sessionStore,
             executor: this.workerExecutor,
             onDiagnostic: queueLog,
+            onUsage: (usage) => {
+              leaderUsage = usage;
+            },
             failure: {
               stage: "execution",
               projectName: job.project.name,
@@ -572,6 +583,7 @@ export class RunnerLoop {
         summary: result.summary,
         error: result.error ?? undefined,
         usage: result.usage ?? undefined,
+        leaderUsage: leaderUsage ?? undefined,
         failureDisposition: result.success ? undefined : "blocked"
       });
       await this.flushOutbox();
@@ -690,6 +702,7 @@ export class RunnerLoop {
       if (dispatch.outcome === "blocked") {
         this.outbox.enqueueManagerBlock(job.attemptId, {
           managerWorkerKind: dispatch.managerWorkerKind,
+          usage: dispatch.usage,
           report: dispatch.report
         });
         await this.flushOutbox();
@@ -699,9 +712,11 @@ export class RunnerLoop {
       }
       this.outbox.enqueueManagerComplete(job.attemptId, {
         managerWorkerKind: dispatch.managerWorkerKind,
+        usage: dispatch.usage,
         ...dispatch.decision
       });
       await this.flushOutbox();
+      this.wakeClaimLoop();
       managerActivity({
         state: "dispatched",
         managerWorkerKind: dispatch.managerWorkerKind,
@@ -740,6 +755,12 @@ export class RunnerLoop {
         if (this.managerTask === task) this.managerTask = null;
       });
     this.managerTask = task;
+  }
+
+  private wakeClaimLoop(): void {
+    const current = this.claimWakeController;
+    this.claimWakeController = new AbortController();
+    current.abort();
   }
 
   private async reconcileAndFlush(): Promise<void> {

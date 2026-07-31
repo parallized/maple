@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ProjectManagerJob, RunLogEntry, WorkerKind } from "@maple/protocol";
+import type { ProjectManagerJob, RunLogEntry, TokenUsage, WorkerKind } from "@maple/protocol";
 import type { LocalProject } from "../config/types";
 import { executeWorker, type WorkerExecutor } from "../execution/process-executor";
 import type { WorkerShell } from "../execution/shells";
@@ -17,12 +17,14 @@ import { inspectProjectForManager } from "./project-snapshot";
 export interface ProjectManagerDispatched {
   outcome: "dispatched";
   managerWorkerKind: WorkerKind;
+  usage?: TokenUsage;
   decision: ProjectManagerDecision;
 }
 
 export interface ProjectManagerBlocked {
   outcome: "blocked";
   managerWorkerKind: WorkerKind;
+  usage?: TokenUsage;
   report: string;
 }
 
@@ -52,6 +54,7 @@ export async function runProjectManager(
   const snapshot = inspectProjectForManager(project.path);
   const contextFingerprint = createHash("sha256").update(snapshot.stableContext).digest("hex");
   if (!job.availableWorkers.includes(job.todo.workerKind)) {
+    let usage: TokenUsage | null = null;
     const report = await runProjectManagerFailureReport({
       projectId: job.project.id,
       managerWorkerKind,
@@ -63,6 +66,9 @@ export async function runProjectManager(
       sessionStore,
       executor,
       onDiagnostic,
+      onUsage: (reportedUsage) => {
+        usage = reportedUsage;
+      },
       failure: {
         stage: "dispatch",
         projectName: job.project.name,
@@ -74,6 +80,7 @@ export async function runProjectManager(
     return {
       outcome: "blocked",
       managerWorkerKind,
+      ...(usage ? { usage } : {}),
       report
     };
   }
@@ -97,6 +104,7 @@ export async function runProjectManager(
   return {
     outcome: "dispatched",
     managerWorkerKind,
+    ...(result.usage ? { usage: result.usage } : {}),
     decision: parseProjectManagerDecision(result.summary, job)
   };
 }

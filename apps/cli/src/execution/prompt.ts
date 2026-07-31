@@ -18,8 +18,8 @@ export function buildExecutionPrompt(job: ExecutionJob, options: ExecutionPrompt
   const details = job.todo.details.trim() || "（没有补充说明）";
   const managerContext = job.workflow || job.dispatchBrief
     ? [
-        job.workflow ? `Leader 工作流：${job.workflow.title}；目标：${job.workflow.summary}` : "",
-        job.dispatchBrief ? `Leader 补充：${job.dispatchBrief}` : ""
+        job.workflow ? `任务：${job.workflow.title}；任务：${job.workflow.summary}` : "",
+        job.dispatchBrief ? `补充：${job.dispatchBrief}` : ""
       ].filter(Boolean)
     : [];
   const screenshotRequirements = options.screenshotDirectory
@@ -28,17 +28,16 @@ export function buildExecutionPrompt(job: ExecutionJob, options: ExecutionPrompt
   const constitution = job.executionSettings?.constitution.trim() ?? "";
   return [
     options.resumingWorkflowSession
-      ? "续接当前 Maple Workflow Worker 会话，直接完成新 Todo。"
-      : "你是 Maple Worker，请在当前工作目录直接完成 Todo。",
+      ? "续接当前 Maple Workflow Worker 会话，按照新 Todo 要求完成"
+      : "你是 Maple Worker，请在当前工作目录按照 Todo 要求完成",
     `项目：${job.project.name}`,
     `Todo：${job.todo.title}`,
     `详情：${details}`,
     ...managerContext,
     outputLanguageInstruction(job),
     ...(constitution ? [`项目宪法（必须遵守）：${constitution}`] : []),
-    `先读 Maple Skill（${process.env.MAPLE_SKILL_PATH || "~/.maple/runtime/skills/maple/SKILL.md"}）；优先遵守用户提示、项目 AGENTS.md 及已有 Skills/MCP，按 Skill 完成状态回报。`,
-    "直接实现 Todo，保留无关改动，并按风险做必要验证。",
-    "完成后只报告结果、验证和必要阻塞；小任务/小修复约 100 字，普通开发约 100～200 字，审计、迁移、架构重构或用户要求完整报告时再展开。",
+    // `先读 Maple Skill（${process.env.MAPLE_SKILL_PATH || "~/.maple/runtime/skills/maple/SKILL.md"}）；遵守用户提示、项目 AGENTS.md 及已有 Skills/MCP，按 Skill 完成状态回报。`,
+    "完成后只报告结果、验证和必要阻塞；小任务/小修复尽量在 100 字内，普通开发约 100～200 字，审计、迁移、架构重构或用户要求完整报告时再展开",
     ...screenshotRequirements
   ].join("\n");
 }

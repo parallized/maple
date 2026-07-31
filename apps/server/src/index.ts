@@ -1,10 +1,16 @@
 import { createServerApp } from "./app";
 import { loadServerConfig } from "./config";
 import { createDatabase } from "./database/client";
+import { ModelPricingRepository } from "./repositories/model-pricing-repository";
+import { ModelPricingSyncService } from "./services/model-pricing-sync-service";
 
 const config = loadServerConfig();
 const database = createDatabase(config.databasePath);
-const app = createServerApp({ config, database });
+const modelPricing = new ModelPricingRepository(database);
+const modelPricingSync = new ModelPricingSyncService(modelPricing, config);
+const app = createServerApp({ config, database, modelPricingSync });
+
+modelPricingSync.start();
 
 app.listen({ hostname: config.host, port: config.port });
 
@@ -14,6 +20,7 @@ console.log(`[maple-server] database: ${config.databasePath}`);
 console.log(`[maple-server] web assets: ${config.webRoot}`);
 
 function shutdown() {
+  modelPricingSync.stop();
   app.stop();
   database.close();
   process.exit(0);

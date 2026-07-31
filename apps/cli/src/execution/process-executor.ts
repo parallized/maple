@@ -3,7 +3,11 @@ import { readDeepSeekApiKey } from "../credentials/deepseek";
 import { getCodingAgentAdapter } from "./adapters/registry";
 import type { AgentOutputParser, AgentRunEventDraft } from "./adapters/types";
 import { detectPermissionBlocker } from "./permission-blocker";
-import { forceTerminateProcessTree, terminateProcessTree } from "./process-termination";
+import {
+  forceTerminateProcessTree,
+  reapCompletedProcessTree,
+  terminateProcessTree
+} from "./process-termination";
 import { ExecutionReportCollector } from "./report";
 import { createSecretRedactor } from "./secret-redaction";
 import type { WorkerShell } from "./shells";
@@ -11,6 +15,11 @@ import { buildResolvedWorkerCommand } from "./worker-command";
 
 const MAX_CAPTURE_CHARS = 200_000;
 const MAX_LOG_CHUNK_CHARS = 32_000;
+
+type PipedSpawnOptions = Bun.SpawnOptions.OptionsObject<Bun.SpawnOptions.Writable, "pipe", "pipe">;
+type PipedSubprocess = Bun.Subprocess<Bun.SpawnOptions.Writable, "pipe", "pipe">;
+
+export type ProcessSpawner = (command: string[], options: PipedSpawnOptions) => PipedSubprocess;
 
 export interface ProcessExecutionOptions {
   workerKind: WorkerKind;
@@ -23,12 +32,20 @@ export interface ProcessExecutionOptions {
   readOnly?: boolean;
   /** Optional per-run reasoning override, primarily used for the lightweight Leader turn. */
   reasoningEffort?: string;
+  /** Do not attach Maple MCP configuration to this run. */
+  disableMcp?: boolean;
+  /** Provider-specific home directory used to isolate this run from user-global configuration. */
+  isolatedHome?: string;
+  /** Return as soon as the adapter emits its authoritative execution-completed lifecycle event. */
+  completeOnTerminalEvent?: boolean;
   summaryMode?: "raw" | "report" | "strict-report";
   resumeSessionId?: string;
   additionalWritableDirectories?: string[];
   /** Session 一经 Provider 确认就立即持久化，避免长任务中途退出后丢失续接点。 */
   onSession?: (sessionId: string) => void;
   onLog: (entry: RunLogEntry) => Promise<void>;
+  /** Process launcher injection used by lifecycle tests. */
+  spawnProcess?: ProcessSpawner;
 }
 
 export interface ProcessExecutionResult {
@@ -84,35 +101,67 @@ async function consumeStream(
   parser: AgentOutputParser,
   appendRaw: (value: string) => void,
   emit: (events: AgentRunEventDraft[]) => Promise<void>,
-  announceSession: () => void
+  announceSession: () => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const content = decoder.decode(value, { stream: true });
-    if (!content) continue;
-    appendRaw(content);
-    const events = parser.push(name, content);
+  const cancel = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) cancel();
+  try {
+    while (!signal?.aborted) {
+      const record = await reader.read().catch((error) => {
+        if (signal?.aborted) return null;
+        throw error;
+      });
+      if (!record) return;
+      if (record.done) break;
+      const content = decoder.decode(record.value, { stream: true });
+      if (!content) continue;
+      appendRaw(content);
+      const events = parser.push(name, content);
+      announceSession();
+      await emit(events);
+    }
+    if (signal?.aborted) return;
+    const tailChunk = decoder.decode();
+    if (tailChunk) {
+      appendRaw(tailChunk);
+      const events = parser.push(name, tailChunk);
+      announceSession();
+      await emit(events);
+    }
+    const events = parser.flush(name);
     announceSession();
     await emit(events);
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+    try {
+      reader.releaseLock();
+    } catch {
+      // cancel() may still be settling; the process reaper will close the stream.
+    }
   }
-  const tailChunk = decoder.decode();
-  if (tailChunk) {
-    appendRaw(tailChunk);
-    const events = parser.push(name, tailChunk);
-    announceSession();
-    await emit(events);
-  }
-  const events = parser.flush(name);
-  announceSession();
-  await emit(events);
+}
+
+function isExecutionCompleted(event: AgentRunEventDraft): boolean {
+  return event.kind === "lifecycle"
+    && event.status === "completed"
+    && event.title === "执行完成";
 }
 
 function sessionUnavailable(output: string): boolean {
   return /(?:session|conversation|thread|会话).{0,120}(?:not found|does not exist|unknown|invalid|missing|不存在|无效)/is.test(output)
     || /no (?:saved )?(?:session|conversation|thread)/i.test(output);
+}
+
+function explicitCancellationMessage(signal: AbortSignal): string | null {
+  if (typeof signal.reason !== "string") return null;
+  const message = signal.reason.trim();
+  return message || null;
 }
 
 export async function executeWorker(options: ProcessExecutionOptions): Promise<ProcessExecutionResult> {
@@ -129,6 +178,8 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
     {
       readOnly: options.readOnly,
       reasoningEffort: options.reasoningEffort,
+      disableMcp: options.disableMcp,
+      isolatedHome: options.isolatedHome,
       resumeSessionId: options.resumeSessionId,
       additionalWritableDirectories: options.additionalWritableDirectories
     }
@@ -142,6 +193,11 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
   const reportCollector = new ExecutionReportCollector();
   let sequence = 0;
   let observedSessionId: string | null = null;
+  let terminalCompleted = false;
+  let resolveTerminalCompletion: (() => void) | null = null;
+  const terminalCompletion = new Promise<void>((resolve) => {
+    resolveTerminalCompletion = resolve;
+  });
 
   /** 进程结束后调用：优先让 adapter 从外部数据源补全 usage，否则取流内累积值。 */
   const resolveFinalUsage = (): TokenUsage | null => {
@@ -186,6 +242,10 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
         };
         await options.onLog(entry);
       }
+      if (options.completeOnTerminalEvent && isExecutionCompleted(draft) && !terminalCompleted) {
+        terminalCompleted = true;
+        resolveTerminalCompletion?.();
+      }
     }
   };
 
@@ -203,13 +263,16 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
   ]);
 
   let forceRequested = options.forceSignal?.aborted ?? false;
+  const agentRole = options.readOnly ? "Leader PM" : "Worker";
   const stopped = () => options.signal.aborted || forceRequested || Boolean(options.forceSignal?.aborted);
   const interruptionMessage = () => forceRequested
-    ? "Maple CLI 已强制终止 Worker。"
-    : "Maple CLI 已停止，Worker 执行被中断。";
+    ? `Maple CLI 已强制终止 ${agentRole}。`
+    : explicitCancellationMessage(options.signal) ?? `Maple CLI 已停止，${agentRole} 执行被中断。`;
 
   if (stopped()) {
-    const message = forceRequested ? "Maple CLI 已强制终止，Worker 未启动。" : "Maple CLI 已停止，Worker 未启动。";
+    const message = forceRequested
+      ? `Maple CLI 已强制终止，${agentRole} 未启动。`
+      : explicitCancellationMessage(options.signal) ?? `Maple CLI 已停止，${agentRole} 未启动。`;
     await emit([{
       stream: "system",
       kind: "error",
@@ -229,11 +292,15 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
     };
   }
 
-  let subprocess: ReturnType<typeof Bun.spawn> | null = null;
+  let subprocess: PipedSubprocess | null = null;
   let forceTermination: Promise<void> | null = null;
+  let gracefulTermination: Promise<void> | null = null;
   const abort = () => {
     const current = subprocess;
-    if (current) terminateProcessTree(current);
+    if (current) {
+      if (process.platform !== "win32") terminateProcessTree(current);
+      gracefulTermination ??= reapCompletedProcessTree(current);
+    }
   };
   const forceAbort = () => {
     forceRequested = true;
@@ -241,7 +308,7 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
     if (current && !forceTermination) forceTermination = forceTerminateProcessTree(current);
   };
   try {
-    subprocess = Bun.spawn([command.executable, ...command.args], {
+    const spawnOptions: PipedSpawnOptions = {
       cwd: options.cwd,
       detached: process.platform !== "win32",
       stdin: command.stdin === undefined ? "ignore" : new Blob([command.stdin]),
@@ -253,18 +320,45 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
         MAPLE_PROJECT_DIR: options.cwd,
         MAPLE_AGENT_ROLE: options.readOnly ? "project_manager" : "worker"
       }
-    });
+    };
+    subprocess = options.spawnProcess
+      ? options.spawnProcess([command.executable, ...command.args], spawnOptions)
+      : Bun.spawn([command.executable, ...command.args], spawnOptions);
     options.signal.addEventListener("abort", abort, { once: true });
     options.forceSignal?.addEventListener("abort", forceAbort, { once: true });
     if (options.forceSignal?.aborted) forceAbort();
     if (options.signal.aborted) abort();
 
-    const stdout = subprocess.stdout as ReadableStream<Uint8Array>;
-    const stderr = subprocess.stderr as ReadableStream<Uint8Array>;
-    await Promise.all([
-      consumeStream(stdout, "stdout", parser, appendRaw, emit, announceSession),
-      consumeStream(stderr, "stderr", parser, appendRaw, emit, announceSession)
+    const streamController = new AbortController();
+    const streamConsumption = Promise.all([
+      consumeStream(subprocess.stdout, "stdout", parser, appendRaw, emit, announceSession, streamController.signal),
+      consumeStream(subprocess.stderr, "stderr", parser, appendRaw, emit, announceSession, streamController.signal)
     ]);
+    if (options.completeOnTerminalEvent) {
+      await Promise.race([streamConsumption, terminalCompletion]);
+    } else {
+      await streamConsumption;
+    }
+    if (terminalCompleted && !stopped()) {
+      streamController.abort();
+      void streamConsumption.catch(() => undefined);
+      void reapCompletedProcessTree(subprocess).catch(() => undefined);
+      const report = reportCollector.value();
+      return {
+        success: true,
+        exitCode: 0,
+        summary: options.summaryMode === "strict-report"
+          ? report
+          : options.summaryMode === "report"
+            ? report
+            : tail(assistantOutput, 8_000) || redact(tail(rawOutput, 8_000)) || `${agentRole} 执行完成。`,
+        error: null,
+        usage: resolveFinalUsage(),
+        sessionId: observedSessionId ?? options.resumeSessionId ?? null,
+        sessionUnavailable: false
+      };
+    }
+    await streamConsumption;
     const exitCode = await subprocess.exited;
     const permissionBlocker = exitCode === 0 && !stopped()
       ? detectPermissionBlocker({ operationalOutput, assistantOutput })
@@ -294,7 +388,7 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
         ? report
         : options.summaryMode === "report"
           ? report
-          : tail(assistantOutput, 8_000) || redact(tail(rawOutput, 8_000)) || (success ? "Worker 执行完成。" : "Worker 未返回可读输出。"),
+          : tail(assistantOutput, 8_000) || redact(tail(rawOutput, 8_000)) || (success ? `${agentRole} 执行完成。` : `${agentRole} 未返回可读输出。`),
       error: success
         ? null
         : stopped()
@@ -310,9 +404,9 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
         forceTermination ??= forceTerminateProcessTree(subprocess);
         await forceTermination.catch(() => undefined);
       } else {
-        terminateProcessTree(subprocess);
+        gracefulTermination ??= reapCompletedProcessTree(subprocess);
+        await gracefulTermination.catch(() => undefined);
       }
-      await subprocess.exited.catch(() => undefined);
     }
     const interrupted = stopped();
     const message = interrupted
@@ -341,5 +435,6 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
     options.signal.removeEventListener("abort", abort);
     options.forceSignal?.removeEventListener("abort", forceAbort);
     if (forceTermination) await forceTermination.catch(() => undefined);
+    if (gracefulTermination) await gracefulTermination.catch(() => undefined);
   }
 }

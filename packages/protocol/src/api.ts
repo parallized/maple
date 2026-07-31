@@ -5,6 +5,7 @@ import type {
   ExecutionJob,
   LogStream,
   MapleSettings,
+  ModelPricingEntry,
   Project,
   ProjectBinding,
   ProjectManagerJob,
@@ -86,12 +87,37 @@ export interface ConnectDeepSeekRequest {
   apiKey: string;
 }
 
+/** Health and freshness metadata for the models.dev price synchronizer. */
+export interface ModelPricingSyncStatus {
+  sourceUrl: string;
+  etag: string | null;
+  lastModified: string | null;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  fetchedAt: string | null;
+  lastError: string | null;
+  providerCount: number;
+  modelCount: number;
+  pricedModelCount: number;
+  enabled: boolean;
+}
+
+export interface ModelPricingResponse {
+  items: ModelPricingEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+  status: ModelPricingSyncStatus;
+}
+
 export type DeepSeekConnectionResponse = DeepSeekConnectionStatus;
 
 /** 按项目 × Worker 类型聚合的 token 用量（用于概览柱状图）。 */
 export interface TokenUsageBreakdown {
   projectId: string;
   workerKind: WorkerKind;
+  /** Which Maple agent role produced this usage (the model/provider is still workerKind). */
+  agentRole: "leader" | "worker";
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
@@ -212,6 +238,8 @@ export interface ClaimProjectManagerJobResponse {
 export interface CompleteProjectManagerJobRequest {
   leaseToken: string;
   managerWorkerKind: WorkerKind;
+  /** Token usage reported by the Leader PM turn that made this dispatch decision. */
+  usage?: TokenUsage | null;
   selectedWorkerKind: WorkerKind;
   /** null 表示创建新 Workflow；存在时必须属于当前项目。 */
   workflowId: string | null;
@@ -232,6 +260,8 @@ export interface CompleteProjectManagerJobResponse {
 export interface BlockProjectManagerJobRequest {
   leaseToken: string;
   managerWorkerKind: WorkerKind;
+  /** Token usage reported by the Leader PM turn that produced this block report. */
+  usage?: TokenUsage | null;
   /** 只接受 Leader PM Coding Agent 的原始 Markdown 回复；系统不得代写。 */
   report?: string;
   /** PM 自身失败时只保存技术原因，不把它冒充为执行报告。 */
@@ -312,6 +342,8 @@ export interface CompleteJobRequest {
   summary?: string;
   error?: string;
   usage?: TokenUsage | null;
+  /** Token usage of the Leader PM failure report generated after this Worker failed. */
+  leaderUsage?: TokenUsage | null;
   /** 指定 Worker 不得被替换；新 CLI 的失败由 PM 收口后直接阻塞。 */
   failureDisposition?: "retry" | "blocked";
 }

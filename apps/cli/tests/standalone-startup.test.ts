@@ -51,6 +51,7 @@ describe("Maple Local startup", () => {
 
     expect(plan.webUrl).toBe("http://127.0.0.1:5173");
     expect(plan.serverUrl).toBe("http://127.0.0.1:45999");
+    expect(plan.ports).toEqual([5_173, 45_999]);
     expect(plan.openBrowser).toBe(true);
     expect(plan.prepareWeb.command).toEqual([
       "bun",

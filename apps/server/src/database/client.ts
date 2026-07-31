@@ -305,6 +305,10 @@ CREATE TABLE IF NOT EXISTS todo_routes (
   source_status TEXT CHECK(source_status IN ('todo', 'rework')),
   manager_runner_id TEXT REFERENCES runners(id) ON DELETE SET NULL,
   manager_worker_kind TEXT,
+  manager_usage_input_tokens INTEGER NOT NULL DEFAULT 0,
+  manager_usage_cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+  manager_usage_output_tokens INTEGER NOT NULL DEFAULT 0,
+  manager_usage_reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
   selected_worker_kind TEXT,
   execution_mode TEXT CHECK(execution_mode IN ('serial', 'parallel')),
   dispatch_brief TEXT,
@@ -315,6 +319,42 @@ CREATE TABLE IF NOT EXISTS todo_routes (
   updated_at TEXT NOT NULL,
   completed_at TEXT
 );
+
+/* Provider/model pricing is a server-wide cache, not workspace data. */
+CREATE TABLE IF NOT EXISTS model_pricing (
+  provider_id TEXT NOT NULL,
+  provider_name TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  model_name TEXT NOT NULL,
+  input_usd_per_million REAL,
+  reasoning_usd_per_million REAL,
+  output_usd_per_million REAL,
+  cache_read_usd_per_million REAL,
+  cache_write_usd_per_million REAL,
+  input_audio_usd_per_million REAL,
+  output_audio_usd_per_million REAL,
+  cost_json TEXT NOT NULL,
+  last_updated TEXT,
+  fetched_at TEXT NOT NULL,
+  PRIMARY KEY(provider_id, model_id)
+);
+
+CREATE TABLE IF NOT EXISTS model_pricing_sync (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  source_url TEXT NOT NULL DEFAULT 'https://models.dev/api.json',
+  etag TEXT,
+  last_modified TEXT,
+  last_attempt_at TEXT,
+  last_success_at TEXT,
+  fetched_at TEXT,
+  last_error TEXT,
+  provider_count INTEGER NOT NULL DEFAULT 0,
+  model_count INTEGER NOT NULL DEFAULT 0,
+  priced_model_count INTEGER NOT NULL DEFAULT 0,
+  lock_until TEXT
+);
+
+INSERT OR IGNORE INTO model_pricing_sync(id) VALUES (1);
 
 CREATE INDEX IF NOT EXISTS idx_bindings_runner ON project_bindings(runner_id);
 CREATE INDEX IF NOT EXISTS idx_bindings_project ON project_bindings(project_id);
@@ -334,6 +374,8 @@ CREATE INDEX IF NOT EXISTS idx_todo_assets_todo ON todo_assets(todo_id, created_
 CREATE INDEX IF NOT EXISTS idx_workflows_project ON project_workflows(project_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_todo_routes_state ON todo_routes(state, created_at);
 CREATE INDEX IF NOT EXISTS idx_todo_routes_workflow ON todo_routes(workflow_id, state);
+CREATE INDEX IF NOT EXISTS idx_model_pricing_provider ON model_pricing(provider_id, model_name);
+CREATE INDEX IF NOT EXISTS idx_model_pricing_model ON model_pricing(model_id, provider_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON web_sessions(user_id, revoked_at, expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON web_sessions(active_workspace_id, revoked_at, expires_at);
 CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at DESC);
@@ -398,6 +440,10 @@ function migrate(database: Database): void {
   ensureColumn(database, "web_sessions", "csrf_token", "TEXT");
   ensureColumn(database, "todo_routes", "source_status", "TEXT");
   ensureColumn(database, "todo_routes", "attempt_id", "TEXT");
+  ensureColumn(database, "todo_routes", "manager_usage_input_tokens", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(database, "todo_routes", "manager_usage_cached_input_tokens", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(database, "todo_routes", "manager_usage_output_tokens", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(database, "todo_routes", "manager_usage_reasoning_output_tokens", "INTEGER NOT NULL DEFAULT 0");
   purgeUnreleasedLegacyWorkspace(database);
   database.exec(`
     UPDATE projects SET workspace_external_key = external_key WHERE workspace_external_key IS NULL;

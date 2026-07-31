@@ -1532,6 +1532,12 @@ describe("Maple Server execution flow", () => {
         body: {
           leaseToken: managerClaim.job!.leaseToken,
           managerWorkerKind: "codex",
+          usage: {
+            inputTokens: 120,
+            cachedInputTokens: 40,
+            outputTokens: 18,
+            reasoningOutputTokens: 7
+          },
           selectedWorkerKind: "codex",
           workflowId: null,
           workflowTitle: "Token refresh",
@@ -1545,6 +1551,19 @@ describe("Maple Server execution flow", () => {
     expect(firstDispatch.todo.workerKind).toBe("codex");
     expect(firstDispatch.todo.status).toBe("queued");
     expect(firstDispatch.todo.executionPhase).toBe("planning");
+    const managerUsageDashboard = (await (
+      await request(app, "/api/dashboard", { token: ADMIN_TOKEN })
+    ).json()) as DashboardSnapshot;
+    expect(managerUsageDashboard.tokenUsage.find(
+      (row) => row.projectId === registration.project.id
+        && row.workerKind === "codex"
+        && row.agentRole === "leader"
+    )).toMatchObject({
+      inputTokens: 120,
+      cachedInputTokens: 40,
+      outputTokens: 18,
+      reasoningOutputTokens: 7
+    });
     const secondManagerClaim = (await (
       await request(app, "/api/runner/project-manager/claim", {
         method: "POST",
@@ -1894,6 +1913,12 @@ describe("Maple Server execution flow", () => {
         body: {
           leaseToken: unavailableManagerClaim.job!.leaseToken,
           managerWorkerKind: "codex",
+          usage: {
+            inputTokens: 10,
+            cachedInputTokens: 3,
+            outputTokens: 2,
+            reasoningOutputTokens: 1
+          },
           report: aiUnavailableReport
         }
       }
@@ -1934,6 +1959,12 @@ describe("Maple Server execution flow", () => {
       body: {
         leaseToken: failingManagerClaim.job!.leaseToken,
         managerWorkerKind: "codex",
+        usage: {
+          inputTokens: 20,
+          cachedInputTokens: 6,
+          outputTokens: 4,
+          reasoningOutputTokens: 2
+        },
         selectedWorkerKind: "codex",
         workflowId: null,
         workflowTitle: "Strict Worker execution",
@@ -1964,6 +1995,18 @@ describe("Maple Server execution flow", () => {
         exitCode: 2,
         summary: aiExecutionReport,
         error: "unknown option --legacy-flag",
+        usage: {
+          inputTokens: 100,
+          cachedInputTokens: 30,
+          outputTokens: 10,
+          reasoningOutputTokens: 5
+        },
+        leaderUsage: {
+          inputTokens: 30,
+          cachedInputTokens: 9,
+          outputTokens: 6,
+          reasoningOutputTokens: 3
+        },
         failureDisposition: "blocked"
       }
     });
@@ -1975,6 +2018,29 @@ describe("Maple Server execution flow", () => {
       retryAfter: null,
       resultSummary: aiExecutionReport,
       lastError: "unknown option --legacy-flag"
+    });
+    const roleUsageDashboard = (await (
+      await request(app, "/api/dashboard", { token: ADMIN_TOKEN })
+    ).json()) as DashboardSnapshot;
+    expect(roleUsageDashboard.tokenUsage.find(
+      (row) => row.projectId === registration.project.id
+        && row.workerKind === "codex"
+        && row.agentRole === "leader"
+    )).toMatchObject({
+      inputTokens: 60,
+      cachedInputTokens: 18,
+      outputTokens: 12,
+      reasoningOutputTokens: 6
+    });
+    expect(roleUsageDashboard.tokenUsage.find(
+      (row) => row.projectId === registration.project.id
+        && row.workerKind === "codex"
+        && row.agentRole === "worker"
+    )).toMatchObject({
+      inputTokens: 100,
+      cachedInputTokens: 30,
+      outputTokens: 10,
+      reasoningOutputTokens: 5
     });
     const retryClaim = (await (
       await request(app, "/api/runner/jobs/claim", { method: "POST", token: exchange.runnerToken })
@@ -2048,9 +2114,12 @@ describe("Maple Server execution flow", () => {
       await request(app, "/api/dashboard", { token: ADMIN_TOKEN })
     ).json()) as DashboardSnapshot;
     const usageRow = dashboard.tokenUsage.find(
-      (row) => row.projectId === registration.project.id && row.workerKind === "codex"
+      (row) => row.projectId === registration.project.id
+        && row.workerKind === "codex"
+        && row.agentRole === "worker"
     );
     expect(usageRow).toMatchObject({
+      agentRole: "worker",
       inputTokens: 72148,
       cachedInputTokens: 47360,
       outputTokens: 2765,

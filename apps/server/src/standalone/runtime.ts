@@ -2,6 +2,8 @@ import type { ExchangePairingRequest, ExchangePairingResponse } from "@maple/pro
 import { createServerApp, type MapleServerApp } from "../app";
 import { createDatabase } from "../database/client";
 import { RunnerRepository } from "../repositories/runner-repository";
+import { ModelPricingRepository } from "../repositories/model-pricing-repository";
+import { ModelPricingSyncService } from "../services/model-pricing-sync-service";
 import {
   createStandaloneServerConfig,
   type StandaloneServerConfigOptions
@@ -27,6 +29,8 @@ export async function startStandaloneServer(
 ): Promise<StandaloneServerHandle> {
   const config = createStandaloneServerConfig(options);
   const database = createDatabase(config.databasePath);
+  const modelPricing = new ModelPricingRepository(database);
+  const modelPricingSync = new ModelPricingSyncService(modelPricing, config);
   let app: MapleServerApp | null = null;
   try {
     const identity = await ensureStandaloneIdentity(database);
@@ -34,9 +38,11 @@ export async function startStandaloneServer(
       config,
       database,
       standaloneIdentity: identity,
-      providerCredentials: options.providerCredentials
+      providerCredentials: options.providerCredentials,
+      modelPricingSync
     });
     app.listen({ hostname: config.host, port: config.port });
+    modelPricingSync.start();
     const runners = new RunnerRepository(database, config.runnerOfflineSeconds);
     let stopped = false;
     return {
@@ -47,11 +53,13 @@ export async function startStandaloneServer(
       stop: () => {
         if (stopped) return;
         stopped = true;
+        modelPricingSync.stop();
         app?.stop();
         database.close();
       }
     };
   } catch (error) {
+    modelPricingSync.stop();
     try { app?.stop(); } catch { /* The listener may not have started. */ }
     database.close();
     throw error;

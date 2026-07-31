@@ -21,11 +21,22 @@ export interface ServerConfig {
   sessionDays?: number;
   deviceAuthorizationTtlSeconds?: number;
   sessionCookieName?: string;
+  /** Enable the background models.dev pricing catalog refresh. */
+  modelPricingSyncEnabled?: boolean;
+  modelPricingSyncIntervalHours?: number;
+  modelPricingFetchTimeoutMs?: number;
+  modelPricingMaxBytes?: number;
+  modelPricingSourceUrl?: string;
 }
 
 function positiveInteger(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function boundedInteger(value: string | undefined, fallback: number, minimum: number, maximum: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isSafeInteger(parsed) ? Math.min(maximum, Math.max(minimum, parsed)) : fallback;
 }
 
 function parseOrigins(value: string | undefined): string[] {
@@ -59,6 +70,16 @@ export function loadServerConfig(env: Record<string, string | undefined> = proce
     secureCookies: env.MAPLE_SECURE_COOKIES === "1" || publicUrl.startsWith("https://"),
     registrationEnabled: env.MAPLE_REGISTRATION_ENABLED !== "0",
     sessionDays: positiveInteger(env.MAPLE_SESSION_DAYS, 30),
-    deviceAuthorizationTtlSeconds: positiveInteger(env.MAPLE_DEVICE_AUTH_TTL_SECONDS, 600)
+    deviceAuthorizationTtlSeconds: positiveInteger(env.MAPLE_DEVICE_AUTH_TTL_SECONDS, 600),
+    modelPricingSyncEnabled: env.MAPLE_MODEL_PRICING_SYNC !== "0",
+    modelPricingSyncIntervalHours: boundedInteger(env.MAPLE_MODEL_PRICING_INTERVAL_HOURS, 24, 1, 24 * 7),
+    modelPricingFetchTimeoutMs: boundedInteger(env.MAPLE_MODEL_PRICING_TIMEOUT_MS, 20_000, 1_000, 120_000),
+    modelPricingMaxBytes: boundedInteger(
+      env.MAPLE_MODEL_PRICING_MAX_BYTES,
+      16 * 1024 * 1024,
+      1024 * 1024,
+      64 * 1024 * 1024
+    ),
+    modelPricingSourceUrl: env.MAPLE_MODEL_PRICING_URL?.trim() || undefined
   };
 }
