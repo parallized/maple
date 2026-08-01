@@ -52,14 +52,17 @@ export interface InspectProjectOptions {
   existing?: LocalProject;
 }
 
-export function inspectProject(options: InspectProjectOptions): LocalProject {
-  const requestedPath = resolve(options.path);
-  if (!existsSync(requestedPath) || !statSync(requestedPath).isDirectory()) {
+export function resolveProjectDirectory(path: string): string {
+  const requestedPath = resolve(path);
+  if (!existsSync(requestedPath)) {
     throw new Error(`项目目录不存在：${requestedPath}`);
   }
+  if (!statSync(requestedPath).isDirectory()) throw new Error(`所选路径不是文件夹：${requestedPath}`);
+  return resolve(runGit(requestedPath, ["rev-parse", "--show-toplevel"]) ?? requestedPath);
+}
 
-  const gitRoot = runGit(requestedPath, ["rev-parse", "--show-toplevel"]);
-  const projectPath = resolve(gitRoot ?? requestedPath);
+export function inspectProject(options: InspectProjectOptions): LocalProject {
+  const projectPath = resolveProjectDirectory(options.path);
   const repositoryUrl = sanitizeRemote(runGit(projectPath, ["remote", "get-url", "origin"]));
   const gitBranch = runGit(projectPath, ["branch", "--show-current"]);
   const gitHead = runGit(projectPath, ["rev-parse", "HEAD"]);

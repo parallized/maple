@@ -17,7 +17,10 @@ import {
   type HealthResponse,
   type HomeStatsResponse,
   type ModelPricingResponse,
+  type ExecutionJob,
+  type ProjectManagerJob,
   type RecordInstallShDownloadResponse,
+  type Runner,
   type RunnerCapability,
   type VersionHistoryResponse,
   type WorkerInventoryItem,
@@ -48,6 +51,7 @@ import { ProjectManagerService } from "./services/project-manager-service";
 import { DeviceAuthorizationService } from "./services/device-authorization-service";
 import { ReleaseService } from "./services/release-service";
 import { RunnerReconciliationService } from "./services/runner-reconciliation-service";
+import { createHostedProviderCredentialService } from "./services/hosted-provider-credential-service";
 import type { ModelPricingSyncService } from "./services/model-pricing-sync-service";
 import {
   ProviderCredentialServiceError,
@@ -139,6 +143,19 @@ function readIntegerQuery(
   return Number.isSafeInteger(value) && value >= minimum && value <= maximum ? value : null;
 }
 
+function isSecureProviderCredentialTransport(config: ServerConfig, deploymentMode: "hosted" | "standalone"): boolean {
+  if (deploymentMode === "standalone") return true;
+  try {
+    const url = new URL(config.publicUrl || `http://${config.host}:${config.port}`);
+    return url.protocol === "https:"
+      || url.hostname === "localhost"
+      || url.hostname === "127.0.0.1"
+      || url.hostname === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 export interface CreateServerAppOptions {
   config: ServerConfig;
   database: Database;
@@ -191,23 +208,41 @@ export function createServerApp(options: CreateServerAppOptions) {
   const deviceAuthorizations = new DeviceAuthorizationService(database, runners, accounts.sessions, config);
   const dashboard = new DashboardAssets(config.webRoot, config.publicUrl);
   const webAccess = (request: Request, mutating = false) => auth.workspace(request, { mutating });
+  const providerCredentials = options.providerCredentials
+    ?? (deploymentMode === "hosted" ? createHostedProviderCredentialService(database, config) : null);
+  const providerCredentialTransportSecure = isSecureProviderCredentialTransport(config, deploymentMode);
   const hostedOnly = () => {
     if (deploymentMode === "standalone") {
       throw new HttpError(403, "hosted_feature_unavailable", "Maple Local 不需要账户登录或执行端授权。");
     }
   };
 
-  const providerCredentialRoutes = deploymentMode === "standalone" && options.providerCredentials
+  const providerCredentialRoutes = providerCredentials
     ? new Elysia({ name: "maple-provider-credentials" })
         .get("/api/provider-connections/deepseek", async ({ request }) => {
-          webAccess(request);
-          return options.providerCredentials!.deepSeekStatus();
+          const { workspaceId } = webAccess(request);
+          const status = await providerCredentials.deepSeekStatus({ workspaceId });
+          return providerCredentialTransportSecure
+            ? status
+            : {
+                ...status,
+                supported: false,
+                configured: false,
+                message: "在线 Server 必须通过 HTTPS 才能管理和下发 DeepSeek 凭据。"
+              };
         })
         .post(
           "/api/provider-connections/deepseek/connect",
           async ({ request, body }) => {
-            webAccess(request, true);
-            return options.providerCredentials!.connectDeepSeek(body.apiKey);
+            const { workspaceId } = webAccess(request, true);
+            if (!providerCredentialTransportSecure) {
+              throw new ProviderCredentialServiceError(
+                409,
+                "provider_https_required",
+                "在线 Server 必须通过 HTTPS 才能连接 DeepSeek。"
+              );
+            }
+            return providerCredentials.connectDeepSeek({ workspaceId }, body.apiKey);
           },
           {
             body: t.Object({
@@ -216,8 +251,8 @@ export function createServerApp(options: CreateServerAppOptions) {
           }
         )
         .delete("/api/provider-connections/deepseek", async ({ request }) => {
-          webAccess(request, true);
-          return options.providerCredentials!.disconnectDeepSeek();
+          const { workspaceId } = webAccess(request, true);
+          return providerCredentials.disconnectDeepSeek({ workspaceId });
         })
     : new Elysia({ name: "maple-provider-credentials-unavailable" })
         .get("/api/provider-connections/deepseek", ({ request }) => {
@@ -227,9 +262,52 @@ export function createServerApp(options: CreateServerAppOptions) {
             supported: false,
             configured: false,
             source: "unavailable" as const,
-            message: "请在运行任务的 Maple Local 设备上连接 DeepSeek。"
+            message: "当前 Server 未启用 DeepSeek 凭据服务。"
           };
         });
+
+  const acceptsRuntimeProviderCredentials = (runner: Runner): boolean => (
+    runner.capabilities?.includes("provider_credentials_v1") ?? false
+  );
+
+  const deepSeekRuntimeCredentials = async (
+    runner: Runner,
+    required: boolean
+  ): Promise<{ deepseekApiKey: string } | undefined> => {
+    if (
+      !required
+      || !providerCredentials
+      || !providerCredentialTransportSecure
+      || !runner.workspaceId
+      || !acceptsRuntimeProviderCredentials(runner)
+    ) {
+      return undefined;
+    }
+    const apiKey = await providerCredentials.readDeepSeekApiKey({ workspaceId: runner.workspaceId });
+    return apiKey ? { deepseekApiKey: apiKey } : undefined;
+  };
+
+  const decorateExecutionJob = async (job: ExecutionJob | null, runner: Runner): Promise<ExecutionJob | null> => {
+    if (!job) return null;
+    const runtimeProviderCredentials = await deepSeekRuntimeCredentials(
+      runner,
+      job.attempt.workerKind === "deepseek" || job.managerWorkerKind === "deepseek"
+    );
+    return runtimeProviderCredentials ? { ...job, runtimeProviderCredentials } : job;
+  };
+
+  const decorateProjectManagerJob = async (
+    job: ProjectManagerJob | null,
+    runner: Runner
+  ): Promise<ProjectManagerJob | null> => {
+    if (!job) return null;
+    const preferredManager = job.executionSettings?.leaderWorker ?? job.executionSettings?.baseWorker;
+    const runtimeProviderCredentials = await deepSeekRuntimeCredentials(
+      runner,
+      preferredManager === "deepseek" && job.availableWorkers.includes("deepseek")
+    );
+    return runtimeProviderCredentials ? { ...job, runtimeProviderCredentials } : job;
+  };
 
   return new Elysia({ name: "maple-server" })
     .use(
@@ -832,7 +910,7 @@ export function createServerApp(options: CreateServerAppOptions) {
     })
     .post(
       "/api/runner/heartbeat",
-      ({ request, body }) => {
+      async ({ request, body }) => {
         const runner = auth.runner(request.headers);
         if (!runner) return unauthorized();
         const updated = runners.heartbeat(
@@ -846,9 +924,20 @@ export function createServerApp(options: CreateServerAppOptions) {
         const workspace = database
           .query("SELECT id, name, updated_at FROM workspaces WHERE id = ?")
           .get(updated.workspaceId) as { id: string; name: string; updated_at: string } | null;
-        return workspace
-          ? { runner: updated, workspace: { id: workspace.id, name: workspace.name, updatedAt: workspace.updated_at } }
-          : unauthorized();
+        if (!workspace) return unauthorized();
+        const providerConnections = providerCredentials && acceptsRuntimeProviderCredentials(updated)
+          ? {
+              deepseek: {
+                configured: providerCredentialTransportSecure
+                  && (await providerCredentials.deepSeekStatus({ workspaceId: updated.workspaceId })).configured
+              }
+            }
+          : undefined;
+        return {
+          runner: updated,
+          workspace: { id: workspace.id, name: workspace.name, updatedAt: workspace.updated_at },
+          ...(providerConnections ? { providerConnections } : {})
+        };
       },
       {
         body: t.Object({
@@ -884,11 +973,15 @@ export function createServerApp(options: CreateServerAppOptions) {
       const response: ClaimRunnerCommandResponse = runnerCommands.claim(runner.id);
       return response;
     })
-    .post("/api/runner/project-manager/claim", ({ request }) => {
+    .post("/api/runner/project-manager/claim", async ({ request }) => {
       const runner = auth.runner(request.headers);
       if (!runner) return unauthorized();
       runners.heartbeat(runner.id);
-      const response: ClaimProjectManagerJobResponse = projectManager.claim(runner.id);
+      const claimed = projectManager.claim(runner.id);
+      const response: ClaimProjectManagerJobResponse = {
+        ...claimed,
+        job: await decorateProjectManagerJob(claimed.job, runner)
+      };
       return response;
     })
     .post(
@@ -993,11 +1086,14 @@ export function createServerApp(options: CreateServerAppOptions) {
       return runHistory.logsByRunner(runner.id, params.attemptId, afterId, limit)
         ?? notFound("运行记录不存在。");
     })
-    .post("/api/runner/jobs/claim", ({ request }) => {
+    .post("/api/runner/jobs/claim", async ({ request }) => {
       const runner = auth.runner(request.headers);
       if (!runner) return unauthorized();
       runners.heartbeat(runner.id);
-      const response: ClaimJobResponse = { job: dispatch.claim(runner.id), retryAfterMs: 1500 };
+      const response: ClaimJobResponse = {
+        job: await decorateExecutionJob(dispatch.claim(runner.id), runner),
+        retryAfterMs: 1500
+      };
       return response;
     })
     .post(

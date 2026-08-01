@@ -158,7 +158,7 @@ describe("Maple Local Provider connections", () => {
     });
     const providerCredentials: ProviderCredentialService = {
       deepSeekStatus: async () => status(),
-      connectDeepSeek: async (apiKey) => {
+      connectDeepSeek: async (_scope, apiKey) => {
         receivedKey = apiKey;
         connected = true;
         return status();
@@ -166,7 +166,8 @@ describe("Maple Local Provider connections", () => {
       disconnectDeepSeek: async () => {
         connected = false;
         return status();
-      }
+      },
+      readDeepSeekApiKey: async () => receivedKey || null
     };
     const { app } = await setup(providerCredentials);
     const sessionResponse = await app.handle(new Request("http://localhost/api/auth/session", {

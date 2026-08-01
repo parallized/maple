@@ -154,7 +154,7 @@ export function App() {
 
   return (
     <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-(--color-base-200) text-(--color-secondary)">正在打开看板</main>}>
-      <DashboardPage api={api} session={session} onSession={adoptSession} onSignedOut={signedOut} />
+      <DashboardPage api={api} session={session} onSession={adoptSession} onSignedOut={signedOut} onHome={() => navigate("/")} />
     </Suspense>
   );
 }

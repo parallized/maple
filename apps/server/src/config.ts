@@ -27,6 +27,10 @@ export interface ServerConfig {
   modelPricingFetchTimeoutMs?: number;
   modelPricingMaxBytes?: number;
   modelPricingSourceUrl?: string;
+  /** Optional 32-byte base64url/hex key used to encrypt workspace Provider credentials. */
+  providerCredentialEncryptionKey?: string;
+  /** Optional deployment-managed DeepSeek key; takes precedence over SQLite credentials. */
+  deepSeekApiKey?: string;
 }
 
 function positiveInteger(value: string | undefined, fallback: number): number {
@@ -80,6 +84,8 @@ export function loadServerConfig(env: Record<string, string | undefined> = proce
       1024 * 1024,
       64 * 1024 * 1024
     ),
-    modelPricingSourceUrl: env.MAPLE_MODEL_PRICING_URL?.trim() || undefined
+    modelPricingSourceUrl: env.MAPLE_MODEL_PRICING_URL?.trim() || undefined,
+    providerCredentialEncryptionKey: env.MAPLE_PROVIDER_CREDENTIAL_KEY?.trim() || undefined,
+    deepSeekApiKey: env.DEEPSEEK_API_KEY?.trim() || undefined
   };
 }

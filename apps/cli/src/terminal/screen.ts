@@ -52,6 +52,17 @@ export class Screen {
     this.detach();
   }
 
+  /** 临时让出终端给逐行输入；下次 render 时在输入结果下方恢复界面。 */
+  suspend(): void {
+    if (this.closed) return;
+    if (this.cap.ansi && this.drawn > 0) {
+      const up = this.drawn - 1;
+      this.stdout.write(`\r${up > 0 ? `\x1b[${up}A` : ""}${CLEAR_TO_EOS}`);
+    }
+    this.drawn = 0;
+    this.showCursor();
+  }
+
   /** 整块区域擦除，如同没有渲染过。 */
   discard(): void {
     if (this.closed) return;

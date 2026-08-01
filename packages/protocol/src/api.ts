@@ -13,6 +13,7 @@ import type {
   Runner,
   RunnerCapability,
   RunnerCommand,
+  RunnerProviderConnectionState,
   RunnerRunRecord,
   RunLogKind,
   RunLogLevel,
@@ -161,6 +162,8 @@ export interface RunnerHeartbeatResponse {
     name: string;
     updatedAt: string;
   };
+  /** 云端 Provider 的非敏感可用状态；旧版 Server 可以缺省。 */
+  providerConnections?: RunnerProviderConnectionState;
 }
 
 export interface CreateRunnerCommandRequest {

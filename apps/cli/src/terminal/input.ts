@@ -13,14 +13,11 @@ export class KeySource {
   private readonly waiters: Array<(key: Key) => void> = [];
   private escapeTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
+  private suspended = true;
 
   constructor(private readonly stdin: NodeJS.ReadStream = process.stdin) {
     this.onData = this.onData.bind(this);
-    this.stdin.on("data", this.onData);
-    if (this.stdin.isTTY && typeof this.stdin.setRawMode === "function") {
-      this.stdin.setRawMode(true);
-    }
-    this.stdin.resume();
+    this.resume();
   }
 
   static canUseRawMode(stdin: NodeJS.ReadStream = process.stdin): boolean {
@@ -35,13 +32,33 @@ export class KeySource {
 
   close(): void {
     if (this.closed) return;
-    this.closed = true;
     if (this.escapeTimer) clearTimeout(this.escapeTimer);
+    this.escapeTimer = null;
+    this.suspend();
+    this.closed = true;
+  }
+
+  suspend(): void {
+    if (this.suspended) return;
+    if (this.escapeTimer) clearTimeout(this.escapeTimer);
+    this.escapeTimer = null;
+    this.parser.flush();
     this.stdin.off("data", this.onData);
     if (this.stdin.isTTY && typeof this.stdin.setRawMode === "function") {
       this.stdin.setRawMode(false);
     }
     this.stdin.pause();
+    this.suspended = true;
+  }
+
+  resume(): void {
+    if (this.closed || !this.suspended) return;
+    this.stdin.on("data", this.onData);
+    if (this.stdin.isTTY && typeof this.stdin.setRawMode === "function") {
+      this.stdin.setRawMode(true);
+    }
+    this.stdin.resume();
+    this.suspended = false;
   }
 
   /** 丢弃队列里残留的按键（切换组件时调用，避免上个界面的输入泄漏过来）。 */

@@ -212,7 +212,7 @@ export async function projectCommand(args: ParsedArgs, configPath: string): Prom
   const config = loadConfig(configPath);
   if (args.subcommand === "list") {
     if (config.projects.length === 0) {
-      console.log("尚未绑定项目。可在项目目录运行 maple project add .");
+      console.log("尚未绑定项目。请在 Runner 界面按 E，或从 Web 看板发起添加项目。");
       return;
     }
     for (const project of config.projects) {

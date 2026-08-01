@@ -6,7 +6,7 @@ import { workerLabel } from "../execution/adapters/registry";
 import { formatRunLogEntry } from "../execution/run-log";
 import type { WorkerShell } from "../execution/shells";
 import { detectCodingAgentTools } from "../execution/tool-availability";
-import type { DirectoryPicker } from "../project/directory-picker";
+import { selectProjectDirectory, type DirectoryPicker } from "../project/directory-picker";
 import { selectAndRegisterProject } from "../project/register";
 import {
   RunnerLoop,
@@ -168,6 +168,7 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
   let stopping = false;
   let forceStopping = false;
   let addingProject = false;
+  let terminalPromptActive = false;
   let projectNotice: { kind: "success" | "info" | "error"; message: string } | null = null;
   const managerStates = new Map<string, ProjectManagerActivityState>();
   let dirty = true;
@@ -377,10 +378,11 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
   };
 
   const painter = setInterval(() => {
-    if (dirty) render();
+    if (!terminalPromptActive && dirty) render();
   }, RENDER_INTERVAL_MS);
   // 等待中的转圈动画：选中面板为空时周期性重绘。
   const spinnerTimer = setInterval(() => {
+    if (terminalPromptActive) return;
     const pane = selected === "manager" ? managerPane : slots[selected];
     if (!pane || pane.logs.length === 0) dirty = true;
   }, 150);
@@ -401,11 +403,35 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
   };
   process.stdout.on("resize", onResize);
 
+  let terminalSessionTail = Promise.resolve();
+  const runTerminalSession = (interaction: () => Promise<string | null>): Promise<string | null> => {
+    const session = terminalSessionTail.then(async () => {
+      terminalPromptActive = true;
+      source.clear();
+      screen.suspend();
+      source.suspend();
+      try {
+        return await interaction();
+      } finally {
+        source.resume();
+        source.clear();
+        terminalPromptActive = false;
+        dirty = true;
+        render();
+      }
+    });
+    terminalSessionTail = session.then(() => undefined, () => undefined);
+    return session;
+  };
+  const directoryPicker = options.directoryPicker ?? ((signal?: AbortSignal) => selectProjectDirectory(signal, {
+    terminalSession: runTerminalSession
+  }));
+
   const runner = new RunnerLoop(options.api, options.config, options.concurrency, {
     configPath: options.configPath,
     output,
     workerShell: options.workerShell,
-    directoryPicker: options.directoryPicker
+    directoryPicker
   });
   const runPromise = runner
     .run(controller.signal)
@@ -438,7 +464,7 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
           const result = await selectAndRegisterProject(options.api, {
             configPath: options.configPath,
             signal: controller.signal,
-            directoryPicker: options.directoryPicker
+            directoryPicker
           });
           if (result) {
             runner.replaceConfig(result.config);

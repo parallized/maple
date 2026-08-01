@@ -1,5 +1,6 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { selectProjectDirectoryInTerminal, type TerminalDirectoryIo } from "./directory-input";
 
 export interface PickerPlan {
   executable: string;
@@ -33,6 +34,40 @@ try {
 `;
 
 export type DirectoryPicker = (signal?: AbortSignal) => Promise<string | null>;
+
+export type DirectoryPickerMode = "native" | "terminal" | "unsupported";
+
+export type TerminalDirectorySession = (
+  interaction: () => Promise<string | null>
+) => Promise<string | null>;
+
+export interface SelectProjectDirectoryOptions {
+  platform?: NodeJS.Platform;
+  env?: Record<string, string | undefined>;
+  kernelRelease?: string;
+  terminalIo?: TerminalDirectoryIo;
+  terminalSession?: TerminalDirectorySession;
+}
+
+function currentKernelRelease(): string {
+  try {
+    return readFileSync("/proc/sys/kernel/osrelease", "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+export function directoryPickerMode(
+  platform: NodeJS.Platform = process.platform,
+  env: Record<string, string | undefined> = process.env,
+  kernelRelease = platform === "linux" ? currentKernelRelease() : ""
+): DirectoryPickerMode {
+  if (platform === "win32" || platform === "darwin") return "native";
+  if (platform !== "linux") return "unsupported";
+  const wsl = Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP || /microsoft|wsl/i.test(kernelRelease));
+  if (wsl || (!env.DISPLAY && !env.WAYLAND_DISPLAY)) return "terminal";
+  return "native";
+}
 
 export function directoryPickerPlans(
   platform: NodeJS.Platform = process.platform,
@@ -121,17 +156,27 @@ async function runPicker(plan: PickerPlan, signal?: AbortSignal): Promise<string
   }
 }
 
-export const selectProjectDirectory: DirectoryPicker = async (signal) => {
+export async function selectProjectDirectory(
+  signal?: AbortSignal,
+  options: SelectProjectDirectoryOptions = {}
+): Promise<string | null> {
   if (signal?.aborted) return null;
-  if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
-    throw new Error("当前 Linux 执行端没有可用的桌面会话。");
+  const platform = options.platform ?? process.platform;
+  const env = options.env ?? process.env;
+  const terminalInteraction = () => selectProjectDirectoryInTerminal(signal, options.terminalIo);
+  const runTerminalInteraction = () => options.terminalSession
+    ? options.terminalSession(terminalInteraction)
+    : terminalInteraction();
+  if (directoryPickerMode(platform, env, options.kernelRelease) === "terminal") {
+    return runTerminalInteraction();
   }
 
-  const plans = directoryPickerPlans();
+  const plans = directoryPickerPlans(platform, env);
   for (const plan of plans) {
     const executable = availableExecutable(plan.executable);
     if (!executable) continue;
     return runPicker({ ...plan, executable }, signal);
   }
+  if (platform === "linux") return runTerminalInteraction();
   throw new Error("当前系统没有可用的原生目录选择器。");
-};
+}

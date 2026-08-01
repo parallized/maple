@@ -1,6 +1,9 @@
 import type { DeepSeekConnectionStatus } from "@maple/protocol";
 import {
+  normalizeDeepSeekApiKey,
   ProviderCredentialServiceError,
+  validateDeepSeekApiKey,
+  type DeepSeekCredentialFetcher,
   type ProviderCredentialService
 } from "@maple/server/standalone";
 import {
@@ -11,9 +14,6 @@ import {
 } from "./windows-credential-manager";
 
 export const DEEPSEEK_CREDENTIAL_TARGET = "Maple/Providers/DeepSeek";
-const DEEPSEEK_MODELS_ENDPOINT = "https://api.deepseek.com/models";
-const CONNECTION_TIMEOUT_MS = 15_000;
-
 let credentialRevision = 0;
 
 export interface DeepSeekCredentialStore {
@@ -22,11 +22,6 @@ export interface DeepSeekCredentialStore {
   write(secret: string): void;
   delete(): boolean;
 }
-
-export type DeepSeekCredentialFetcher = (
-  input: string | URL | Request,
-  init?: RequestInit
-) => Promise<Response>;
 
 const windowsCredentialStore: DeepSeekCredentialStore = {
   supported: isWindowsCredentialManagerSupported,
@@ -59,39 +54,6 @@ export function isDeepSeekConfigured(
     return readDeepSeekApiKey(env) !== null;
   } catch {
     return false;
-  }
-}
-
-async function validateDeepSeekApiKey(
-  apiKey: string,
-  fetcher: DeepSeekCredentialFetcher
-): Promise<void> {
-  let response: Response;
-  try {
-    response = await fetcher(DEEPSEEK_MODELS_ENDPOINT, {
-      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
-      signal: AbortSignal.timeout(CONNECTION_TIMEOUT_MS)
-    });
-  } catch {
-    throw new ProviderCredentialServiceError(
-      503,
-      "deepseek_unreachable",
-      "无法连接 DeepSeek，请检查网络后重试。"
-    );
-  }
-  if (response.status === 401 || response.status === 403) {
-    throw new ProviderCredentialServiceError(
-      422,
-      "deepseek_api_key_invalid",
-      "API Key 无效，请确认后重新输入。"
-    );
-  }
-  if (!response.ok) {
-    throw new ProviderCredentialServiceError(
-      502,
-      "deepseek_validation_failed",
-      `DeepSeek 暂时无法验证凭据（HTTP ${response.status}）。`
-    );
   }
 }
 
@@ -148,7 +110,7 @@ export function createDeepSeekProviderCredentialService(
 
   return {
     deepSeekStatus: status,
-    async connectDeepSeek(rawApiKey) {
+    async connectDeepSeek(_scope, rawApiKey) {
       if (environmentKey(env)) {
         throw new ProviderCredentialServiceError(
           409,
@@ -163,14 +125,7 @@ export function createDeepSeekProviderCredentialService(
           "当前 Runner 暂不支持系统凭据存储。"
         );
       }
-      const apiKey = rawApiKey.trim();
-      if (!apiKey.startsWith("sk-") || apiKey.length < 8 || apiKey.length > 512) {
-        throw new ProviderCredentialServiceError(
-          422,
-          "deepseek_api_key_invalid",
-          "请输入以 sk- 开头的 DeepSeek API Key。"
-        );
-      }
+      const apiKey = normalizeDeepSeekApiKey(rawApiKey);
       await validateDeepSeekApiKey(apiKey, fetcher);
       try {
         credentialStore.write(apiKey);
@@ -205,6 +160,17 @@ export function createDeepSeekProviderCredentialService(
       }
       credentialRevision += 1;
       return status();
+    },
+    async readDeepSeekApiKey() {
+      try {
+        return readDeepSeekApiKey(env);
+      } catch {
+        throw new ProviderCredentialServiceError(
+          500,
+          "credential_read_failed",
+          "无法读取当前设备的 DeepSeek 凭据。"
+        );
+      }
     }
   };
 }

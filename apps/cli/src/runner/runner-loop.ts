@@ -220,6 +220,7 @@ export class RunnerLoop {
 
     let heartbeatAt = 0;
     let credentialRevision = deepSeekCredentialRevision();
+    let serverDeepSeekConfigured = false;
     while (!signal.aborted && !this.forceTerminationRequested) {
       try {
         const claimWakeSignal = this.claimWakeController.signal;
@@ -230,7 +231,9 @@ export class RunnerLoop {
         }
         if (Date.now() >= heartbeatAt) {
           // 每次心跳重新探测；连接或移除 Provider 后无需重启 Runner。
-          const tools = detectCodingAgentTools();
+          const tools = serverDeepSeekConfigured
+            ? detectCodingAgentTools({ ...process.env, DEEPSEEK_API_KEY: "maple-server-managed" })
+            : detectCodingAgentTools();
           const supportedWorkers = tools
             .filter((tool) => tool.available)
             .map((tool) => tool.kind);
@@ -241,6 +244,9 @@ export class RunnerLoop {
             [...CLI_CAPABILITIES],
             workerInventory
           );
+          const nextServerDeepSeekConfigured = heartbeat.providerConnections?.deepseek.configured ?? false;
+          const providerStateChanged = nextServerDeepSeekConfigured !== serverDeepSeekConfigured;
+          serverDeepSeekConfigured = nextServerDeepSeekConfigured;
           if (heartbeat && typeof heartbeat === "object" && "workspace" in heartbeat && this.config.runner) {
             const workspace = heartbeat.workspace;
             if (
@@ -259,7 +265,8 @@ export class RunnerLoop {
             }
           }
           await this.reconcileAndFlush();
-          heartbeatAt = Date.now() + 10_000;
+          heartbeatAt = providerStateChanged ? 0 : Date.now() + 10_000;
+          if (providerStateChanged) continue;
         }
         await this.flushOutbox();
         await this.claimRunnerCommand(signal);
@@ -439,6 +446,9 @@ export class RunnerLoop {
           summaryMode: "report",
           resumeSessionId,
           additionalWritableDirectories: screenshotDirectory ? [screenshotDirectory] : undefined,
+          deepSeekApiKey: job.attempt.workerKind === "deepseek"
+            ? job.runtimeProviderCredentials?.deepseekApiKey
+            : undefined,
           onSession: workflowId
             ? (sessionId) => {
                 this.sessionStore.save({
@@ -543,7 +553,7 @@ export class RunnerLoop {
             shell: this.workerShell,
             outputLanguage: job.executionSettings?.aiOutputLanguage,
             sessionStore: this.sessionStore,
-            executor: this.workerExecutor,
+            executor: this.runtimeCredentialExecutor(job.runtimeProviderCredentials?.deepseekApiKey),
             onDiagnostic: queueLog,
             onUsage: (usage) => {
               leaderUsage = usage;
@@ -695,7 +705,7 @@ export class RunnerLoop {
         this.workerShell,
         managerDirectory,
         this.sessionStore,
-        undefined,
+        this.runtimeCredentialExecutor(job.runtimeProviderCredentials?.deepseekApiKey),
         managerDiagnostic,
         managerForceController.signal
       );
@@ -755,6 +765,13 @@ export class RunnerLoop {
         if (this.managerTask === task) this.managerTask = null;
       });
     this.managerTask = task;
+  }
+
+  private runtimeCredentialExecutor(deepSeekApiKey?: string): WorkerExecutor {
+    if (!deepSeekApiKey) return this.workerExecutor;
+    return (options) => this.workerExecutor(options.workerKind === "deepseek"
+      ? { ...options, deepSeekApiKey }
+      : options);
   }
 
   private wakeClaimLoop(): void {

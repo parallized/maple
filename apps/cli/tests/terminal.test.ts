@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { EventEmitter } from "node:events";
 import { detectCapabilities, detectShellFlavor, type CapabilityInput } from "../src/terminal/capabilities";
+import { KeySource } from "../src/terminal/input";
 import { KeyParser } from "../src/terminal/keymap";
 import { createStyle, createSymbols, displayWidth, keepSgrOnly, stripAnsi, truncateDisplayWidth, truncateVisible, visibleLength } from "../src/terminal/style";
 import { inputWindow } from "../src/terminal/widgets";
@@ -13,6 +15,41 @@ function caps(overrides: Partial<CapabilityInput> = {}) {
     ...overrides
   });
 }
+
+class FakeTtyInput extends EventEmitter {
+  readonly isTTY = true;
+  readonly rawModes: boolean[] = [];
+
+  setRawMode(enabled: boolean): this {
+    this.rawModes.push(enabled);
+    return this;
+  }
+
+  resume(): this {
+    return this;
+  }
+
+  pause(): this {
+    return this;
+  }
+}
+
+describe("terminal input sessions", () => {
+  it("temporarily releases raw mode and restores the shared key source", () => {
+    const input = new FakeTtyInput();
+    const source = new KeySource(input as unknown as NodeJS.ReadStream);
+
+    expect(input.listenerCount("data")).toBe(1);
+    source.suspend();
+    expect(input.listenerCount("data")).toBe(0);
+    source.resume();
+    expect(input.listenerCount("data")).toBe(1);
+    source.close();
+
+    expect(input.listenerCount("data")).toBe(0);
+    expect(input.rawModes).toEqual([true, false, true, false]);
+  });
+});
 
 describe("terminal capabilities", () => {
   it("enables everything on a modern POSIX terminal", () => {

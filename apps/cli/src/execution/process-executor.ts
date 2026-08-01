@@ -41,6 +41,8 @@ export interface ProcessExecutionOptions {
   summaryMode?: "raw" | "report" | "strict-report";
   resumeSessionId?: string;
   additionalWritableDirectories?: string[];
+  /** Server 下发的单次运行凭据；只保留在当前任务内存中。 */
+  deepSeekApiKey?: string;
   /** Session 一经 Provider 确认就立即持久化，避免长任务中途退出后丢失续接点。 */
   onSession?: (sessionId: string) => void;
   onLog: (entry: RunLogEntry) => Promise<void>;
@@ -60,8 +62,13 @@ export interface ProcessExecutionResult {
 
 export type WorkerExecutor = (options: ProcessExecutionOptions) => Promise<ProcessExecutionResult>;
 
-function executionEnvironment(workerKind: WorkerKind): Record<string, string | undefined> {
+function executionEnvironment(
+  workerKind: WorkerKind,
+  runtimeDeepSeekApiKey?: string
+): Record<string, string | undefined> {
   if (workerKind !== "deepseek") return process.env;
+  const runtimeKey = runtimeDeepSeekApiKey?.trim();
+  if (runtimeKey) return { ...process.env, DEEPSEEK_API_KEY: runtimeKey };
   try {
     const apiKey = readDeepSeekApiKey();
     return apiKey ? { ...process.env, DEEPSEEK_API_KEY: apiKey } : process.env;
@@ -168,7 +175,7 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
   const shell = options.shell ?? "direct";
   const adapter = getCodingAgentAdapter(options.workerKind);
   const parser = adapter.createOutputParser();
-  const workerEnv = executionEnvironment(options.workerKind);
+  const workerEnv = executionEnvironment(options.workerKind, options.deepSeekApiKey);
   const command = buildResolvedWorkerCommand(
     options.workerKind,
     options.prompt,

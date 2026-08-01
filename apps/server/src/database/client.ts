@@ -262,6 +262,16 @@ CREATE TABLE IF NOT EXISTS todo_artifacts (
   created_at TEXT NOT NULL
 );
 
+/* Workspace Provider secrets are encrypted before SQLite sees them. */
+CREATE TABLE IF NOT EXISTS provider_credentials (
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK(provider IN ('deepseek')),
+  encrypted_secret TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(workspace_id, provider)
+);
+
 CREATE TABLE IF NOT EXISTS todo_assets (
   todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
   id TEXT NOT NULL,
@@ -378,6 +388,7 @@ CREATE INDEX IF NOT EXISTS idx_model_pricing_provider ON model_pricing(provider_
 CREATE INDEX IF NOT EXISTS idx_model_pricing_model ON model_pricing(model_id, provider_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON web_sessions(user_id, revoked_at, expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON web_sessions(active_workspace_id, revoked_at, expires_at);
+CREATE INDEX IF NOT EXISTS idx_provider_credentials_workspace ON provider_credentials(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_auth_attempts_lookup ON auth_attempts(scope, key_hash, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_device_authorizations_expiry ON device_authorizations(state, expires_at);

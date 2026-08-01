@@ -15,9 +15,11 @@ type DashboardPageProps = {
   session: AuthSessionResponse;
   onSession: (next: AuthSessionResponse) => void;
   onSignedOut: () => void;
+  /** 点按侧栏 Logo 回官网主页。 */
+  onHome: () => void;
 };
 
-export function DashboardPage({ api, session, onSession, onSignedOut }: DashboardPageProps) {
+export function DashboardPage({ api, session, onSession, onSignedOut, onHome }: DashboardPageProps) {
   const platform = useMemo(
     () => createServerPlatform(api, {
       onUnauthorized: onSignedOut,
@@ -31,6 +33,7 @@ export function DashboardPage({ api, session, onSession, onSignedOut }: Dashboar
       key={session.workspace.id}
       platform={platform}
       version={pkg.version}
+      onBrandClick={onHome}
       settingsExtraTabs={buildAccountSettingsTabs({ api, session, onSession, onSignedOut })}
       sidebarFooter={({ openSettings }) => (
         <AccountControl

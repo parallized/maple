@@ -541,6 +541,50 @@ describe("process execution lifecycle", () => {
     });
   });
 
+  it("injects a cloud DeepSeek key only into the child environment and redacts its output", async () => {
+    const apiKey = "sk-cloud-runtime-secret";
+    const output = [
+      JSON.stringify({ type: "thread.started", thread_id: "deepseek-cloud-session" }),
+      JSON.stringify({
+        type: "item.completed",
+        item: { id: "message-1", type: "agent_message", text: `received ${apiKey}` }
+      }),
+      JSON.stringify({ type: "turn.completed" })
+    ].join("\n") + "\n";
+    const entries: RunLogEntry[] = [];
+    let childEnvironment: Record<string, string | undefined> | undefined;
+    let launchedCommand: string[] = [];
+
+    const result = await executeWorker({
+      workerKind: "deepseek",
+      cwd: import.meta.dir,
+      prompt: "run through cloud provider",
+      signal: new AbortController().signal,
+      deepSeekApiKey: apiKey,
+      spawnProcess: (command, options) => {
+        launchedCommand = command;
+        childEnvironment = options.env;
+        return Bun.spawn([
+          process.execPath,
+          "-e",
+          `process.stdout.write(${JSON.stringify(output)});`
+        ], {
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          detached: process.platform !== "win32"
+        });
+      },
+      onLog: async (entry) => { entries.push(entry); }
+    });
+
+    expect(result.success).toBe(true);
+    expect(childEnvironment?.DEEPSEEK_API_KEY).toBe(apiKey);
+    expect(launchedCommand.join(" ")).not.toContain(apiKey);
+    expect(JSON.stringify(entries)).not.toContain(apiKey);
+    expect(JSON.stringify(entries)).toContain("[REDACTED]");
+  });
+
   it("returns on the Leader terminal event without waiting for process exit", async () => {
     const decision = JSON.stringify({
       workflowId: null,

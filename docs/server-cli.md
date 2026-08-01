@@ -1,6 +1,6 @@
 # Maple 在线服务与 Worker CLI
 
-Maple Server 同时提供 Web 看板、账户与工作区 API、SQLite 数据层和 CLI 安装包。CLI 常驻开发机，保存本机项目路径、领取任务并启动 PM/Worker。项目源码和 Worker 凭据不会上传到 Server。
+Maple Server 同时提供 Web 看板、账户与工作区 API、SQLite 数据层和 CLI 安装包。CLI 常驻开发机，保存本机项目路径、领取任务并启动 PM/Worker。项目源码不会上传到 Server；Local Provider 凭据保留在本机，用户主动连接的云端 Provider 凭据则按工作区加密保存。
 
 ```mermaid
 flowchart LR
@@ -86,10 +86,11 @@ maple connect --server https://maple.example.com
 
 CLI 创建带 PKCE 的短期设备授权，打开浏览器并轮询。用户确认后，Server 把 Runner 归入当前工作区；设备码只能交换一次 Runner Token。Runner Token 只能心跳、管理自身项目映射、领取自己的命令和执行任务，不能浏览工作区管理数据。
 
-增加项目既可以在 CLI 中按 `E` 打开原生目录选择器，也可以由 Web 向指定在线 Runner 发出目录选择命令。绝对路径只保存在 `~/.maple/cli.json`：
+增加项目既可以在 Runner 中按 `E`，也可以由 Web 向指定在线 Runner 发出目录选择命令。Windows、macOS 和有可用选择器的桌面 Linux 打开系统窗口；WSL 与无桌面 Linux 改在 Runner 终端输入路径。CLI 会验证目录、解析 Git 仓库根目录并展示最终路径，用户确认后才绑定。绝对路径只保存在 `~/.maple/cli.json`。
+
+已有项目可以继续通过 CLI 查看或解除绑定：
 
 ```bash
-maple project add .
 maple project list
 maple project remove <项目名或ID>
 ```
@@ -106,6 +107,15 @@ maple project remove <项目名或ID>
 - CLI 授权、密码修改、会话批准/撤销都会写入 `security_events`。
 
 Server 不再生成或接受 Admin Token。Web 管理操作必须使用账户 Session，CLI 只使用绑定后下发的 Runner Token。
+
+## 云端 DeepSeek
+
+- Hosted Server 与 Maple Local 都可以连接 DeepSeek；状态接口永远不会回显 API Key。
+- Hosted 凭据按 Workspace 隔离，使用 AES-256-GCM 加密后写入 SQLite；默认加密密钥位于 `<data-dir>/secrets/provider-credentials.key`，不写入 SQLite。
+- 只有声明 `provider_credentials_v1` 能力、持有有效 Runner Token 且属于同一 Workspace 的新版 CLI，才能在领取需要 DeepSeek 的 Leader / Worker 任务时获得运行期凭据。
+- Runner 只在当前任务内存与子进程环境变量中使用凭据，不写 CLI 配置、Todo、执行参数或日志；输出中的完整 Key 与掩码后缀都会脱敏。
+- Hosted 凭据管理与下发要求 HTTPS；Maple Local 的回环地址除外。
+- 也可以通过 Server 的 `DEEPSEEK_API_KEY` 环境变量交给部署平台管理。此模式下网页只显示状态，不能替换或移除环境变量。
 
 ## Maple Runtime
 
@@ -147,6 +157,8 @@ Server 只在 Compose 内网暴露，Caddy 负责 TLS。必须备份 `maple-data
 | `MAPLE_DEVICE_AUTH_TTL_SECONDS` | `600` | CLI 浏览器授权有效期 |
 | `MAPLE_DATA_DIR` | `~/.maple/server` | SQLite、头像和成果物目录 |
 | `MAPLE_DATABASE_PATH` | `<data-dir>/maple.sqlite` | SQLite 文件位置，Windows/Linux/macOS 均支持 |
+| `MAPLE_PROVIDER_CREDENTIAL_KEY` | 自动生成到 data-dir | 32 字节 base64url 或 64 位十六进制 Provider 加密密钥；多副本必须一致 |
+| `DEEPSEEK_API_KEY` | 未设置 | 由部署环境统一管理并安全下发给已认证 Runner 的 DeepSeek Key |
 
 不要在没有可信代理边界时开启 `MAPLE_TRUST_PROXY`，否则攻击者可以伪造来源 IP 并绕过按 IP 的审查与限流。生产环境必须使用 HTTPS。
 

@@ -43,6 +43,8 @@ type AppSidebarProps = {
   footer?: ReactNode;
   /** 应用版本号，显示在侧栏最底部。 */
   version?: string;
+  /** 点按品牌区回主页，仅 Web 端注入；桌面端缺省时保持不可点击。 */
+  onBrandClick?: () => void;
 };
 
 /** 全局左侧导航栏(Linear 风):Logo / 概览 / 项目列表 / 设置。 */
@@ -63,7 +65,8 @@ export function AppSidebar({
   onToggleMaximize,
   onClose,
   footer,
-  version
+  version,
+  onBrandClick
 }: AppSidebarProps) {
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const [seenProjects, setSeenProjects] = useState<Set<string>>(loadSeenProjects);
@@ -152,14 +155,30 @@ export function AppSidebar({
       data-tauri-drag-region={isTauri ? "true" : undefined}
     >
       {/* ── Logo ── */}
-      <div className="flex items-center gap-2 px-1.5 pb-2">
-        <Icon icon="mingcute:quill-pen-ai-fill" className="text-lg text-(--color-primary)" />
-        <span className="flex items-center whitespace-nowrap">
-          <SplitText text="Maple" className="inline" delay={40} />
-          <SplitText text="Code" className="inline logo-code-gradient" delay={40} />
-        </span>
-        {isDevMode ? <span className="topnav-dev-badge">Dev</span> : null}
-      </div>
+      {(() => {
+        const brand = (
+          <>
+            <Icon icon="mingcute:quill-pen-ai-fill" className="text-lg text-(--color-primary)" />
+            <span className="flex items-center whitespace-nowrap">
+              <SplitText text="Maple" className="inline" delay={40} />
+              <SplitText text="Code" className="inline logo-code-gradient" delay={40} />
+            </span>
+            {isDevMode ? <span className="topnav-dev-badge">Dev</span> : null}
+          </>
+        );
+        return onBrandClick ? (
+          <button
+            type="button"
+            aria-label={t("返回主页", "Back to homepage")}
+            onClick={onBrandClick}
+            className="flex w-full items-center gap-2 px-1.5 pb-2 text-left transition-opacity hover:opacity-80"
+          >
+            {brand}
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 px-1.5 pb-2">{brand}</div>
+        );
+      })()}
 
       {/* ── 概览 ── */}
       <button type="button" className={navBtnClass(view === "overview")} onClick={() => onViewChange("overview")}>

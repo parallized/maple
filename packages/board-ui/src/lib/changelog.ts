@@ -8,16 +8,40 @@ export type ChangelogEntry = {
 /** 版本更新历史，新版本追加在数组最前。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.3",
+    date: "2026-08-01",
+    highlights: {
+      zh: [
+        "在线 Server 支持云端 DeepSeek 凭据",
+        "凭据按工作区加密，仅 HTTPS 管理",
+        "WSL 与无桌面 Linux 终端选目录",
+        "目录绑定前校验并解析 Git 根",
+        "Dashboard 独立打包，首页提速",
+        "侧栏品牌区可点击返回主页",
+        "清理冗余文档与图片资源",
+      ],
+      en: [
+        "Hosted Server now manages cloud DeepSeek credentials",
+        "Workspace-scoped encrypted credentials, HTTPS only",
+        "Terminal directory picker on WSL / headless Linux",
+        "Directories validated and resolved to the Git root",
+        "Dashboard split into its own bundle, faster homepage",
+        "Sidebar brand now navigates back to homepage",
+        "Removed stale docs and binary assets",
+      ],
+    },
+  },
+  {
     version: "0.2.2",
     date: "2026-08-01",
     highlights: {
       zh: [
-        "概览用量图拆分 Worker / Leader 明细，新增成本估算",
+        "概览用量图拆分明细，新增成本估算",
         "模型定价同步支持系统代理，失败自动重试",
-        "Workflow 绑定固定 Worker，同目标任务自动串行续接会话",
-        "Worker 回报话术精简，输出更像人类对话",
-        "移除项目本地内置 Skill 注入，运行时依赖收敛到 MCP",
-        "修复版本弹窗层级遮挡与 Leader 虚线段过小不可见",
+        "Workflow 绑定固定 Worker，优化串行续接会话",
+        "Worker 回报精简",
+        "移除项目本地内置 Skill 注入",
+        "修复版本弹窗层级遮挡",
       ],
       en: [
         "Usage chart splits Worker / Leader detail with cost estimates",

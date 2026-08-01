@@ -3,15 +3,34 @@ import type { TodoStatus } from "./statuses";
 export const WORKER_KINDS = ["codex", "deepseek", "claude", "kimi", "glm", "iflow", "gemini", "opencode"] as const;
 export type WorkerKind = (typeof WORKER_KINDS)[number];
 
-export type DeepSeekCredentialSource = "windows_credential_manager" | "environment" | "unavailable";
+export type DeepSeekCredentialSource =
+  | "windows_credential_manager"
+  | "server_encrypted"
+  | "environment"
+  | "unavailable";
 
-/** Maple Local 只公开连接状态；API Key 永远不会出现在响应或数据库中。 */
+/** 浏览器只读取连接状态；API Key 永远不会通过 Provider 状态接口回显。 */
 export interface DeepSeekConnectionStatus {
   provider: "deepseek";
   supported: boolean;
   configured: boolean;
   source: DeepSeekCredentialSource;
   message: string | null;
+}
+
+/**
+ * Server 只在已认证 Runner 领取需要该 Provider 的任务时附带运行期凭据。
+ * Runner 必须只在内存中使用，禁止写入配置、任务数据或日志。
+ */
+export interface RuntimeProviderCredentials {
+  deepseekApiKey?: string;
+}
+
+/** Runner 可据此探测云端 Provider，但该状态本身不包含任何密钥。 */
+export interface RunnerProviderConnectionState {
+  deepseek: {
+    configured: boolean;
+  };
 }
 
 /** CLI 本机解析出的 Worker 默认模型；只包含可公开的模型元数据。 */
@@ -101,7 +120,7 @@ export interface MapleSettings {
   acceptance: AcceptanceSettings;
   execution: WorkspaceExecutionSettings;
 }
-export const RUNNER_CAPABILITIES = ["project_manager_v1"] as const;
+export const RUNNER_CAPABILITIES = ["project_manager_v1", "provider_credentials_v1"] as const;
 export type RunnerCapability = (typeof RUNNER_CAPABILITIES)[number];
 
 export type RunnerState = "online" | "offline";
@@ -329,6 +348,8 @@ export interface ProjectManagerJob {
   attemptId: string;
   leaseToken: string;
   leaseSeconds: number;
+  /** 仅存在于领取响应内，不落库。 */
+  runtimeProviderCredentials?: RuntimeProviderCredentials;
 }
 
 /** Runner Token 只能读取属于自己的执行记录。 */
@@ -363,4 +384,6 @@ export interface ExecutionJob {
   dispatchBrief?: string | null;
   /** 最初完成派单的 Leader PM；Worker 失败时只允许由它生成收口报告。 */
   managerWorkerKind?: WorkerKind | null;
+  /** 仅存在于领取响应内，不落库。 */
+  runtimeProviderCredentials?: RuntimeProviderCredentials;
 }

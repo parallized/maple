@@ -26,6 +26,7 @@ function memoryStore(initial: string | null = null): DeepSeekCredentialStore & {
 }
 
 describe("DeepSeek Provider credentials", () => {
+  const scope = { workspaceId: "workspace-deepseek-test" };
   it("round-trips a temporary secret through Windows Credential Manager", () => {
     if (!isWindowsCredentialManagerSupported()) return;
     const target = `Maple/Tests/DeepSeek/${crypto.randomUUID()}`;
@@ -51,7 +52,7 @@ describe("DeepSeek Provider credentials", () => {
       }
     });
 
-    await expect(service.connectDeepSeek("not-a-key")).rejects.toMatchObject({
+    await expect(service.connectDeepSeek(scope, "not-a-key")).rejects.toMatchObject({
       status: 422,
       code: "deepseek_api_key_invalid"
     });
@@ -67,7 +68,7 @@ describe("DeepSeek Provider credentials", () => {
       fetcher: async () => new Response(null, { status: 401 })
     });
 
-    await expect(service.connectDeepSeek("sk-invalid-deepseek-key")).rejects.toMatchObject({
+    await expect(service.connectDeepSeek(scope, "sk-invalid-deepseek-key")).rejects.toMatchObject({
       status: 422,
       code: "deepseek_api_key_invalid"
     });
@@ -87,7 +88,7 @@ describe("DeepSeek Provider credentials", () => {
       }
     });
 
-    const connected = await service.connectDeepSeek(apiKey);
+    const connected = await service.connectDeepSeek(scope, apiKey);
     expect(store.value()).toBe(apiKey);
     expect(connected).toEqual({
       provider: "deepseek",
@@ -98,7 +99,7 @@ describe("DeepSeek Provider credentials", () => {
     });
     expect(JSON.stringify(connected)).not.toContain(apiKey);
 
-    const disconnected = await service.disconnectDeepSeek();
+    const disconnected = await service.disconnectDeepSeek(scope);
     expect(store.value()).toBeNull();
     expect(disconnected.configured).toBe(false);
   });
@@ -110,15 +111,15 @@ describe("DeepSeek Provider credentials", () => {
       credentialStore: store
     });
 
-    expect(await service.deepSeekStatus()).toMatchObject({
+    expect(await service.deepSeekStatus(scope)).toMatchObject({
       configured: true,
       source: "environment"
     });
-    await expect(service.connectDeepSeek("sk-replacement-key")).rejects.toMatchObject({
+    await expect(service.connectDeepSeek(scope, "sk-replacement-key")).rejects.toMatchObject({
       status: 409,
       code: "deepseek_environment_managed"
     });
-    await expect(service.disconnectDeepSeek()).rejects.toMatchObject({
+    await expect(service.disconnectDeepSeek(scope)).rejects.toMatchObject({
       status: 409,
       code: "deepseek_environment_managed"
     });

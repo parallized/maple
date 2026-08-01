@@ -5,7 +5,7 @@ export type DeepSeekConnectionStatus = {
   provider: "deepseek";
   supported: boolean;
   configured: boolean;
-  source: "windows_credential_manager" | "environment" | "unavailable";
+  source: "windows_credential_manager" | "server_encrypted" | "environment" | "unavailable";
   message: string | null;
 };
 export type TaskStatus =

@@ -161,7 +161,7 @@ describe("runner directory selection command", () => {
     expect(JSON.stringify(api.completions)).not.toContain(fixture.projectPath.replaceAll("\\", "\\\\"));
   });
 
-  it("returns a product-safe error when the native picker cannot open", async () => {
+  it("returns a product-safe error when directory selection cannot complete", async () => {
     const fixture = createFixture();
     const api = new FakeRunnerCommandApi();
 
@@ -179,7 +179,7 @@ describe("runner directory selection command", () => {
     expect(api.completions[0]?.input).toEqual({
       leaseToken: LEASE_TOKEN,
       outcome: "failed",
-      error: "执行端无法打开本机目录选择器。"
+      error: "执行端无法完成项目目录选择。"
     });
     expect(JSON.stringify(api.completions)).not.toContain(fixture.projectPath.replaceAll("\\", "\\\\"));
   });

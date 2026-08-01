@@ -51,17 +51,17 @@ export async function handleRunnerCommand(options: HandleRunnerCommandOptions): 
     return loadConfig(options.configPath);
   }
 
-  options.output.info("[maple] 看板请求添加项目，已在本机打开目录选择器。");
+  options.output.info("[maple] 看板请求添加项目，请在当前 Runner 完成目录选择。");
   let selectedPath: string | null;
   try {
     selectedPath = await (options.directoryPicker ?? selectProjectDirectory)(options.signal);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    options.output.warn(`[maple] 无法打开目录选择器：${detail}`);
+    options.output.warn(`[maple] 无法完成项目目录选择：${detail}`);
     if (!options.signal.aborted) {
       await complete(options.api, command.id, leaseToken, {
         outcome: "failed",
-        error: "执行端无法打开本机目录选择器。"
+        error: "执行端无法完成项目目录选择。"
       });
     }
     return loadConfig(options.configPath);

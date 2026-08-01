@@ -27,6 +27,20 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+async function runTerminalInputSession(
+  ctx: WidgetContext,
+  interaction: () => Promise<string | null>
+): Promise<string | null> {
+  ctx.keys?.clear();
+  ctx.keys?.suspend();
+  try {
+    return await interaction();
+  } finally {
+    ctx.keys?.resume();
+    ctx.keys?.clear();
+  }
+}
+
 function printBanner(ctx: WidgetContext, cap: TerminalCapabilities): void {
   const { style, symbols } = ctx;
   const mode = ctx.keys ? "交互模式" : "逐行模式";
@@ -213,7 +227,9 @@ async function projectsScreen(ctx: WidgetContext, configPath: string): Promise<v
 async function addProjectFlow(ctx: WidgetContext, configPath: string): Promise<void> {
   const config = loadConfig(configPath);
   if (!config.runner || !config.serverUrl) throw new Error("尚未授权执行端，请先连接 Server 并在浏览器确认。");
-  const path = await selectProjectDirectory();
+  const path = await selectProjectDirectory(undefined, {
+    terminalSession: (interaction) => runTerminalInputSession(ctx, interaction)
+  });
   if (path === null) return;
   const name = await textInput(ctx, "项目名称", { placeholder: "留空使用目录名" });
   if (name === null) return;

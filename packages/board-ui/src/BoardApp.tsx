@@ -144,6 +144,8 @@ export type BoardAppProps = {
   settingsExtraTabs?: SettingsExtraTab[];
   /** 应用版本号，由平台层注入，显示在侧栏最底部。 */
   version?: string;
+  /** 点按侧栏品牌区回主页，仅 Web 端注入。 */
+  onBrandClick?: () => void;
 };
 
 function mergeExternalProjects(prev: Project[], incoming: Project[], preserveTaskIds: ReadonlySet<string>): Project[] {
@@ -184,7 +186,7 @@ function mergeExternalProjects(prev: Project[], incoming: Project[], preserveTas
   return next;
 }
 
-export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version }: BoardAppProps) {
+export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, onBrandClick }: BoardAppProps) {
   const { capabilities } = platform;
   const isTauri = capabilities.isDesktop;
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows");
@@ -1786,6 +1788,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version }
           onClose={closeWindow}
           footer={typeof sidebarFooter === "function" ? sidebarFooter({ openSettings: () => { setView("settings"); setMobileNavOpen(false); } }) : sidebarFooter}
           version={version}
+          onBrandClick={onBrandClick}
         />
 
         {/* 移动端导航抽屉的半透明遮罩（仅 ≤980px 显示，点按关闭抽屉） */}
