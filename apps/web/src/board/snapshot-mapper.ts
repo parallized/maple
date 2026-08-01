@@ -40,6 +40,23 @@ function parseDetailsDoc(raw: string | undefined): unknown {
 
 export function mapTodoToTask(todo: Todo): Task {
   const summary = todo.resultSummary?.trim();
+  const reports = (todo.reports ?? [])
+    .map((report) => ({
+      id: report.id,
+      author: report.author,
+      content: report.content,
+      createdAt: report.createdAt
+    }))
+    .filter((report) => report.content.trim().length > 0);
+  // 兼容旧 Server / PM 阻塞报告：当前 resultSummary 若不在历史报告里，作为最新一份补在最前。
+  if (summary && !reports.some((report) => report.content.trim() === summary)) {
+    reports.unshift({
+      id: `server-${todo.id}`,
+      author: todo.workerKind,
+      content: todo.resultSummary as string,
+      createdAt: todo.completedAt ?? todo.updatedAt
+    });
+  }
   return {
     id: todo.id,
     title: todo.title,
@@ -51,19 +68,11 @@ export function mapTodoToTask(todo: Todo): Task {
     needsConfirmation: false,
     tags: todo.tags ?? [],
     executionPhase: todo.executionPhase ?? null,
+    serialBlocked: todo.serialBlocked === true,
     startedAt: todo.startedAt ?? null,
     createdAt: todo.createdAt,
     updatedAt: todo.updatedAt,
-    reports: summary
-      ? [
-          {
-            id: `server-${todo.id}`,
-            author: todo.workerKind,
-            content: todo.resultSummary as string,
-            createdAt: todo.completedAt ?? todo.updatedAt
-          }
-        ]
-      : []
+    reports
   };
 }
 

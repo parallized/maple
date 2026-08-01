@@ -94,6 +94,14 @@ export type BoardExecutionSettings = {
   retryMaxAttempts: WorkerRetryConfig["maxAttempts"];
   /** 执行端同时运行的任务上限（1-16），与 Server 工作区设置一致。 */
   concurrency: number;
+  /** 完成提醒音频文件名（未上传为 null）。 */
+  reminderAudioName?: string | null;
+  /** 完成提醒音频 MIME 类型。 */
+  reminderAudioMime?: string | null;
+  /** 任务完成时通过 CLI 播放提醒音频。 */
+  reminderPlayCli: boolean;
+  /** 任务完成时在 Maple 应用内播放提醒音频。 */
+  reminderPlayMaple: boolean;
 };
 
 /**
@@ -155,6 +163,14 @@ export interface BoardPlatform {
   saveUserPreferences?(next: BoardUserPreferences): Promise<void>;
   loadExecutionSettings?(): Promise<BoardExecutionSettings>;
   saveExecutionSettings?(next: BoardExecutionSettings): Promise<void>;
+
+  // ── 完成提醒音频（Server-backed 平台实现；缺失时回退本地存储）──
+  /** 读取已上传的完成提醒音频，返回可播放 URL；未上传返回 null。 */
+  loadReminderAudio?(): Promise<string | null>;
+  /** 上传完成提醒音频（≤500kB），返回可播放 URL。 */
+  saveReminderAudio?(file: { name: string; mime: string; bytes: Uint8Array }): Promise<string | null>;
+  /** 删除完成提醒音频。 */
+  removeReminderAudio?(): Promise<void>;
 
   // ── Local Provider connections ──
   loadDeepSeekConnection?(): Promise<DeepSeekConnectionStatus>;

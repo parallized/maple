@@ -7,6 +7,7 @@ import {
   RUN_LOG_STATUSES,
   RUNNER_CAPABILITIES,
   SCREENSHOT_COMPRESSION_PRESETS,
+  REMINDER_AUDIO_MAX_BYTES,
   TODO_STATUSES,
   WORKER_KINDS,
   type ClaimJobResponse,
@@ -43,6 +44,7 @@ import {
 import { RunnerCommandRepository } from "./repositories/runner-command-repository";
 import { RunnerRepository } from "./repositories/runner-repository";
 import { RunRepository } from "./repositories/run-repository";
+import { ReminderAudioRepository } from "./repositories/reminder-audio-repository";
 import { SettingsRepository } from "./repositories/settings-repository";
 import { TodoRepository } from "./repositories/todo-repository";
 import { TaskAssetRepository, TaskAssetValidationError } from "./repositories/task-asset-repository";
@@ -180,6 +182,7 @@ export function createServerApp(options: CreateServerAppOptions) {
   modelPricing.configureSource(config.modelPricingSourceUrl?.trim() || DEFAULT_MODEL_PRICING_SOURCE_URL);
   const artifacts = new ArtifactRepository(database, config.dataDir);
   const taskAssets = new TaskAssetRepository(database, config.dataDir);
+  const reminderAudio = new ReminderAudioRepository(config.dataDir);
   const projectManager = new ProjectManagerService(
     database,
     projects,
@@ -208,6 +211,21 @@ export function createServerApp(options: CreateServerAppOptions) {
   const deviceAuthorizations = new DeviceAuthorizationService(database, runners, accounts.sessions, config);
   const dashboard = new DashboardAssets(config.webRoot, config.publicUrl);
   const webAccess = (request: Request, mutating = false) => auth.workspace(request, { mutating });
+
+  const serveReminderAudio = (workspaceId: string): Response => {
+    const execution = settings.getExecution(workspaceId);
+    if (!execution.reminderAudioName || !execution.reminderAudioMime) {
+      return apiError(404, "reminder_audio_not_found", "尚未上传提醒音频。");
+    }
+    if (!reminderAudio.exists()) {
+      return apiError(404, "reminder_audio_not_found", "提醒音频文件缺失。");
+    }
+    return new Response(Bun.file(reminderAudio.path()), {
+      headers: {
+        "Content-Type": execution.reminderAudioMime
+      }
+    });
+  };
   const providerCredentials = options.providerCredentials
     ?? (deploymentMode === "hosted" ? createHostedProviderCredentialService(database, config) : null);
   const providerCredentialTransportSecure = isSecureProviderCredentialTransport(config, deploymentMode);
@@ -314,7 +332,7 @@ export function createServerApp(options: CreateServerAppOptions) {
       cors({
         origin: config.allowedOrigins,
         allowedHeaders: ["authorization", "content-type", "x-maple-csrf", "x-maple-workspace"],
-        methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         credentials: true
       })
     )
@@ -720,10 +738,57 @@ export function createServerApp(options: CreateServerAppOptions) {
           leaderConstitution: t.Optional(t.String({ maxLength: 100_000 })),
           concurrency: t.Optional(t.Integer({ minimum: 1, maximum: 16 })),
           retryIntervalSeconds: t.Optional(t.Integer({ minimum: 1, maximum: 600 })),
-          retryMaxAttempts: t.Optional(t.Integer({ minimum: 1, maximum: 20 }))
+          retryMaxAttempts: t.Optional(t.Integer({ minimum: 1, maximum: 20 })),
+          reminderAudioName: t.Optional(t.Union([t.String({ maxLength: 120 }), t.Null()])),
+          reminderAudioMime: t.Optional(t.Union([t.String({ maxLength: 120 }), t.Null()])),
+          reminderPlayCli: t.Optional(t.Boolean()),
+          reminderPlayMaple: t.Optional(t.Boolean())
         })
       }
     )
+    .get("/api/settings/reminder-audio", ({ request }) => {
+      const { workspaceId } = webAccess(request);
+      return serveReminderAudio(workspaceId);
+    })
+    .put("/api/settings/reminder-audio", async ({ request }) => {
+      const { workspaceId } = webAccess(request, true);
+      const contentType = request.headers.get("content-type") || "";
+      if (!contentType.startsWith("audio/")) {
+        return apiError(422, "invalid_reminder_audio_type", "提醒音频必须是 audio/* 类型。");
+      }
+      const rawName = request.headers.get("x-maple-file-name") || "";
+      let fileName = "reminder-audio";
+      try {
+        const decoded = decodeURIComponent(rawName).replace(/[\\/]/g, "_").trim();
+        if (decoded) fileName = decoded.slice(0, 120);
+      } catch {
+        // 非法文件名回退默认值。
+      }
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      if (bytes.byteLength === 0 || bytes.byteLength > REMINDER_AUDIO_MAX_BYTES) {
+        return apiError(422, "invalid_reminder_audio_size", "提醒音频大小需在 1B ~ 500kB 之间。");
+      }
+      reminderAudio.save(bytes);
+      settings.updateExecution(
+        { reminderAudioName: fileName, reminderAudioMime: contentType },
+        workspaceId
+      );
+      return settings.getExecution(workspaceId);
+    })
+    .delete("/api/settings/reminder-audio", ({ request }) => {
+      const { workspaceId } = webAccess(request, true);
+      reminderAudio.remove();
+      settings.updateExecution(
+        { reminderAudioName: null, reminderAudioMime: null },
+        workspaceId
+      );
+      return settings.getExecution(workspaceId);
+    })
+    .get("/api/runner/reminder-audio", ({ request }) => {
+      const runner = auth.runner(request.headers);
+      if (!runner?.workspaceId) return unauthorized();
+      return serveReminderAudio(runner.workspaceId);
+    })
     .post("/api/pairings", ({ request }) => {
       hostedOnly();
       const { workspaceId } = webAccess(request, true);
@@ -1007,7 +1072,8 @@ export function createServerApp(options: CreateServerAppOptions) {
           workflowId: t.Union([t.String({ minLength: 1, maxLength: 100 }), t.Null()]),
           workflowTitle: t.String({ minLength: 1, maxLength: 160 }),
           workflowSummary: t.String({ minLength: 1, maxLength: 4_000 }),
-          dispatchBrief: t.String({ minLength: 1, maxLength: 2_000 })
+          dispatchBrief: t.String({ minLength: 1, maxLength: 2_000 }),
+          tags: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 40 }), { maxItems: 8 }))
         })
       }
     )

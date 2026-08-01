@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { TagCatalog, Task, TaskArtifact, TaskStatus } from "../domain";
+import type { TaskWaitingKind } from "../lib/utils";
 import { WORKER_KINDS, type UiLanguage } from "../lib/constants";
 import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
@@ -21,8 +22,8 @@ import { PopoverMenu } from "./PopoverMenu";
 type TaskDetailPanelProps = {
   task: Task;
   subtaskCount?: number;
-  /** 因并发已满而排队等待时，在状态徽标上挂「排队」标记。 */
-  waitingBlocked?: boolean;
+  /** 等待原因：并发已满等待空闲名额，或同工作流串行等待；null 表示不等待。 */
+  waitingKind?: TaskWaitingKind;
   tagLanguage: UiLanguage;
   tagCatalog?: TagCatalog | null;
   onUpdateTitle?: (title: string) => void;
@@ -106,7 +107,7 @@ function renderAuthorIcon(author: string, size = 14) {
 export function TaskDetailPanel({
   task,
   subtaskCount = 0,
-  waitingBlocked = false,
+  waitingKind = null,
   tagLanguage,
   tagCatalog,
   onUpdateTitle,
@@ -352,33 +353,30 @@ export function TaskDetailPanel({
               <PopoverMenu
                 label="Status Selector"
                 triggerNode={
-                  <span className={`ui-badge ui-badge--sm cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${statusBadgeClass(
-                    task.executionPhase === "queued"
-                      ? "队列中"
-                      : task.executionPhase === "planning"
-                        ? "规划中"
-                        : task.executionPhase === "running"
-                          ? "进行中"
-                          : task.status,
-                  )}`}>
-                    {task.executionPhase === "queued" ? (
-                      <>
-                        {"队列中"}
-                        {waitingBlocked ? (
-                          <span className="task-queue-chip" title="并发已满，排队等待执行">
-                            排队
-                          </span>
-                        ) : null}
-                      </>
+                  <span className={`ui-badge ui-badge--sm cursor-pointer hover:brightness-95 hover:-translate-x-px active:scale-[0.98] transition-all ${waitingKind !== null && (task.executionPhase === "planning" || task.executionPhase === "queued")
+                    ? "ui-badge--planning"
+                    : statusBadgeClass(
+                        task.executionPhase === "queued"
+                          ? "队列中"
+                          : task.executionPhase === "planning"
+                            ? "规划中"
+                            : task.executionPhase === "running"
+                              ? "进行中"
+                              : task.status,
+                      )}`}>
+                    {waitingKind !== null && (task.executionPhase === "planning" || task.executionPhase === "queued") ? (
+                      <span
+                        className="shimmer-metal"
+                        title={waitingKind === "serial"
+                          ? "同一工作流的前序任务执行中，将串行执行"
+                          : "并发已满，等待空闲名额"}
+                      >
+                        {waitingKind === "serial" ? "等待串行" : "等待并发"}
+                      </span>
+                    ) : task.executionPhase === "queued" ? (
+                      "队列中"
                     ) : task.executionPhase === "planning" ? (
-                      <>
-                        <span className="shimmer-metal">规划中</span>
-                        {waitingBlocked ? (
-                          <span className="task-queue-chip" title="并发已满，排队等待执行">
-                            排队
-                          </span>
-                        ) : null}
-                      </>
+                      <span className="shimmer-metal">规划中</span>
                     ) : task.executionPhase === "running" ? (
                       <>
                         <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin opacity-80 mr-0.5" />

@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import type {
   ClaimJobResponse,
   CreatePairingResponse,
+  DashboardSnapshot,
   ExchangePairingResponse,
   RegisterProjectResponse,
   Todo,
@@ -468,6 +469,52 @@ describe("Maple subtask tree", () => {
     expect(draftTodo.resultSummary).toBe("已完成报告");
   });
 
+  it("accumulates one report per execution with the latest first", async () => {
+    const { app, runnerToken, parent } = await setupProjectAndTodos();
+
+    const run = async (summary: string) => {
+      const claimResponse = await request(app, "/api/runner/jobs/claim", {
+        method: "POST",
+        token: runnerToken
+      });
+      expect(claimResponse.status).toBe(200);
+      const claim = (await claimResponse.json()) as ClaimJobResponse;
+      const job = claim.job!;
+      await request(app, `/api/runner/jobs/${job.todo.id}/start`, {
+        method: "POST",
+        token: runnerToken,
+        body: { leaseToken: job.leaseToken }
+      });
+      const completeResponse = await request(app, `/api/runner/jobs/${job.todo.id}/complete`, {
+        method: "POST",
+        token: runnerToken,
+        body: { leaseToken: job.leaseToken, success: true, exitCode: 0, summary }
+      });
+      expect(completeResponse.status).toBe(200);
+    };
+
+    await run("第一份报告");
+    const reworkResponse = await request(app, `/api/todos/${parent.id}`, {
+      method: "PATCH",
+      token: ADMIN_TOKEN,
+      body: { status: "rework" }
+    });
+    expect(reworkResponse.status).toBe(200);
+    await run("第二份报告");
+
+    // 列表（看板数据源）与详情都应保留多份报告，最新在前。
+    const dashboardResponse = await request(app, "/api/dashboard", { token: ADMIN_TOKEN });
+    const dashboard = (await dashboardResponse.json()) as DashboardSnapshot;
+    const todo = dashboard.todos.find((item) => item.id === parent.id)!;
+    expect(todo.resultSummary).toBe("第二份报告");
+    expect(todo.reports?.map((report) => report.content)).toEqual(["第二份报告", "第一份报告"]);
+
+    const detailResponse = await request(app, `/api/todos/${parent.id}`, { token: ADMIN_TOKEN });
+    const detail = (await detailResponse.json()) as TodoDetailResponse;
+    expect(detail.todo.reports?.map((report) => report.content)).toEqual(["第二份报告", "第一份报告"]);
+    expect(detail.attempts[0]?.resultSummary).toBe("第二份报告");
+  });
+
   it("deletes descendants together with the parent task", async () => {
     const { app, projectId, parent } = await setupProjectAndTodos();
     const deleteResponse = await request(app, `/api/todos/${parent.id}`, {
@@ -478,6 +525,41 @@ describe("Maple subtask tree", () => {
     const listResponse = await request(app, `/api/projects/${projectId}/todos`, { token: ADMIN_TOKEN });
     const { todos } = (await listResponse.json()) as { todos: Todo[] };
     expect(todos).toEqual([]);
+  });
+
+  it("flags a routed todo as waiting serial when a workflow sibling is executing", async () => {
+    const { app, projectId, parent } = await setupProjectAndTodos();
+    const database = databases[databases.length - 1]!;
+    const now = "2026-07-27T00:00:00.000Z";
+    const workflowId = "workflow-serial-test";
+    database.run(
+      `INSERT INTO project_workflows(id, project_id, worker_kind, title, summary, created_at, updated_at)
+       VALUES (?, ?, 'codex', ?, '', ?, ?)`,
+      [workflowId, projectId, "Serial workflow", now, now]
+    );
+    database.run(
+      `INSERT INTO todo_routes(todo_id, workflow_id, state, created_at, updated_at)
+       VALUES (?, ?, 'claimed', ?, ?)`,
+      [parent.id, workflowId, now, now]
+    );
+    database.run(
+      `INSERT INTO todos(id, project_id, title, details, status, worker_kind, created_at, updated_at)
+       VALUES ('serial-sibling', ?, ?, '', 'running', 'codex', ?, ?)`,
+      [projectId, "Serial sibling", now, now]
+    );
+    database.run(
+      `INSERT INTO todo_routes(todo_id, workflow_id, state, created_at, updated_at)
+       VALUES (?, ?, 'routed', ?, ?)`,
+      ["serial-sibling", workflowId, now, now]
+    );
+    database.run(`UPDATE todos SET status = 'queued' WHERE id = ?`, [parent.id]);
+
+    const listResponse = await request(app, `/api/projects/${projectId}/todos`, { token: ADMIN_TOKEN });
+    const { todos } = (await listResponse.json()) as { todos: Todo[] };
+    const parentRow = todos.find((todo) => todo.id === parent.id)!;
+    const sibling = todos.find((todo) => todo.id === "serial-sibling")!;
+    expect(parentRow.serialBlocked).toBe(true);
+    expect(sibling.serialBlocked).toBe(false);
   });
 
   it("rejects cycles and cross-project parents at the repository level", () => {

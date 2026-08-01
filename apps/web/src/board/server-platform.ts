@@ -455,6 +455,38 @@ export function createServerPlatform(api: DashboardApi, options?: ServerPlatform
       }
     },
 
+    async loadReminderAudio() {
+      try {
+        const blob = await api.workspaceReminderAudio();
+        return URL.createObjectURL(blob);
+      } catch (error) {
+        if (error instanceof DashboardApiError && error.status === 404) return null;
+        handleApiError(error);
+        throw error;
+      }
+    },
+
+    async saveReminderAudio(file) {
+      try {
+        const settings = await api.uploadWorkspaceReminderAudio(file.bytes, file.mime, file.name);
+        if (!settings.reminderAudioName) return null;
+        const blob = await api.workspaceReminderAudio();
+        return URL.createObjectURL(blob);
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+
+    async removeReminderAudio() {
+      try {
+        await api.removeWorkspaceReminderAudio();
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+
     async loadDeepSeekConnection() {
       try {
         return await api.deepSeekConnection();

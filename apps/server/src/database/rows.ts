@@ -102,10 +102,11 @@ export interface TodoRow {
   updated_at: string;
   started_at: string | null;
   completed_at: string | null;
-  route_state?: string | null;
-  manager_attempt_id?: string | null;
-  manager_lease_expires_at?: string | null;
-}
+    route_state?: string | null;
+    manager_attempt_id?: string | null;
+    manager_lease_expires_at?: string | null;
+    serial_blocked?: number | null;
+  }
 
 export interface AttemptRow {
   id: string;
@@ -318,8 +319,9 @@ export function toTodo(row: TodoRow): Todo {
     claimedByRunnerId: row.claimed_by_runner_id,
     activeAttemptId: row.active_attempt_id,
     leaseExpiresAt: row.lease_expires_at,
-    executionPhase: toExecutionPhase(row),
-    executionConnection: hasExecution
+      executionPhase: toExecutionPhase(row),
+      serialBlocked: row.serial_blocked === 1,
+      executionConnection: hasExecution
       ? (activeLease !== null && activeLease > new Date().toISOString() ? "connected" : "interrupted")
       : null,
     retryAfter: row.retry_after,

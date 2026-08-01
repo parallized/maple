@@ -36,8 +36,8 @@ import {
     createTask,
     createTaskReport,
     isTaskInFlight,
-    isTaskWaitingBlocked,
-    normalizeProjects
+    normalizeProjects,
+    taskWaitingKind
   } from "./lib/utils";
 import { applyUiFont } from "./lib/ui-font";
 import { collectTokenUsage } from "./lib/token-usage";
@@ -57,6 +57,17 @@ import {
   loadWorkerRetryConfig
 } from "./lib/storage";
 import { normalizeTagCatalog } from "./lib/tag-catalog";
+import {
+  REMINDER_AUDIO_MAX_BYTES,
+  fileToReminderDataUrl,
+  loadLocalReminderAudio,
+  loadLocalReminderPlayCli,
+  loadLocalReminderPlayMaple,
+  removeLocalReminderAudio,
+  saveLocalReminderAudio,
+  saveLocalReminderPlayCli,
+  saveLocalReminderPlayMaple
+} from "./lib/reminder-storage";
 
 
 import type {
@@ -231,6 +242,11 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
   const [uiFont, setUiFont] = useState<UiFont>(() => isTauri ? loadUiFont() : "chill-round");
   const [baseWorker, setBaseWorker] = useState<WorkerKind>(() => isTauri ? loadBaseWorker() : DEFAULT_BASE_WORKER);
   const [leaderWorker, setLeaderWorker] = useState<WorkerKind>(DEFAULT_BASE_WORKER);
+  // 完成提醒：音频 URL / 名称 + CLI / Maple 两个播放开关（可全选、全不选或单选）。
+  const [reminderAudioUrl, setReminderAudioUrl] = useState<string | null>(null);
+  const [reminderAudioName, setReminderAudioName] = useState<string | null>(null);
+  const [reminderPlayCli, setReminderPlayCli] = useState(false);
+  const [reminderPlayMaple, setReminderPlayMaple] = useState(false);
   // 外部请求设置页切到指定页签(如看板 Leader 状态条 →「模型和工具」)。
   const [settingsTabRequest, setSettingsTabRequest] = useState<{ tab: string; nonce: number } | null>(null);
 
@@ -573,6 +589,13 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
   useEffect(() => {
     if (!platform.loadExecutionSettings) {
       setExecutionSettingsReady(true);
+      setReminderPlayCli(loadLocalReminderPlayCli());
+      setReminderPlayMaple(loadLocalReminderPlayMaple());
+      const localAudio = loadLocalReminderAudio();
+      if (localAudio) {
+        setReminderAudioUrl(localAudio.dataUrl);
+        setReminderAudioName(localAudio.name);
+      }
       let cancelled = false;
       platform.loadConstitution()
         .then((text) => {
@@ -600,9 +623,19 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
           maxAttempts: settings.retryMaxAttempts
         }));
         setWorkerConcurrency(settings.concurrency);
+        setReminderPlayCli(settings.reminderPlayCli ?? false);
+        setReminderPlayMaple(settings.reminderPlayMaple ?? false);
+        setReminderAudioName(settings.reminderAudioName ?? null);
         setExecutionSettingsReady(true);
       })
       .catch(() => {});
+    if (platform.loadReminderAudio) {
+      platform.loadReminderAudio()
+        .then((url) => {
+          if (!cancelled) setReminderAudioUrl(url);
+        })
+        .catch(() => {});
+    }
     return () => { cancelled = true; };
   }, [platform]);
 
@@ -616,7 +649,9 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
       leaderConstitution,
       retryIntervalSeconds: workerRetryConfig.intervalSeconds,
       retryMaxAttempts: workerRetryConfig.maxAttempts,
-      concurrency: workerConcurrency
+      concurrency: workerConcurrency,
+      reminderPlayCli,
+      reminderPlayMaple
     }).catch(() => {});
     // Constitution has an explicit save action; it is intentionally not a trigger here.
   }, [
@@ -629,8 +664,51 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
     leaderConstitution,
     workerRetryConfig.intervalSeconds,
     workerRetryConfig.maxAttempts,
-    workerConcurrency
+    workerConcurrency,
+    reminderPlayCli,
+    reminderPlayMaple
   ]);
+  useEffect(() => {
+    if (platform.loadExecutionSettings) return;
+    saveLocalReminderPlayCli(reminderPlayCli);
+  }, [platform, reminderPlayCli]);
+  useEffect(() => {
+    if (platform.loadExecutionSettings) return;
+    saveLocalReminderPlayMaple(reminderPlayMaple);
+  }, [platform, reminderPlayMaple]);
+
+  // ── 完成提醒：任务进入「已完成」时按开关在 Maple 内播放音频 ──
+  const lastTaskStatusRef = useRef<Map<string, string>>(new Map());
+  const completionNotifiedRef = useRef<Set<string>>(new Set());
+  const reminderAudioUrlRef = useRef<string | null>(reminderAudioUrl);
+  reminderAudioUrlRef.current = reminderAudioUrl;
+  useEffect(() => {
+    if (!reminderPlayMaple) return;
+    const lastStatuses = lastTaskStatusRef.current;
+    const notified = completionNotifiedRef.current;
+    for (const project of projects) {
+      for (const task of project.tasks) {
+        const previous = lastStatuses.get(task.id);
+        lastStatuses.set(task.id, task.status);
+        if (task.status !== "已完成") {
+          notified.delete(task.id);
+          continue;
+        }
+        // 首次加载时已完成的旧任务不播；同一任务离开「已完成」后可再次提醒。
+        if (previous === undefined || previous === "已完成" || notified.has(task.id)) continue;
+        notified.add(task.id);
+        const url = reminderAudioUrlRef.current;
+        if (!url) continue;
+        try {
+          const audio = new Audio(url);
+          void audio.play().catch(() => {});
+        } catch {
+          // 播放失败不打断界面流程。
+        }
+      }
+    }
+  }, [projects, reminderPlayMaple]);
+
   useEffect(() => {
     let cancelled = false;
     platform.loadProjects()
@@ -1079,6 +1157,41 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
   function taskMutationError(prefix: string, error: unknown): void {
     const detail = error instanceof Error ? error.message : String(error);
     setNotice(`${prefix}：${detail}`);
+  }
+
+  /** 上传完成提醒音频（≤500kB）。Server-backed 平台走服务端，否则回退本地存储。 */
+  async function uploadReminderAudio(file: File): Promise<void> {
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (bytes.byteLength === 0 || bytes.byteLength > REMINDER_AUDIO_MAX_BYTES) {
+        setNotice("提醒音频需不超过 500kB。");
+        return;
+      }
+      const mime = file.type || "audio/mpeg";
+      if (platform.saveReminderAudio) {
+        const url = await platform.saveReminderAudio({ name: file.name, mime, bytes });
+        setReminderAudioUrl(url);
+      } else {
+        const dataUrl = await fileToReminderDataUrl(file);
+        saveLocalReminderAudio({ name: file.name, mime, dataUrl });
+        setReminderAudioUrl(dataUrl);
+      }
+      setReminderAudioName(file.name);
+      setNotice(uiLanguage === "en" ? "Reminder audio saved." : "提醒音频已保存。");
+    } catch (error) {
+      taskMutationError(uiLanguage === "en" ? "Failed to save reminder audio" : "提醒音频保存失败", error);
+    }
+  }
+
+  async function removeReminderAudio(): Promise<void> {
+    try {
+      if (platform.removeReminderAudio) await platform.removeReminderAudio();
+      else removeLocalReminderAudio();
+      setReminderAudioUrl(null);
+      setReminderAudioName(null);
+    } catch (error) {
+      taskMutationError(uiLanguage === "en" ? "Failed to remove reminder audio" : "提醒音频删除失败", error);
+    }
   }
 
   function mutateLocalTask(
@@ -1982,6 +2095,14 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
                       onWorkerRetryIntervalChange={(seconds) => setWorkerRetryConfig({ intervalSeconds: seconds })}
                       onWorkerRetryMaxAttemptsChange={(count) => setWorkerRetryConfig({ maxAttempts: count })}
                       onWorkerConcurrencyChange={setWorkerConcurrency}
+                      reminderAudioUrl={reminderAudioUrl}
+                      reminderAudioName={reminderAudioName}
+                      reminderPlayCli={reminderPlayCli}
+                      reminderPlayMaple={reminderPlayMaple}
+                      onUploadReminderAudio={(file) => void uploadReminderAudio(file)}
+                      onRemoveReminderAudio={() => void removeReminderAudio()}
+                      onReminderPlayCliChange={setReminderPlayCli}
+                      onReminderPlayMapleChange={setReminderPlayMaple}
                     onRefreshProbes={() => setInstallProbeToken((n) => n + 1)}
                     extraTabs={settingsExtraTabs}
                     tabRequest={settingsTabRequest}
@@ -2029,7 +2150,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
 	            <TaskDetailPanel
 	              task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
 	              subtaskCount={boardProject.tasks.filter((t) => t.parentId === selectedTaskId).length}
-	              waitingBlocked={isTaskWaitingBlocked(
+	              waitingKind={taskWaitingKind(
 	                boardProject.tasks.find((t) => t.id === selectedTaskId)!,
 	                boardProject.tasks,
 	                workerConcurrency
@@ -2074,7 +2195,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
 	              <TaskDetailPanel
 	                task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
 	                subtaskCount={boardProject.tasks.filter((t) => t.parentId === selectedTaskId).length}
-	                waitingBlocked={isTaskWaitingBlocked(
+	                waitingKind={taskWaitingKind(
 	                  boardProject.tasks.find((t) => t.id === selectedTaskId)!,
 	                  boardProject.tasks,
 	                  workerConcurrency

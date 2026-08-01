@@ -5,6 +5,7 @@ import type {
   TodoAttempt,
   TodoDetailResponse,
   TodoLog,
+  TodoReport,
   TodoStatus,
   TokenUsageBreakdown,
   UpdateTodoRequest,
@@ -24,7 +25,16 @@ export class TodoRepository {
       .query(
         `SELECT t.*, route.state AS route_state,
                 CASE WHEN route.state = 'claimed' THEN route.attempt_id END AS manager_attempt_id,
-                CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at
+                CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at,
+                CASE WHEN EXISTS (
+                  SELECT 1
+                  FROM todo_routes sibling_route
+                  JOIN todos sibling_todo ON sibling_todo.id = sibling_route.todo_id
+                  WHERE sibling_route.workflow_id = route.workflow_id
+                    AND sibling_route.todo_id <> t.id
+                    AND sibling_todo.status IN ('queued', 'running')
+                    AND t.status <> 'running'
+                ) THEN 1 ELSE 0 END AS serial_blocked
          FROM todos t
          JOIN projects p ON p.id = t.project_id
          LEFT JOIN todo_routes route ON route.todo_id = t.id
@@ -32,7 +42,9 @@ export class TodoRepository {
          ORDER BY t.priority DESC, t.created_at ASC`
       )
       .all(...(workspaceId ? [workspaceId] : [])) as TodoRow[];
-    return rows.map(toTodo);
+    const todos = rows.map(toTodo);
+    this.attachReports(todos);
+    return todos;
   }
 
   listByProject(projectId: string, workspaceId?: string): Todo[] {
@@ -40,7 +52,16 @@ export class TodoRepository {
       .query(
         `SELECT t.*, route.state AS route_state,
                 CASE WHEN route.state = 'claimed' THEN route.attempt_id END AS manager_attempt_id,
-                CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at
+                CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at,
+                CASE WHEN EXISTS (
+                  SELECT 1
+                  FROM todo_routes sibling_route
+                  JOIN todos sibling_todo ON sibling_todo.id = sibling_route.todo_id
+                  WHERE sibling_route.workflow_id = route.workflow_id
+                    AND sibling_route.todo_id <> t.id
+                    AND sibling_todo.status IN ('queued', 'running')
+                    AND t.status <> 'running'
+                ) THEN 1 ELSE 0 END AS serial_blocked
          FROM todos t
          JOIN projects p ON p.id = t.project_id
          LEFT JOIN todo_routes route ON route.todo_id = t.id
@@ -48,7 +69,9 @@ export class TodoRepository {
          ORDER BY t.priority DESC, t.created_at ASC`
       )
       .all(...(workspaceId ? [projectId, workspaceId] : [projectId])) as TodoRow[];
-    return rows.map(toTodo);
+    const todos = rows.map(toTodo);
+    this.attachReports(todos);
+    return todos;
   }
 
   get(todoId: string, workspaceId?: string): Todo | null {
@@ -56,7 +79,16 @@ export class TodoRepository {
       .query(
         `SELECT t.*, route.state AS route_state,
                 CASE WHEN route.state = 'claimed' THEN route.attempt_id END AS manager_attempt_id,
-                CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at
+                CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at,
+                CASE WHEN EXISTS (
+                  SELECT 1
+                  FROM todo_routes sibling_route
+                  JOIN todos sibling_todo ON sibling_todo.id = sibling_route.todo_id
+                  WHERE sibling_route.workflow_id = route.workflow_id
+                    AND sibling_route.todo_id <> t.id
+                    AND sibling_todo.status IN ('queued', 'running')
+                    AND t.status <> 'running'
+                ) THEN 1 ELSE 0 END AS serial_blocked
          FROM todos t
          JOIN projects p ON p.id = t.project_id
          LEFT JOIN todo_routes route ON route.todo_id = t.id
@@ -94,10 +126,58 @@ export class TodoRepository {
       )
       .all(todoId) as LogRow[];
     return {
-      todo,
+      todo: this.withReports(todo),
       attempts: attemptRows.map(toAttempt),
       logs: logRows.map(toLog)
     };
+  }
+
+  /** 给列表里的每个 Todo 附上历史执行报告（最新在前），数据来自每次 attempt 的总结。 */
+  private attachReports(todos: Todo[]): void {
+    if (todos.length === 0) return;
+    const byId = new Map(todos.map((todo) => [todo.id, todo]));
+    const ids = [...byId.keys()];
+    const reportsByTodo = new Map<string, TodoReport[]>();
+    for (let offset = 0; offset < ids.length; offset += 500) {
+      const chunk = ids.slice(offset, offset + 500);
+      const rows = this.database
+        .query(
+          `SELECT todo_id, id, worker_kind, result_summary, completed_at, created_at
+           FROM todo_attempts
+           WHERE todo_id IN (${chunk.map(() => "?").join(",")})
+             AND result_summary IS NOT NULL
+             AND trim(result_summary) <> ''
+           ORDER BY completed_at DESC, created_at DESC`
+        )
+        .all(...chunk) as Array<{
+          todo_id: string;
+          id: string;
+          worker_kind: string;
+          result_summary: string;
+          completed_at: string | null;
+          created_at: string;
+        }>;
+      for (const row of rows) {
+        const report: TodoReport = {
+          id: row.id,
+          author: row.worker_kind,
+          content: row.result_summary,
+          createdAt: row.completed_at ?? row.created_at
+        };
+        const list = reportsByTodo.get(row.todo_id);
+        if (list) list.push(report);
+        else reportsByTodo.set(row.todo_id, [report]);
+      }
+    }
+    for (const [todoId, todo] of byId) {
+      todo.reports = reportsByTodo.get(todoId);
+    }
+  }
+
+  /** 单个 Todo 附带历史报告（与列表口径一致）。 */
+  private withReports(todo: Todo): Todo {
+    this.attachReports([todo]);
+    return todo;
   }
 
   create(projectId: string, input: CreateTodoRequest, workspaceId?: string): Todo {

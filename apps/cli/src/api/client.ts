@@ -122,6 +122,24 @@ export class MapleApiClient {
     return this.request("GET", "/api/settings/execution");
   }
 
+  /** 下载工作区完成提醒音频；未上传时返回 null。 */
+  async reminderAudio(): Promise<Uint8Array | null> {
+    if (!this.token) return null;
+    const response = await fetch(`${this.serverUrl}/api/runner/reminder-audio`, {
+      headers: { authorization: `Bearer ${this.token}` },
+      signal: AbortSignal.timeout(10_000)
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new MapleApiError(
+        `提醒音频下载失败（HTTP ${response.status}）。`,
+        response.status,
+        "reminder_audio_download_failed"
+      );
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
   completeProjectManagerJob(
     todoId: string,
     input: CompleteProjectManagerJobRequest

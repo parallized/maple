@@ -1,5 +1,8 @@
 import {
+  MAX_TODO_TAGS,
   WORKER_KINDS,
+  normalizeTodoTags,
+  resolveTagLanguage,
   type CompleteProjectManagerJobRequest,
   type ProjectManagerJob,
   type WorkerKind
@@ -85,11 +88,17 @@ export function parseProjectManagerDecision(output: string, job: ProjectManagerJ
     workflowId ? `延续“${workflowTitle}”工作流并完成当前 Todo。` : "完成当前 Todo，并遵守项目现有约束。",
     600
   );
+  const tagLanguage = resolveTagLanguage(
+    job.executionSettings?.aiOutputLanguage,
+    `${job.todo.title} ${job.todo.details}`
+  );
+  const tags = normalizeTodoTags(parsed?.tags, { language: tagLanguage, max: MAX_TODO_TAGS });
   return {
     selectedWorkerKind,
     workflowId,
     workflowTitle,
     workflowSummary,
-    dispatchBrief
+    dispatchBrief,
+    ...(tags.length > 0 ? { tags } : {})
   };
 }

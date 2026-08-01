@@ -359,7 +359,8 @@ h3 {
 }
 
 .col-confirm {
-  width: 44px !important;
+  width: 30px !important;
+  max-width: 30px !important;
   padding: 0 !important;
   text-align: center !important;
 }
@@ -373,6 +374,29 @@ h3 {
 .col-task {
   padding-left: 4px !important;
 }
+
+/* ── 父/子树形连线：圆角直角线，比表格分割线稍亮但保持克制 ── */
+.task-row td.col-task {
+  position: relative;
+}
+
+.task-tree-guides {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.task-tree-guides path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--color-base-content) 20%, transparent);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
 .col-tags {
   width: 120px;
 }
@@ -381,7 +405,6 @@ h3 {
   text-align: right;
 }
 .col-actions {
-  width: 40px;
   text-align: right;
 }
 
@@ -1032,9 +1055,33 @@ h3 {
   overflow: visible;
 }
 
-.task-row td.col-status .ui-badge:hover {
-  filter: brightness(0.95);
-  transform: translateY(-1px);
+/* 表格单元格的绘制顺序：给后续单元格显式分层，
+   状态延伸条（z5）稳定盖在内容单元格（z1）之上，删除按钮所在列（z6）保持可用。 */
+.task-row {
+  isolation: isolate;
+}
+
+.task-row td.col-lastMention,
+.task-row td.col-tags {
+  position: relative;
+  z-index: 1;
+}
+
+.task-row td.col-actions {
+  position: relative;
+  z-index: 6;
+}
+
+.task-row td.col-status .status-strip-anchor:hover {
+  transform: translateX(-1px);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 锚点自带 transform 会形成独立层叠上下文，会困住条带的 z-index：
+   hover 时把锚点整体抬到内容单元格（z1）之上，条带才能真正压住并
+   blur「上次提及 / 标签」等内容；删除按钮（z6）仍在其上。 */
+.task-row:hover td.col-status .status-strip-anchor {
+  z-index: 5;
 }
 
 .task-row td.col-status .ui-badge {
@@ -1073,51 +1120,92 @@ h3 {
   opacity: 1;
 }
 
-/* 并发已满时的「排队」小标记：挂在 队列中/规划中 状态徽标上。 */
-.task-queue-chip {
-  display: inline-flex;
-  align-items: center;
-  font-size: 10px;
-  line-height: 1;
-  padding: 2px 5px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
-  color: color-mix(in srgb, var(--color-warning) 85%, var(--color-base-content));
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 /* ── 状态徽标 hover 向右延伸条 ──
- * 行悬停时从状态徽标右缘展开到表格最右：backdrop blur 遮罩下层内容，
- * 左端保持徽标色，向右渐变透明。深色浮层禁用灰黑阴影，用品牌紫微光。 */
+ * 行悬停时，条带从徽标左缘一直铺到表格最右并覆盖徽标本体：
+ * 左段保持徽标实色（badge 同时变为透明背景），向右渐变淡出并 blur 下层内容，
+ * badge 与条带是同一整块，不再有接缝。深色浮层禁用灰黑阴影，用品牌紫微光。 */
 .status-strip-anchor {
   position: relative;
   display: inline-block;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .status-strip {
   position: absolute;
-  left: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 22px;
-  display: flex;
-  align-items: center;
+  left: 0;
+  top: 0;
+  height: 100%;
   border-radius: 6px;
   overflow: hidden;
   z-index: 5;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  background: linear-gradient(
-    to right,
-    color-mix(in srgb, var(--strip-color) 55%, transparent) 0%,
-    color-mix(in srgb, var(--strip-color) 30%, transparent) 42%,
-    color-mix(in srgb, var(--strip-color) 10%, transparent) 100%
-  );
+  pointer-events: none;
+  /* 遮罩底下内容：blur 模糊（压暗交给第二层渐变，避免条带整体比徽标暗而露缝）。 */
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  background:
+    linear-gradient(
+      to right,
+      var(--strip-color) 0,
+      var(--strip-color) var(--badge-width, 0px),
+      color-mix(in srgb, var(--strip-color) 78%, transparent) calc(var(--badge-width, 0px) + 10px),
+      color-mix(in srgb, var(--strip-color) 52%, transparent) calc(var(--badge-width, 0px) + 30px),
+      color-mix(in srgb, var(--strip-color) 26%, transparent) calc(var(--badge-width, 0px) + 60px),
+      color-mix(in srgb, var(--strip-color) 10%, transparent) calc(var(--badge-width, 0px) + 100px),
+      transparent 100%
+    ),
+    linear-gradient(
+      to right,
+      transparent 0,
+      transparent var(--badge-width, 0px),
+      color-mix(in srgb, var(--color-base-100) 70%, transparent) calc(var(--badge-width, 0px) + 22px),
+      color-mix(in srgb, var(--color-base-100) 84%, transparent) calc(var(--badge-width, 0px) + 60px),
+      color-mix(in srgb, var(--color-base-100) 74%, transparent) calc(var(--badge-width, 0px) + 120px),
+      color-mix(in srgb, var(--color-base-100) 58%, transparent) calc(var(--badge-width, 0px) + 190px),
+      transparent 100%
+    );
   transition: width 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* hover 时徽标让出背景：透明后由条带左段实色接上，两者同一整块。 */
+.task-row td.col-status .ui-badge {
+  position: relative;
+  z-index: 6;
+}
+
+.task-row:hover td.col-status .ui-badge {
+  background: transparent;
+}
+
+.task-row:hover .status-strip {
+  pointer-events: auto;
+}
+
+/* 左侧加号 / 展开箭头：挤进 30px 的窄槽里（覆盖 ui-icon-btn 的 24px 宽度）。 */
+.col-confirm > div {
+  position: relative;
+}
+
+.col-confirm .row-tree-toggle,
+.col-confirm .row-add-subtask {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+}
+
+/* 待确认 / 需信息角标：悬浮在窄槽右缘，不占流内宽度。 */
+.col-confirm .task-confirm-text,
+.col-confirm .task-question-text {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
 .status-strip-action {
+  position: absolute;
+  left: calc(var(--badge-width, 0px) + 12px);
+  top: 0;
   display: inline-flex;
   align-items: center;
   gap: 5px;

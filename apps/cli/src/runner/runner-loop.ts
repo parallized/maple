@@ -19,6 +19,7 @@ import { buildExecutionPrompt } from "../execution/prompt";
 import { executeWorker, type WorkerExecutor } from "../execution/process-executor";
 import { resolvePlaywrightExecutable } from "../execution/playwright-runtime";
 import { formatRunLogEntry } from "../execution/run-log";
+import { computeUsageDelta, isCumulativeUsageWorker } from "../execution/usage-delta";
 import {
   prepareScreenshotDirectory,
   collectScreenshotArtifacts
@@ -32,6 +33,7 @@ import {
 import { selectProjectManagerWorkerForJob } from "../manager/decision";
 import { runProjectManagerFailureReport } from "../manager/failure-report";
 import type { DirectoryPicker } from "../project/directory-picker";
+import { playReminderAudio } from "../reminder/play-audio";
 import { AgentSessionStore } from "../session/store";
 import { displayDashboardUrl } from "../standalone/layout";
 import { handleRunnerCommand } from "./runner-command-handler";
@@ -433,6 +435,10 @@ export class RunnerLoop {
         const existingSession = workflowId
           ? this.sessionStore.read("workflow", workflowId, job.attempt.workerKind)
           : null;
+        // Codex / DeepSeek 上报整个 session 的累计用量，先读上次基线以便换算单次增量。
+        let usageBaseline = workflowId && isCumulativeUsageWorker(job.attempt.workerKind)
+          ? this.sessionStore.readUsageBaseline("workflow", workflowId, job.attempt.workerKind)
+          : null;
         const run = (resumeSessionId?: string) => this.workerExecutor({
           workerKind: job.attempt.workerKind,
           cwd: project.path,
@@ -466,6 +472,7 @@ export class RunnerLoop {
         result = await run(existingSession?.sessionId);
         if (workflowId && existingSession && result.sessionUnavailable && !jobController.signal.aborted) {
           this.sessionStore.remove("workflow", workflowId, job.attempt.workerKind);
+          usageBaseline = null;
           await queueLog({
             sequence: 0,
             occurredAt: new Date().toISOString(),
@@ -492,6 +499,21 @@ export class RunnerLoop {
             workerKind: job.attempt.workerKind,
             sessionId: result.sessionId
           });
+        }
+        if (workflowId && result.usage && isCumulativeUsageWorker(job.attempt.workerKind)) {
+          const cumulative = result.usage;
+          result = {
+            ...result,
+            usage: computeUsageDelta(cumulative, usageBaseline)
+          };
+          if (result.sessionId) {
+            this.sessionStore.saveUsageBaseline(
+              "workflow",
+              workflowId,
+              job.attempt.workerKind,
+              cumulative
+            );
+          }
         }
       }
 
@@ -603,6 +625,9 @@ export class RunnerLoop {
         heartbeat = null;
       }
       jobSucceeded = result.success;
+      if (jobSucceeded) {
+        void this.playCompletionReminder(job);
+      }
       const pending = this.outbox.hasAttempt(job.attempt.id);
       const outcome = result.success ? "已完成，等待验收" : "执行失败";
       this.output.info(
@@ -614,6 +639,21 @@ export class RunnerLoop {
       signal.removeEventListener("abort", abortJob);
       this.attemptControllers.delete(job.attempt.id);
       this.output.jobFinished?.(slot, job.todo.title, jobSucceeded);
+    }
+  }
+
+  /** Worker 完成任务后，按工作区设置通过 CLI 播放提醒音频（失败不影响流程）。 */
+  private async playCompletionReminder(job: ExecutionJob): Promise<void> {
+    try {
+      const settings = job.executionSettings;
+      if (!settings?.reminderPlayCli || !settings.reminderAudioName || !settings.reminderAudioMime) {
+        return;
+      }
+      const bytes = await this.api.reminderAudio();
+      if (!bytes || bytes.byteLength === 0) return;
+      playReminderAudio(bytes, settings.reminderAudioMime);
+    } catch {
+      // 提醒音频拉取或播放失败，不打断 Runner 主流程。
     }
   }
 

@@ -1,11 +1,17 @@
 import type { PartialBlock } from "@blocknote/core";
-import { BlockNoteViewRaw, useCreateBlockNote } from "@blocknote/react";
+import { zh } from "@blocknote/core/locales";
+import {
+  BlockNoteViewRaw,
+  ComponentsContext,
+  useCreateBlockNote
+} from "@blocknote/react";
 import "@blocknote/react/style.css";
 import { type FocusEvent, type KeyboardEvent, useCallback, useEffect, useRef } from "react";
 
 import { hasTauriRuntime } from "../lib/utils";
 import { resolveImageSrc, saveImageAsset } from "../lib/maple-assets";
 import { usePlatform } from "../platform/context";
+import { mapleBlockNoteComponents } from "./BlockNoteComponents";
 
 type TaskDetailsEditorProps = {
   taskId: string;
@@ -91,6 +97,7 @@ export function TaskDetailsEditor({ taskId, value, valueDoc, onCommit }: TaskDet
         emptyDocument: "输入任务详情…",
         default: "输入任务详情…"
       },
+      dictionary: zh,
       uploadFile: async (file) => saveImageAsset(platform, taskId, file),
       resolveFileUrl: async (url) => (await resolveImageSrc(platform, taskId, url).catch(() => null)) ?? url
     },
@@ -256,38 +263,43 @@ export function TaskDetailsEditor({ taskId, value, valueDoc, onCommit }: TaskDet
 
   return (
     <div className="task-details-surface task-details-surface--editing">
-      <BlockNoteViewRaw
-        editor={editor}
-        className="task-details-cm"
-        formattingToolbar={false}
-        linkToolbar={false}
-        slashMenu={!isTauri}
-        emojiPicker={false}
-        sideMenu={false}
-        filePanel={true}
-        tableHandles={false}
-        comments={false}
-        onChange={() => {
-          scheduleAutosave();
-        }}
-        onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-            event.preventDefault();
-            ignoreNextBlurRef.current = true;
+      {/* BlockNote 0.46.x 不会自动提供 ComponentsContext，缺了它
+          内置斜杠菜单一打开就会崩（reading 'SuggestionMenu'），
+          这里补上 Maple 定制组件。 */}
+      <ComponentsContext.Provider value={mapleBlockNoteComponents}>
+        <BlockNoteViewRaw
+          editor={editor}
+          className="task-details-cm"
+          formattingToolbar={false}
+          linkToolbar={false}
+          slashMenu={!isTauri}
+          emojiPicker={false}
+          sideMenu={false}
+          filePanel={true}
+          tableHandles={false}
+          comments={false}
+          onChange={() => {
+            scheduleAutosave();
+          }}
+          onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+              event.preventDefault();
+              ignoreNextBlurRef.current = true;
+              commitEditorMarkdown();
+              editor.blur();
+            }
+          }}
+          onBlur={(event: FocusEvent<HTMLDivElement>) => {
+            if (ignoreNextBlurRef.current) {
+              ignoreNextBlurRef.current = false;
+              return;
+            }
+            const nextTarget = event.relatedTarget;
+            if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
             commitEditorMarkdown();
-            editor.blur();
-          }
-        }}
-        onBlur={(event: FocusEvent<HTMLDivElement>) => {
-          if (ignoreNextBlurRef.current) {
-            ignoreNextBlurRef.current = false;
-            return;
-          }
-          const nextTarget = event.relatedTarget;
-          if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-          commitEditorMarkdown();
-        }}
-      />
+          }}
+        />
+      </ComponentsContext.Provider>
     </div>
   );
 }

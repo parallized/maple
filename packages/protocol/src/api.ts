@@ -253,6 +253,8 @@ export interface CompleteProjectManagerJobRequest {
   workflowTitle: string;
   workflowSummary: string;
   dispatchBrief: string;
+  /** Leader 规划结束后为 Todo 打上的标签（≤3 个，语言跟随用户；缺省表示不修改）。 */
+  tags?: string[];
 }
 
 export interface CompleteProjectManagerJobResponse {

@@ -59,7 +59,7 @@ export function buildProjectManagerPrompt(
     "同一目标、依赖前序结果、涉及相同模块或文件，或共享上下文有价值时，优先复用已有 Workflow；只有任务彼此独立且可安全并发时才新建 Workflow。",
     "同一 Workflow 内 Todo 会按 FIFO 串行并自动续接 Worker session；Workflow 的 Worker 固定，只能复用 workerKind 与当前 Todo requestedWorkerKind 一致的 Workflow，否则必须 NEW。",
     "只返回 JSON，不要 Markdown、解释或实施步骤。",
-    '{"workflowId":"已有ID或NEW","workflowTitle":"短标题","workflowSummary":"持续目标摘要","dispatchBrief":"只写必要连续背景，不复述 Todo，不写实施步骤"}',
+    '{"workflowId":"已有ID或NEW","workflowTitle":"短标题","workflowSummary":"持续目标摘要","dispatchBrief":"只写必要连续背景，不复述 Todo，不写实施步骤","tags":["标签1","标签2"]}',
     `项目：${job.project.name}`,
     `可用 Worker：${job.availableWorkers.join(", ")}`,
     ...stableContext,
@@ -73,6 +73,7 @@ export function buildProjectManagerPrompt(
       requestedWorkerKind: job.todo.workerKind,
       tags: job.todo.tags
     })}`,
+    "自行判断，给 Todo 打 1-3 个最贴切的标签（tags，语言跟随用户）。",
     "立即返回派单 JSON。"
   ].join("\n");
 }

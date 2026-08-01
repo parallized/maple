@@ -959,6 +959,120 @@ describe("Runner structured run events", () => {
     expect(new AgentSessionStore(configPath).read("workflow", "workflow-2", "codex")?.sessionId)
       .toBe("workflow-session-2");
   });
+
+  it("reports per-run usage increments when reusing a Codex Workflow session", async () => {
+    const root = mkdtempSync(join(tmpdir(), "maple-workflow-usage-"));
+    temporaryDirectories.push(root);
+    const projectPath = join(root, "project");
+    mkdirSync(projectPath, { recursive: true });
+    const configPath = join(root, "cli.json");
+    const base = executionJob();
+    base.todo.workerKind = "codex";
+    base.attempt.workerKind = "codex";
+    base.workflow = {
+      id: "workflow-usage-1",
+      projectId: base.project.id,
+      workerKind: "codex",
+      title: "Usage workflow",
+      summary: "Track cumulative usage.",
+      createdAt: base.todo.createdAt,
+      updatedAt: base.todo.updatedAt
+    };
+    const second = structuredClone(base);
+    second.todo.id = "todo-2";
+    second.todo.title = "Continue usage work";
+    second.attempt.id = "attempt-2";
+    second.attempt.todoId = second.todo.id;
+    second.leaseToken = "job-lease-token-22345678901234567890";
+
+    const config: CliConfig = {
+      version: 1,
+      serverUrl: "http://maple.test",
+      runner: { id: "runner-1", token: "runner-token", name: "Test runner" },
+      projects: [{
+        localId: "local-project-1",
+        projectId: base.project.id,
+        bindingId: base.binding.id,
+        externalKey: base.project.externalKey,
+        name: base.project.name,
+        path: projectPath,
+        repositoryUrl: null,
+        defaultBranch: null,
+        gitBranch: null,
+        gitHead: null,
+        workerKind: "codex",
+        registeredAt: base.todo.createdAt
+      }]
+    };
+    const completions: CompleteJobRequest[] = [];
+    const executor: WorkerExecutor = async (options) => {
+      options.onSession?.("workflow-usage-session");
+      // Codex 上报的是整条 session 的累计值：A 任务 100（input 80 + cached 20），
+      // B 任务复用后累计 170（input 120 + cached 50）。
+      const usage = options.resumeSessionId
+        ? { inputTokens: 120, cachedInputTokens: 50, outputTokens: 26, reasoningOutputTokens: 5 }
+        : { inputTokens: 80, cachedInputTokens: 20, outputTokens: 10, reasoningOutputTokens: 2 };
+      return {
+        success: true,
+        exitCode: 0,
+        summary: "done",
+        error: null,
+        usage,
+        sessionId: options.resumeSessionId ?? "workflow-usage-session",
+        sessionUnavailable: false
+      };
+    };
+
+    const runOnce = async (job: ExecutionJob) => {
+      const controller = new AbortController();
+      let claimed = false;
+      const api = {
+        serverUrl: config.serverUrl,
+        heartbeat: async () => ({ id: "runner-1" }),
+        claimRunnerCommand: async () => ({ command: null, leaseToken: null, retryAfterMs: 1_500 }),
+        claimProjectManagerJob: async () => ({ job: null, retryAfterMs: 1_500 }),
+        claim: async () => {
+          if (claimed) return { job: null, retryAfterMs: 10 };
+          claimed = true;
+          return { job, retryAfterMs: 0 };
+        },
+        startJob: async () => ({ todo: job.todo, attempt: job.attempt }),
+        heartbeatJob: async () => ({ ok: true as const }),
+        appendLogs: async () => ({ ok: true as const, accepted: 1 }),
+        completeJob: async (_todoId: string, input: CompleteJobRequest) => {
+          completions.push(input);
+          controller.abort();
+          return { todo: job.todo, attempt: job.attempt };
+        }
+      };
+      const runner = new RunnerLoop(api as unknown as MapleApiClient, config, 1, {
+        configPath,
+        workerExecutor: executor,
+        output: { info: () => undefined, warn: () => undefined, worker: () => undefined }
+      });
+      await runner.run(controller.signal);
+    };
+
+    await runOnce(base);
+    await runOnce(second);
+
+    expect(completions).toHaveLength(2);
+    expect(completions[0]?.usage).toEqual({
+      inputTokens: 80,
+      cachedInputTokens: 20,
+      outputTokens: 10,
+      reasoningOutputTokens: 2
+    });
+    // B 任务只应上报增量 70（input 40 + cached 30），而不是累计 170。
+    expect(completions[1]?.usage).toEqual({
+      inputTokens: 40,
+      cachedInputTokens: 30,
+      outputTokens: 16,
+      reasoningOutputTokens: 3
+    });
+    expect(new AgentSessionStore(configPath).readUsageBaseline("workflow", "workflow-usage-1", "codex"))
+      .toEqual({ inputTokens: 120, cachedInputTokens: 50, outputTokens: 26, reasoningOutputTokens: 5 });
+  });
 });
 
 describe("Runner force termination", () => {

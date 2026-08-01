@@ -8,6 +8,30 @@ export type ChangelogEntry = {
 /** 版本更新历史，新版本追加在数组最前。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.5",
+    date: "2026-08-02",
+    highlights: {
+      zh: [
+        "任务完成可播放自定义提醒音频",
+        "用量按会话增量换算，计费更准",
+        "Leader 自动给任务打 1-3 个标签",
+        "标签自动注册莫兰迪配色与图标",
+        "工作流串行等待与并发等待区分显示",
+        "修复 BlockNote 斜杠菜单与富文本组件",
+        "看板支持音频媒体与树形连线优化",
+      ],
+      en: [
+        "Completion reminder audio plays",
+        "Usage billed as per-run delta",
+        "Leader auto-tags todos (1-3)",
+        "Tags get colors and icons",
+        "Serial vs concurrency waiting",
+        "BlockNote slash menu fixed",
+        "Audio media + tree guide polish",
+      ],
+    },
+  },
+  {
     version: "0.2.4",
     date: "2026-08-01",
     highlights: {

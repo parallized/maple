@@ -9,6 +9,7 @@ const STATIC_SECURITY_HEADERS = {
     "form-action 'self'",
     "frame-ancestors 'none'",
     "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'"
   ].join("; "),

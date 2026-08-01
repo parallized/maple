@@ -102,6 +102,14 @@ export interface WorkspaceExecutionSettings {
   concurrency: number;
   retryIntervalSeconds: number;
   retryMaxAttempts: number;
+  /** 完成提醒音频文件名（文件本体存于服务端；未上传为 null）。 */
+  reminderAudioName: string | null;
+  /** 完成提醒音频 MIME 类型。 */
+  reminderAudioMime: string | null;
+  /** 任务完成时通过 CLI 播放提醒音频。 */
+  reminderPlayCli: boolean;
+  /** 任务完成时在 Maple 应用内播放提醒音频。 */
+  reminderPlayMaple: boolean;
 }
 
 export const DEFAULT_WORKSPACE_EXECUTION_SETTINGS: WorkspaceExecutionSettings = {
@@ -113,7 +121,11 @@ export const DEFAULT_WORKSPACE_EXECUTION_SETTINGS: WorkspaceExecutionSettings = 
   leaderConstitution: "",
   concurrency: 4,
   retryIntervalSeconds: 10,
-  retryMaxAttempts: 5
+  retryMaxAttempts: 5,
+  reminderAudioName: null,
+  reminderAudioMime: null,
+  reminderPlayCli: false,
+  reminderPlayMaple: false
 };
 
 export interface MapleSettings {
@@ -244,11 +256,15 @@ export interface Todo {
   leaseExpiresAt: string | null;
   /** Server-derived execution phase. Optional for rolling upgrades with older clients. */
   executionPhase?: TodoExecutionPhase | null;
+  /** 同一工作流内有前序任务正在执行/排队，本任务在等待串行（前端展示「等待串行」）。 */
+  serialBlocked?: boolean;
   /** Transport health for the current Worker or project-manager attempt. */
   executionConnection?: ExecutionConnection | null;
   /** Failed executions are not claimable before this server-side retry deadline. */
   retryAfter?: string | null;
   resultSummary: string | null;
+  /** 历史执行报告（按时间倒序，最新在前）；由 Server 在列表接口提供，旧版客户端可忽略。 */
+  reports?: TodoReport[];
   lastError: string | null;
   tags: string[];
   detailsDoc?: string;
@@ -256,6 +272,16 @@ export interface Todo {
   updatedAt: string;
   startedAt: string | null;
   completedAt: string | null;
+}
+
+/** 单次执行产生的报告（对应一次 todo_attempt 的成功/失败总结）。 */
+export interface TodoReport {
+  id: string;
+  /** 产生该报告的 Worker（如 codex / deepseek）。 */
+  author: string;
+  content: string;
+  /** 报告产生时间（attempt 完成时间）。 */
+  createdAt: string;
 }
 
 export interface TodoAttempt {
@@ -296,6 +322,9 @@ export interface TodoArtifact {
 export const TODO_ASSET_MAX_BYTES = 8 * 1024 * 1024;
 export const TODO_ASSET_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
 export type TodoAssetMimeType = (typeof TODO_ASSET_MIME_TYPES)[number];
+
+/** 完成提醒音频文件大小上限（500kB）。 */
+export const REMINDER_AUDIO_MAX_BYTES = 500 * 1024;
 
 /** An image embedded in a Todo's editable body. */
 export interface TodoAsset {

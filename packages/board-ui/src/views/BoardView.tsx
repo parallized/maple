@@ -14,14 +14,15 @@ import { usePlatform } from "../platform/context";
 import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
-import { statusBadgeClass, statusColorVar, statusDotClass } from "../lib/status-colors";
+import { statusBadgeClass, statusDotClass } from "../lib/status-colors";
 import { useMediaQuery } from "../lib/use-media-query";
 import {
   getLastMentionTime,
   getTimeLevel,
-  isTaskWaitingBlocked,
   relativeTimeZh,
-  sortTasksByCompletion
+  sortTasksByCompletion,
+  taskWaitingKind,
+  type TaskWaitingKind
 } from "../lib/utils";
 import type { SidebarWorkerItem } from "../lib/worker-sidebar";
 
@@ -55,7 +56,7 @@ type BoardViewProps = {
 };
 
 const TASK_TITLE_MAX_WIDTH = 340;const DEFAULT_COL_WIDTHS: Record<string, number> = {
-  confirm: 44,
+  confirm: 30,
   taskIcon: 24,
   task: TASK_TITLE_MAX_WIDTH,
   worker: 40,
@@ -64,6 +65,16 @@ const TASK_TITLE_MAX_WIDTH = 340;const DEFAULT_COL_WIDTHS: Record<string, number
   tags: 168,
   actions: 40
 };
+
+/** 树形连线的几何常量。
+ * 起始 x = 父任务标题左缘（列内容起点）再往右一点；拐角用二次贝塞尔画圆角；
+ * 缩进 20px 让拐角后的横线有足够长度，并在文本左侧保留间距。 */
+const TREE_GUIDE_INDENT = 20;
+const TREE_GUIDE_VIEW_H = 36;
+const TREE_GUIDE_START = 12;
+const TREE_GUIDE_RADIUS = 4;
+const TREE_TITLE_PAD = 4;
+const TREE_GUIDE_GAP = 4;
 
 export function BoardView({
   boardProject,
@@ -611,11 +622,11 @@ function TaskWorkerMenu({ task, projectId, onUpdateTaskWorker }: {
 /** 任务状态修改菜单（表格行 / 画廊卡片共用）。
     执行阶段只认服务端下发的 executionPhase：queued → 队列中，planning → 规划中（无 spinner/时间），
     running → spinner + 运行时长（不显示文字）；缺失/null 时按旧 status 展示（兼容旧 Server）。 */
-function TaskStatusMenu({ task, projectId, subtaskCount, waitingBlocked, onUpdateTaskStatus }: {
+function TaskStatusMenu({ task, projectId, subtaskCount, waitingKind, onUpdateTaskStatus }: {
   task: Task;
   projectId: string;
   subtaskCount: number;
-  waitingBlocked: boolean;
+  waitingKind: TaskWaitingKind;
   onUpdateTaskStatus: (projectId: string, taskId: string, status: TaskStatus) => void;
 }) {
   // 徽标配色跟随「显示状态」：执行阶段优先，与展示文案口径一致。
@@ -627,23 +638,28 @@ function TaskStatusMenu({ task, projectId, subtaskCount, waitingBlocked, onUpdat
         : task.executionPhase === "running"
           ? "进行中"
           : task.status;
+  const waitingStatus = waitingKind !== null;
+  // 排队中的颜色继承「规划中」的雾霾蓝样式。
+  const badgeClass = waitingStatus ? "ui-badge--planning" : statusBadgeClass(displayStatus);
+  const waitingLabel = waitingKind === "serial" ? "等待串行" : "等待并发";
+  const waitingTitle = waitingKind === "serial"
+    ? "同一工作流的前序任务执行中，将串行执行"
+    : "并发已满，等待空闲名额";
   return (
     <PopoverMenu
       label="Status Selector"
       triggerNode={
         <div
-          className={`ui-badge cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${statusBadgeClass(displayStatus)}`}
+          className={`ui-badge cursor-pointer transition-all ${badgeClass}`}
         >
-          {task.executionPhase === "queued" ? (
-            <>
-              {"队列中"}
-              {waitingBlocked ? <TaskQueueChip /> : null}
-            </>
+          {waitingStatus ? (
+            <span className="shimmer-metal" title={waitingTitle}>
+              {waitingLabel}
+            </span>
+          ) : task.executionPhase === "queued" ? (
+            "队列中"
           ) : task.executionPhase === "planning" ? (
-            <>
-              <span className="shimmer-metal">规划中</span>
-              {waitingBlocked ? <TaskQueueChip /> : null}
-            </>
+            <span className="shimmer-metal">规划中</span>
           ) : task.executionPhase === "running" ? (
             <>
               <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin opacity-80 mr-0.5" />
@@ -686,23 +702,15 @@ function TaskStatusMenu({ task, projectId, subtaskCount, waitingBlocked, onUpdat
   );
 }
 
-/** 并发已满时挂在「队列中 / 规划中」徽标上的排队标记。 */
-function TaskQueueChip() {
-  return (
-    <span className="task-queue-chip" title="并发已满，排队等待执行">
-      排队
-    </span>
-  );
-}
-
 type TaskRowProps = {
   task: Task;
   index: number;
   depth: number;
+  isLastChild: boolean;
   subtaskCount: number;
   hasChildren: boolean;
   expanded: boolean;
-  waitingBlocked: boolean;
+  waitingKind: TaskWaitingKind;
   selectedTaskId: string | null;
   editingTaskId: string | null;
   projectId: string;
@@ -723,10 +731,11 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   task,
   index,
   depth,
+  isLastChild,
   subtaskCount,
   hasChildren,
   expanded,
-  waitingBlocked,
+  waitingKind,
   selectedTaskId,
   editingTaskId,
   projectId,
@@ -746,6 +755,8 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   const statusAnchorRef = useRef<HTMLDivElement>(null);
   const [stripActive, setStripActive] = useState(false);
   const [stripWidth, setStripWidth] = useState(0);
+  const [stripColor, setStripColor] = useState<string>("var(--color-primary)");
+  const [badgeWidth, setBadgeWidth] = useState(0);
   const measureStrip = useCallback(() => {
     const anchor = statusAnchorRef.current;
     if (!anchor) return;
@@ -753,7 +764,15 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
     if (!row) return;
     const rowRect = row.getBoundingClientRect();
     const anchorRect = anchor.getBoundingClientRect();
-    setStripWidth(Math.max(0, rowRect.right - anchorRect.right));
+    // 条带从徽标左缘一直铺到行最右，覆盖徽标本体：
+    // 左段实色（即徽标色），右侧渐变淡出，badge 与条带是同一块。
+    setStripWidth(Math.max(0, rowRect.right - anchorRect.left));
+    setBadgeWidth(anchorRect.width);
+    const badge = anchor.querySelector<HTMLElement>(".ui-badge");
+    if (badge) {
+      // 取徽标实际背景色（含透明度），让延伸条左端与徽标完全同色，接缝无落差。
+      setStripColor(getComputedStyle(badge).backgroundColor);
+    }
   }, []);
   useEffect(() => {
     if (!stripActive) return;
@@ -761,16 +780,6 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [stripActive, measureStrip]);
-  const displayStatus =
-    task.executionPhase === "queued"
-      ? "队列中"
-      : task.executionPhase === "planning"
-        ? "规划中"
-        : task.executionPhase === "running"
-          ? "进行中"
-          : task.status;
-  const stripColor = statusColorVar(displayStatus);
-
   return (
     <motion.tr
       ref={ref}
@@ -797,7 +806,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       onMouseLeave={() => setStripActive(false)}
     >
       <td className="col-confirm">
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center justify-center gap-0">
           {hasChildren ? (
             <button
               type="button"
@@ -850,6 +859,40 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       </td>
       */}
       <td className="col-task">
+        {(() => {
+          // 父→子树形连线：子行画「祖先列竖线 + 父级圆角拐角 → 标题横线」；
+          // 父任务自身不画竖线，线从第一个子行起。
+          const guideDepth = Math.min(depth, 6);
+          if (guideDepth === 0) return null;
+          const guideWidth = guideDepth * TREE_GUIDE_INDENT + TREE_GUIDE_START;
+          const midY = TREE_GUIDE_VIEW_H / 2;
+          const parts: string[] = [];
+          for (let level = 0; level < guideDepth - 1; level += 1) {
+            parts.push(`M ${TREE_GUIDE_START + level * TREE_GUIDE_INDENT} 0 V ${TREE_GUIDE_VIEW_H}`);
+          }
+          const elbowX = TREE_GUIDE_START + (guideDepth - 1) * TREE_GUIDE_INDENT;
+          // 横线在任务文本左侧留出间距，避免粘着文字。
+          const titleX = TREE_TITLE_PAD + guideDepth * TREE_GUIDE_INDENT - TREE_GUIDE_GAP;
+          const cornerEnd = elbowX + TREE_GUIDE_RADIUS;
+          parts.push(
+            `M ${elbowX} 0 V ${midY - TREE_GUIDE_RADIUS} Q ${elbowX} ${midY} ${cornerEnd} ${midY}`
+            + (titleX > cornerEnd ? ` H ${titleX}` : "")
+          );
+          if (!isLastChild) {
+            parts.push(`M ${elbowX} ${midY} V ${TREE_GUIDE_VIEW_H}`);
+          }
+          return (
+            <svg
+              className="task-tree-guides"
+              viewBox={`0 0 ${guideWidth} ${TREE_GUIDE_VIEW_H}`}
+              preserveAspectRatio="none"
+              aria-hidden="true"
+              style={{ height: "100%", width: guideWidth }}
+            >
+              <path d={parts.join(" ")} />
+            </svg>
+          );
+        })()}
         {editingTaskId === task.id ? (
           <InlineTaskInput
             initialValue={task.title}
@@ -859,7 +902,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
         ) : (
           <div
             className="task-title-cell flex items-center gap-1 min-w-0"
-            style={{ paddingLeft: `${Math.min(depth, 6) * 16}px` }}
+            style={{ paddingLeft: `${Math.min(depth, 6) * TREE_GUIDE_INDENT}px` }}
           >
             <span
               className="task-title-text flex-1 cursor-text px-0.5 overflow-hidden text-ellipsis whitespace-nowrap"
@@ -894,12 +937,16 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
             task={task}
             projectId={projectId}
             subtaskCount={subtaskCount}
-            waitingBlocked={waitingBlocked}
+            waitingKind={waitingKind}
             onUpdateTaskStatus={onUpdateTaskStatus}
           />
           <div
             className="status-strip"
-            style={{ width: stripActive ? stripWidth : 0, "--strip-color": stripColor } as React.CSSProperties}
+            style={{
+              width: stripActive ? stripWidth : 0,
+              "--strip-color": stripColor,
+              "--badge-width": `${badgeWidth}px`
+            } as React.CSSProperties}
           >
             {task.status === "草稿" ? (
               <button
@@ -1070,7 +1117,7 @@ function TaskTable({
   return (
     <table ref={tableRef} className="task-table">
       <colgroup>
-        <col style={{ width: colWidths.confirm }} />
+        <col style={{ width: colWidths.confirm, maxWidth: colWidths.confirm }} />
         {/* taskIcon 列随单元格一并隐藏 */}
         {/* <col style={{ width: colWidths.taskIcon }} /> */}
         <col style={colWidths.task ? { width: colWidths.task } : undefined} />
@@ -1078,7 +1125,8 @@ function TaskTable({
         <col style={{ width: colWidths.status }} />
         <col style={{ width: colWidths.lastMention }} />
         <col style={colWidths.tags > 0 ? { width: colWidths.tags } : undefined} />
-        <col style={{ width: colWidths.actions }} />
+        {/* actions 列不设宽度：吸收固定布局的多余空间，让窄列保持真实宽度 */}
+        <col />
       </colgroup>
       <thead>
         <tr>
@@ -1116,10 +1164,13 @@ function TaskTable({
               task={task}
               index={index}
               depth={depth}
+              isLastChild={!task.parentId
+                ? true
+                : (childrenByParent.get(task.parentId)?.slice(-1)[0]?.id === task.id)}
               subtaskCount={childrenByParent.get(task.id)?.length ?? 0}
               hasChildren={Boolean(childrenByParent.get(task.id)?.length)}
               expanded={!collapsedIds.has(task.id)}
-              waitingBlocked={isTaskWaitingBlocked(task, tasks, executionConcurrency)}
+              waitingKind={taskWaitingKind(task, tasks, executionConcurrency)}
               selectedTaskId={selectedTaskId}
               editingTaskId={editingTaskId}
               projectId={projectId}
@@ -1264,7 +1315,7 @@ function TaskGallery({
                 task={task}
                 projectId={projectId}
                 subtaskCount={tasks.filter((item) => item.parentId === task.id).length}
-                waitingBlocked={isTaskWaitingBlocked(task, tasks, executionConcurrency)}
+                waitingKind={taskWaitingKind(task, tasks, executionConcurrency)}
                 onUpdateTaskStatus={onUpdateTaskStatus}
               />
               {task.status === "已完成" && task.needsConfirmation ? (

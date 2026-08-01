@@ -458,7 +458,7 @@ describe("Coding Agent structured output", () => {
       '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":20,"output_tokens":5,"reasoning_output_tokens":3}}\n'
     );
     expect(parser.usage()).toMatchObject({
-      inputTokens: 100,
+      inputTokens: 80,
       cachedInputTokens: 20,
       outputTokens: 5,
       reasoningOutputTokens: 3
@@ -469,11 +469,25 @@ describe("Coding Agent structured output", () => {
       "stdout",
       '{"type":"turn.completed","usage":{"input_tokens":72148,"cached_input_tokens":47360,"output_tokens":2765,"reasoning_output_tokens":1542}}\n'
     );
-    expect(parser.usage()).toMatchObject({ inputTokens: 72148, outputTokens: 2765 });
+    expect(parser.usage()).toMatchObject({ inputTokens: 24788, outputTokens: 2765 });
 
     // 无 usage 字段的完成事件不清空已记录的用量
     parser.push("stdout", '{"type":"turn.completed"}\n');
-    expect(parser.usage()?.inputTokens).toBe(72148);
+    expect(parser.usage()?.inputTokens).toBe(24788);
+  });
+
+  it("reports an all-cache-hit Codex turn through cachedInputTokens", () => {
+    const parser = getCodingAgentAdapter("codex").createOutputParser();
+    parser.push(
+      "stdout",
+      '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":100,"output_tokens":0,"reasoning_output_tokens":0}}\n'
+    );
+    expect(parser.usage()).toEqual({
+      inputTokens: 0,
+      cachedInputTokens: 100,
+      outputTokens: 0,
+      reasoningOutputTokens: 0
+    });
   });
 });
 
@@ -644,7 +658,7 @@ describe("process execution lifecycle", () => {
       summary: decision,
       sessionId: "fast-leader-session",
       usage: {
-        inputTokens: 7157,
+        inputTokens: 501,
         cachedInputTokens: 6656,
         outputTokens: 254,
         reasoningOutputTokens: 162

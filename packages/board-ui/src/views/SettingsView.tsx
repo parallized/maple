@@ -51,6 +51,18 @@ type SettingsViewProps = {
   onWorkerRetryIntervalChange: (seconds: number) => void;
   onWorkerRetryMaxAttemptsChange: (count: number) => void;
   onWorkerConcurrencyChange: (count: number) => void;
+  /** 完成提醒音频的可播放 URL（未上传为 null）。 */
+  reminderAudioUrl: string | null;
+  /** 完成提醒音频文件名（未上传为 null）。 */
+  reminderAudioName: string | null;
+  /** 任务完成时通过 CLI 播放提醒音频。 */
+  reminderPlayCli: boolean;
+  /** 任务完成时在 Maple 应用内播放提醒音频。 */
+  reminderPlayMaple: boolean;
+  onUploadReminderAudio: (file: File) => void;
+  onRemoveReminderAudio: () => void;
+  onReminderPlayCliChange: (enabled: boolean) => void;
+  onReminderPlayMapleChange: (enabled: boolean) => void;
   onRefreshProbes: () => void;
   extraTabs?: SettingsExtraTab[];
   /** 外部请求切换到指定页签(如点看板 Leader 状态条跳「模型和工具」);nonce 变化即生效。 */
@@ -85,6 +97,14 @@ export function SettingsView({
   onWorkerRetryIntervalChange,
   onWorkerRetryMaxAttemptsChange,
   onWorkerConcurrencyChange,
+  reminderAudioUrl,
+  reminderAudioName,
+  reminderPlayCli,
+  reminderPlayMaple,
+  onUploadReminderAudio,
+  onRemoveReminderAudio,
+  onReminderPlayCliChange,
+  onReminderPlayMapleChange,
   onRefreshProbes,
   extraTabs,
   tabRequest
@@ -286,6 +306,7 @@ export function SettingsView({
       : []),
     { id: "constitution", label: t("宪法", "Constitution"), icon: "mingcute:book-2-line" },
     { id: "retry", label: t("执行策略", "Execution"), icon: "mingcute:refresh-2-line" },
+    { id: "reminder", label: t("提醒", "Reminder"), icon: "mingcute:notification-line" },
     ...(canEditAcceptance
       ? [{ id: "acceptance", label: t("验收", "Acceptance"), icon: "mingcute:camera-line" }]
       : []),
@@ -882,6 +903,112 @@ export function SettingsView({
                             <span className="text-[10px] font-bold text-muted uppercase tracking-wider">{t("次", "Times")}</span>
                           </div>
                         </div>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {activeTab === "reminder" && (
+                  <section>
+                    <div className="flex flex-col gap-1 mb-8 px-1">
+                      <h3 className="text-[12px] font-bold text-muted/60 uppercase tracking-[0.15em] m-0 flex items-center gap-2">
+                        <Icon icon="mingcute:notification-line" className="text-sm" />
+                        {t("提醒", "Reminder")}
+                      </h3>
+                      <p className="text-xs text-muted/60 leading-relaxed mt-1">
+                        {t(
+                          "上传一段不超过 500kB 的音频，任务完成时播放。",
+                          "Upload an audio clip (up to 500kB) that plays when a task completes."
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-8">
+                      <div className="flex flex-col gap-3 px-1">
+                        <span className="text-sm font-semibold">
+                          {t("完成提示音", "Completion sound")}
+                        </span>
+                        {reminderAudioUrl ? (
+                          <div className="flex flex-col gap-3">
+                            <div className="flex items-center gap-3">
+                              <Icon icon="mingcute:music-2-line" className="text-lg text-muted" />
+                              <span className="min-w-0 flex-1 truncate text-[13px] text-muted">
+                                {reminderAudioName}
+                              </span>
+                              <button
+                                type="button"
+                                className="ui-btn ui-btn--xs ui-btn--ghost"
+                                onClick={onRemoveReminderAudio}
+                              >
+                                <Icon icon="mingcute:delete-2-line" className="text-[13px]" />
+                                {t("删除", "Remove")}
+                              </button>
+                            </div>
+                            <audio
+                              controls
+                              src={reminderAudioUrl}
+                              className="w-full max-w-sm"
+                              preload="metadata"
+                            />
+                          </div>
+                        ) : (
+                          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[12px] border border-dashed border-base-300/60 px-4 py-8 text-center transition-colors hover:border-(--color-primary)/40 hover:bg-(--color-primary)/[0.04]">
+                            <Icon icon="mingcute:upload-2-line" className="text-xl text-muted" />
+                            <span className="text-[13px] text-muted">
+                              {t("选择音频文件（≤500kB）", "Choose an audio file (≤500kB)")}
+                            </span>
+                            <input
+                              type="file"
+                              accept="audio/*"
+                              className="hidden"
+                              onChange={(event) => {
+                                const file = event.currentTarget.files?.[0];
+                                if (file) onUploadReminderAudio(file);
+                                event.currentTarget.value = "";
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-3 px-1">
+                        <span className="text-sm font-semibold">
+                          {t("播放方式", "Playback")}
+                        </span>
+                        <span className="text-[12px] text-muted leading-relaxed -mt-1">
+                          {t(
+                            "可同时勾选、只勾选一个，或都不勾选。",
+                            "You can enable both, one, or none."
+                          )}
+                        </span>
+                        <label className="flex items-center gap-3 cursor-pointer select-none py-0.5">
+                          <input
+                            type="checkbox"
+                            checked={reminderPlayCli}
+                            onChange={(event) => onReminderPlayCliChange(event.currentTarget.checked)}
+                            className="accent-(--color-primary)"
+                          />
+                          <span className="text-[13px]">
+                            {t("通过 CLI 播放", "Play via CLI")}
+                          </span>
+                          <span className="text-[12px] text-muted">
+                            {t("在终端执行端完成任务时播放", "Played on the CLI runner when a task finishes")}
+                          </span>
+                        </label>
+                        <label className="flex items-center gap-3 cursor-pointer select-none py-0.5">
+                          <input
+                            type="checkbox"
+                            checked={reminderPlayMaple}
+                            onChange={(event) => onReminderPlayMapleChange(event.currentTarget.checked)}
+                            className="accent-(--color-primary)"
+                          />
+                          <span className="text-[13px]">
+                            {t("在 Maple 内播放", "Play in Maple")}
+                          </span>
+                          <span className="text-[12px] text-muted">
+                            {t("在应用界面内完成任务时播放", "Played in the Maple dashboard when a task finishes")}
+                          </span>
+                        </label>
                       </div>
                     </div>
                   </section>

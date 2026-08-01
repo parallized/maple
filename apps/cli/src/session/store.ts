@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { WORKER_KINDS, type WorkerKind } from "@maple/protocol";
+import { WORKER_KINDS, type TokenUsage, type WorkerKind } from "@maple/protocol";
 
 export type AgentSessionScope = "manager" | "workflow";
 
@@ -12,6 +12,11 @@ export interface AgentSessionRecord {
   workerKind: WorkerKind;
   sessionId: string;
   contextFingerprint: string | null;
+  /**
+   * Codex / DeepSeek 上次 run 结束时的累计用量（已剔除 cached 子集），
+   * 用于把「整个 session 的累计值」换算成「单次 run 的增量」；旧记录缺失时视为 null。
+   */
+  usageBaseline?: TokenUsage | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,6 +35,16 @@ function isRecord(
 ): value is AgentSessionRecord {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<AgentSessionRecord>;
+  const baseline = item.usageBaseline;
+  const validBaseline = baseline === undefined
+    || baseline === null
+    || (
+      typeof baseline === "object"
+      && Number.isFinite(baseline.inputTokens)
+      && Number.isFinite(baseline.cachedInputTokens)
+      && Number.isFinite(baseline.outputTokens)
+      && Number.isFinite(baseline.reasoningOutputTokens)
+    );
   return item.version === 1
     && item.scope === scope
     && item.scopeId === scopeId
@@ -39,6 +54,7 @@ function isRecord(
     && item.sessionId.trim().length > 0
     && item.sessionId.length <= 500
     && (item.contextFingerprint === null || typeof item.contextFingerprint === "string")
+    && validBaseline
     && typeof item.createdAt === "string"
     && typeof item.updatedAt === "string";
 }
@@ -66,6 +82,10 @@ export class AgentSessionStore {
     }
   }
 
+  readUsageBaseline(scope: AgentSessionScope, scopeId: string, workerKind: WorkerKind): TokenUsage | null {
+    return this.read(scope, scopeId, workerKind)?.usageBaseline ?? null;
+  }
+
   save(input: {
     scope: AgentSessionScope;
     scopeId: string;
@@ -84,10 +104,37 @@ export class AgentSessionStore {
       workerKind: input.workerKind,
       sessionId,
       contextFingerprint: input.contextFingerprint ?? previous?.contextFingerprint ?? null,
+      usageBaseline: previous?.usageBaseline ?? null,
       createdAt: previous?.createdAt ?? now,
       updatedAt: now
     };
-    const path = this.path(input.scope, input.scopeId, input.workerKind);
+    this.writeRecord(record);
+    return record;
+  }
+
+  /** 更新既有会话记录的累计用量基线；会话不存在时忽略（基线必须与会话同生共死）。 */
+  saveUsageBaseline(
+    scope: AgentSessionScope,
+    scopeId: string,
+    workerKind: WorkerKind,
+    usageBaseline: TokenUsage | null
+  ): void {
+    const record = this.read(scope, scopeId, workerKind);
+    if (!record) return;
+    this.writeRecord({
+      ...record,
+      usageBaseline,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  remove(scope: AgentSessionScope, scopeId: string, workerKind: WorkerKind): void {
+    const path = this.path(scope, scopeId, workerKind);
+    if (existsSync(path)) unlinkSync(path);
+  }
+
+  private writeRecord(record: AgentSessionRecord): void {
+    const path = this.path(record.scope, record.scopeId, record.workerKind);
     mkdirSync(dirname(path), { recursive: true });
     const temporaryPath = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
     try {
@@ -96,12 +143,6 @@ export class AgentSessionStore {
     } finally {
       if (existsSync(temporaryPath)) unlinkSync(temporaryPath);
     }
-    return record;
-  }
-
-  remove(scope: AgentSessionScope, scopeId: string, workerKind: WorkerKind): void {
-    const path = this.path(scope, scopeId, workerKind);
-    if (existsSync(path)) unlinkSync(path);
   }
 
   private path(scope: AgentSessionScope, scopeId: string, workerKind: WorkerKind): string {

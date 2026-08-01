@@ -23,11 +23,19 @@ export function isTaskInFlight(task: Task): boolean {
   return task.status === "队列中" || task.status === "进行中";
 }
 
-/** 任务是否因并发已满而排队等待（规划中/队列中，且执行流水线已达到并发上限）。 */
-export function isTaskWaitingBlocked(task: Task, tasks: Task[], concurrency: number): boolean {
-  if (concurrency < 1) return false;
-  if (task.executionPhase !== "planning" && task.executionPhase !== "queued") return false;
-  return tasks.filter((item) => isTaskInFlight(item)).length >= concurrency;
+export type TaskWaitingKind = "concurrency" | "serial" | null;
+
+/**
+ * 任务处于执行流水线（规划中/队列中）时的等待原因：
+ * - "serial"：同一工作流有前序任务在跑，等待串行执行；
+ * - "concurrency"：并发已满，等待空闲名额；
+ * - null：不等待。
+ */
+export function taskWaitingKind(task: Task, tasks: Task[], concurrency: number): TaskWaitingKind {
+  if (task.executionPhase !== "planning" && task.executionPhase !== "queued") return null;
+  if (task.serialBlocked) return "serial";
+  if (concurrency >= 1 && tasks.filter((item) => isTaskInFlight(item)).length >= concurrency) return "concurrency";
+  return null;
 }
 
 /**

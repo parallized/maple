@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { WorkerKind } from "@maple/protocol";
 import { executeWorker, type ProcessExecutionResult, type WorkerExecutor } from "../execution/process-executor";
 import type { WorkerShell } from "../execution/shells";
+import { computeUsageDelta, isCumulativeUsageWorker } from "../execution/usage-delta";
 import { AgentSessionStore } from "../session/store";
 import type { ProjectManagerDiagnosticHandler } from "./project-manager";
 
@@ -48,6 +49,10 @@ export async function runManagerAgentTurn(
   const reuseSession = options.reuseSession ?? false;
   const existingSession = reuseSession
     ? options.sessionStore?.read("manager", options.projectId, options.managerWorkerKind) ?? null
+    : null;
+  // Leader 复用 Codex / DeepSeek 会话时同样需要把累计用量换算成单次增量。
+  let usageBaseline = reuseSession && isCumulativeUsageWorker(options.managerWorkerKind)
+    ? options.sessionStore?.readUsageBaseline("manager", options.projectId, options.managerWorkerKind) ?? null
     : null;
   if (!reuseSession) {
     options.sessionStore?.remove("manager", options.projectId, options.managerWorkerKind);
@@ -105,6 +110,7 @@ export async function runManagerAgentTurn(
     let result = await run(existingSession?.sessionId);
     if (existingSession && result.sessionUnavailable && !controller.signal.aborted && !options.forceSignal?.aborted) {
       options.sessionStore?.remove("manager", options.projectId, options.managerWorkerKind);
+      usageBaseline = null;
       result = await run();
     }
     if (options.forceSignal?.aborted) throw new Error(forceStoppedMessage);
@@ -124,6 +130,21 @@ export async function runManagerAgentTurn(
         sessionId: result.sessionId,
         contextFingerprint: options.contextFingerprint
       });
+    }
+    if (result.usage && isCumulativeUsageWorker(options.managerWorkerKind)) {
+      const cumulative = result.usage;
+      result = {
+        ...result,
+        usage: computeUsageDelta(cumulative, usageBaseline)
+      };
+      if (result.sessionId) {
+        options.sessionStore?.saveUsageBaseline(
+          "manager",
+          options.projectId,
+          options.managerWorkerKind,
+          cumulative
+        );
+      }
     }
     return result;
   } finally {

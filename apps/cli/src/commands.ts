@@ -17,7 +17,7 @@ import { RunnerLoop } from "./runner/runner-loop";
 import { defaultRunnerName } from "./runner/runner-name";
 import { authorizeRunner } from "./auth/device-authorization";
 
-export const CLI_VERSION = "0.2.4";
+export const CLI_VERSION = "0.2.5";
 
 function workerOption(args: ParsedArgs): WorkerKind {
   const value = stringOption(args, "worker") ?? "codex";

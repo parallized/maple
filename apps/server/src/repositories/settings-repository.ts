@@ -26,6 +26,10 @@ const LEADER_CONSTITUTION_KEY = "execution.leader_constitution";
 const CONCURRENCY_KEY = "execution.concurrency";
 const RETRY_INTERVAL_SECONDS_KEY = "execution.retry_interval_seconds";
 const RETRY_MAX_ATTEMPTS_KEY = "execution.retry_max_attempts";
+const REMINDER_AUDIO_NAME_KEY = "reminder.audio_name";
+const REMINDER_AUDIO_MIME_KEY = "reminder.audio_mime";
+const REMINDER_PLAY_CLI_KEY = "reminder.play_cli";
+const REMINDER_PLAY_MAPLE_KEY = "reminder.play_maple";
 
 const DEFAULT_VALUES: ReadonlyArray<readonly [string, string]> = [
   [BACKGROUND_SCREENSHOT_KEY, "false"],
@@ -89,7 +93,11 @@ export class SettingsRepository {
       LEADER_CONSTITUTION_KEY,
       CONCURRENCY_KEY,
       RETRY_INTERVAL_SECONDS_KEY,
-      RETRY_MAX_ATTEMPTS_KEY
+      RETRY_MAX_ATTEMPTS_KEY,
+      REMINDER_AUDIO_NAME_KEY,
+      REMINDER_AUDIO_MIME_KEY,
+      REMINDER_PLAY_CLI_KEY,
+      REMINDER_PLAY_MAPLE_KEY
     ]);
     const legacyWorker = parseWorker(
       values.get(BASE_WORKER_KEY),
@@ -124,7 +132,11 @@ export class SettingsRepository {
         DEFAULT_WORKSPACE_EXECUTION_SETTINGS.retryMaxAttempts,
         1,
         20
-      )
+      ),
+      reminderAudioName: values.get(REMINDER_AUDIO_NAME_KEY) || null,
+      reminderAudioMime: values.get(REMINDER_AUDIO_MIME_KEY) || null,
+      reminderPlayCli: values.get(REMINDER_PLAY_CLI_KEY) === "true",
+      reminderPlayMaple: values.get(REMINDER_PLAY_MAPLE_KEY) === "true"
     };
   }
 
@@ -211,7 +223,15 @@ export class SettingsRepository {
           : clampInteger(input.retryIntervalSeconds, 1, 600),
         retryMaxAttempts: input.retryMaxAttempts === undefined
           ? current.retryMaxAttempts
-          : clampInteger(input.retryMaxAttempts, 1, 20)
+          : clampInteger(input.retryMaxAttempts, 1, 20),
+        reminderAudioName: input.reminderAudioName === undefined
+          ? current.reminderAudioName
+          : input.reminderAudioName,
+        reminderAudioMime: input.reminderAudioMime === undefined
+          ? current.reminderAudioMime
+          : input.reminderAudioMime,
+        reminderPlayCli: input.reminderPlayCli ?? current.reminderPlayCli,
+        reminderPlayMaple: input.reminderPlayMaple ?? current.reminderPlayMaple
       };
       const writes: Array<readonly [string, string]> = [];
       if (input.defaultWorker !== undefined || input.leaderWorker !== undefined || input.baseWorker !== undefined) {
@@ -234,6 +254,18 @@ export class SettingsRepository {
       }
       if (current.retryMaxAttempts !== next.retryMaxAttempts) {
         writes.push([RETRY_MAX_ATTEMPTS_KEY, String(next.retryMaxAttempts)]);
+      }
+      if (current.reminderAudioName !== next.reminderAudioName) {
+        writes.push([REMINDER_AUDIO_NAME_KEY, next.reminderAudioName ?? ""]);
+      }
+      if (current.reminderAudioMime !== next.reminderAudioMime) {
+        writes.push([REMINDER_AUDIO_MIME_KEY, next.reminderAudioMime ?? ""]);
+      }
+      if (current.reminderPlayCli !== next.reminderPlayCli) {
+        writes.push([REMINDER_PLAY_CLI_KEY, String(next.reminderPlayCli)]);
+      }
+      if (current.reminderPlayMaple !== next.reminderPlayMaple) {
+        writes.push([REMINDER_PLAY_MAPLE_KEY, String(next.reminderPlayMaple)]);
       }
       this.writeValues(workspaceId, writes);
       return next;

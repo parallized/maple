@@ -140,6 +140,8 @@ export type Task = {
   executionPhase?: TaskExecutionPhase | null;
   /** 执行开始时间；running 计时起点，缺失时回退 updatedAt。 */
   startedAt?: string | null;
+  /** 同一工作流内有前序任务正在执行/排队，本任务在等待串行执行。 */
+  serialBlocked?: boolean;
   createdAt: string;
   updatedAt: string;
   reports: TaskReport[];

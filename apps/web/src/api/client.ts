@@ -239,6 +239,49 @@ export class DashboardApi {
     return this.request("PATCH", "/api/settings/execution", input);
   }
 
+  /** 下载完成提醒音频；未上传时抛 404。 */
+  async workspaceReminderAudio(signal?: AbortSignal): Promise<Blob> {
+    const response = await fetch(`${this.serverUrl}/api/settings/reminder-audio`, {
+      credentials: "include",
+      headers: this.workspaceHeaders(),
+      signal
+    });
+    if (!response.ok) {
+      throw new DashboardApiError(
+        `提醒音频下载失败（HTTP ${response.status}）。`,
+        response.status,
+        "reminder_audio_download_failed"
+      );
+    }
+    return response.blob();
+  }
+
+  /** 上传完成提醒音频（≤500kB），返回最新执行设置。 */
+  async uploadWorkspaceReminderAudio(
+    data: Uint8Array,
+    mimeType: string,
+    fileName: string
+  ): Promise<WorkspaceExecutionSettings> {
+    const bytes = new Uint8Array(data.byteLength);
+    bytes.set(data);
+    const response = await fetch(`${this.serverUrl}/api/settings/reminder-audio`, {
+      method: "PUT",
+      credentials: "include",
+      headers: this.workspaceHeaders({
+        "content-type": mimeType,
+        "x-maple-file-name": encodeURIComponent(fileName),
+        "x-maple-csrf": this.csrfToken
+      }),
+      body: new Blob([bytes.buffer], { type: mimeType })
+    });
+    return this.readResponse<WorkspaceExecutionSettings>(response);
+  }
+
+  /** 删除完成提醒音频，返回最新执行设置。 */
+  removeWorkspaceReminderAudio(): Promise<WorkspaceExecutionSettings> {
+    return this.request("DELETE", "/api/settings/reminder-audio");
+  }
+
   async uploadTodoAsset(todoId: string, data: Uint8Array, mimeType: string): Promise<UploadTodoAssetResponse> {
     const form = new FormData();
     const bytes = new Uint8Array(data.byteLength);

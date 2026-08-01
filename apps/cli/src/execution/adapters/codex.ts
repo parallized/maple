@@ -1,5 +1,6 @@
 import type { TokenUsage } from "@maple/protocol";
 import type { CodingAgentAdapter } from "./types";
+import { normalizeCodexUsage } from "../usage-delta";
 import {
   classifyTool,
   compactJson,
@@ -75,14 +76,19 @@ export function createCodexOutputParser(label = "Codex") {
     if (type === "turn.completed") {
       const usageRecord = isRecord(value.usage) ? value.usage : null;
       const usage: TokenUsage | null = usageRecord
-        ? {
+        ? normalizeCodexUsage({
             inputTokens: numberValue(usageRecord.input_tokens) ?? 0,
             cachedInputTokens: numberValue(usageRecord.cached_input_tokens) ?? 0,
             outputTokens: numberValue(usageRecord.output_tokens) ?? 0,
             reasoningOutputTokens: numberValue(usageRecord.reasoning_output_tokens) ?? 0
-          }
+          })
         : null;
-      if (usage && (usage.inputTokens || usage.outputTokens || usage.reasoningOutputTokens)) {
+      if (usage && (
+        usage.inputTokens
+        || usage.cachedInputTokens
+        || usage.outputTokens
+        || usage.reasoningOutputTokens
+      )) {
         ctx.reportUsage(usage);
       }
       const usageText = usageRecord ? `\n${compactJson(value.usage)}` : "";

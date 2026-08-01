@@ -202,7 +202,8 @@ describe("Project manager dispatch", () => {
       workflowTitle: "Token refresh",
       workflowSummary: "Finish refresh handling and its tests.",
       workerKind: "kimi",
-      dispatchBrief: "Continue the existing authentication context."
+      dispatchBrief: "Continue the existing authentication context.",
+      tags: ["auth", "backend"]
     }), managerJob());
 
     expect(decision).toEqual({
@@ -210,8 +211,60 @@ describe("Project manager dispatch", () => {
       workflowTitle: "Token refresh",
       workflowSummary: "Finish refresh handling and its tests.",
       selectedWorkerKind: "codex",
-      dispatchBrief: "Continue the existing authentication context."
+      dispatchBrief: "Continue the existing authentication context.",
+      tags: ["auth", "backend"]
     });
+  });
+
+  it("caps Leader tags at three and filters them to the Todo language", () => {
+    const job = managerJob();
+    job.executionSettings = {
+      ...DEFAULT_WORKSPACE_EXECUTION_SETTINGS,
+      aiOutputLanguage: "zh",
+      defaultWorker: "codex",
+      leaderWorker: "codex",
+      baseWorker: "codex"
+    };
+    const decision = parseProjectManagerDecision(JSON.stringify({
+      workflowId: "NEW",
+      workflowTitle: "Token refresh",
+      workflowSummary: "Finish refresh handling.",
+      dispatchBrief: "Continue.",
+      tags: ["认证", "Auth", "auth", "api", "安全", "测试"]
+    }), job);
+    // 中文用户不看到英文标签；"Auth"/"auth"/"api" 被过滤，最多保留 3 个。
+    expect(decision.tags).toEqual(["认证", "安全", "测试"]);
+  });
+
+  it("treats follow_ui as Chinese when the Todo itself is Chinese", () => {
+    const job = managerJob();
+    job.todo.title = "修复登录认证";
+    job.todo.details = "补齐刷新令牌的处理。";
+    job.executionSettings = {
+      ...DEFAULT_WORKSPACE_EXECUTION_SETTINGS,
+      aiOutputLanguage: "follow_ui",
+      defaultWorker: "codex",
+      leaderWorker: "codex",
+      baseWorker: "codex"
+    };
+    const decision = parseProjectManagerDecision(JSON.stringify({
+      workflowId: "NEW",
+      workflowTitle: "认证修复",
+      workflowSummary: "修复登录认证。",
+      dispatchBrief: "继续认证上下文。",
+      tags: ["认证", "auth", "登录"]
+    }), job);
+    expect(decision.tags).toEqual(["认证", "登录"]);
+  });
+
+  it("omits tags from the dispatch when the Leader returns none", () => {
+    const decision = parseProjectManagerDecision(JSON.stringify({
+      workflowId: "workflow-auth",
+      workflowTitle: "Token refresh",
+      workflowSummary: "Finish refresh handling and its tests.",
+      dispatchBrief: "Continue the existing authentication context."
+    }), managerJob());
+    expect(decision.tags).toBeUndefined();
   });
 
   it("creates a new Workflow when the requested bucket belongs to another Worker", () => {
@@ -240,6 +293,8 @@ describe("Project manager dispatch", () => {
     expect(prompt).toContain("不要 Markdown、解释或实施步骤");
     expect(prompt).toContain("只返回 JSON");
     expect(prompt).toContain("立即返回派单 JSON");
+    expect(prompt).toContain("自行判断，给 Todo 打 1-3 个最贴切的标签（tags，语言跟随用户）。");
+    expect(prompt).toContain('"tags":["标签1","标签2"]');
     expect(prompt).toContain("不改派用户指定的 Worker");
     expect(prompt).toContain("只有任务彼此独立且可安全并发时才新建 Workflow");
     expect(prompt).toContain("Workflow 的 Worker 固定");

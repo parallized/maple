@@ -1,6 +1,9 @@
 import type { Database } from "bun:sqlite";
 import {
   CLAIMABLE_TODO_STATUSES,
+  MAX_TODO_TAGS,
+  mergeTodoTags,
+  resolveTagLanguage,
   type BlockProjectManagerJobRequest,
   type BlockProjectManagerJobResponse,
   type ClaimProjectManagerJobResponse,
@@ -18,6 +21,7 @@ import { ProjectRepository } from "../repositories/project-repository";
 import { RunnerRepository } from "../repositories/runner-repository";
 import { TodoRepository } from "../repositories/todo-repository";
 import { SettingsRepository } from "../repositories/settings-repository";
+import { parseStoredTags, registerTagCatalog } from "./tag-catalog-service";
 
 interface ManagerCandidateRow {
   todo_id: string;
@@ -229,17 +233,19 @@ export class ProjectManagerService {
     const availableWorkers = runner?.supportedWorkers ?? [];
     if (
       !runner
+      || !runner.workspaceId
       || !runner.capabilities?.includes("project_manager_v1")
       || !availableWorkers.includes(input.managerWorkerKind)
     ) {
       return null;
     }
+    const workspaceId = runner.workspaceId;
 
     const completed = this.database.transaction(() => {
       const now = nowIso();
       const route = this.database
         .query(
-          `SELECT tr.todo_id, t.project_id, t.worker_kind
+          `SELECT tr.todo_id, t.project_id, t.worker_kind, t.title AS todo_title, t.details AS todo_details
            FROM todo_routes tr
            JOIN todos t ON t.id = tr.todo_id
            WHERE tr.todo_id = ? AND tr.state = 'claimed'
@@ -254,6 +260,8 @@ export class ProjectManagerService {
           todo_id: string;
           project_id: string;
           worker_kind: string;
+          todo_title: string;
+          todo_details: string;
         } | null;
       if (!route) return null;
       if (
@@ -280,6 +288,37 @@ export class ProjectManagerService {
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [workflowId, route.project_id, route.worker_kind, input.workflowTitle.trim(), input.workflowSummary.trim(), now, now]
         );
+      }
+
+      // Leader 规划结束后把标签落到 Todo，并自动注册到项目标签目录（莫兰迪配色 + mingcute 图标）。
+      if (input.tags !== undefined) {
+        const tagRow = this.database
+          .query("SELECT tags_json FROM todos WHERE id = ?")
+          .get(todoId) as { tags_json: string | null } | null;
+        const execution = this.settings.getExecution(workspaceId);
+        const language = resolveTagLanguage(
+          execution.aiOutputLanguage,
+          `${route.todo_title} ${route.todo_details}`
+        );
+        const nextTags = mergeTodoTags(
+          parseStoredTags(tagRow?.tags_json ?? null),
+          input.tags,
+          { language, max: MAX_TODO_TAGS }
+        );
+        this.database.run(
+          "UPDATE todos SET tags_json = ?, updated_at = ? WHERE id = ?",
+          [JSON.stringify(nextTags), now, todoId]
+        );
+        const catalogRow = this.database
+          .query("SELECT tag_catalog_json FROM projects WHERE id = ?")
+          .get(route.project_id) as { tag_catalog_json: string | null } | null;
+        const registered = registerTagCatalog(catalogRow?.tag_catalog_json ?? null, nextTags);
+        if (registered.added.length > 0) {
+          this.database.run(
+            "UPDATE projects SET tag_catalog_json = ?, updated_at = ? WHERE id = ?",
+            [registered.json, now, route.project_id]
+          );
+        }
       }
 
       this.database.run(
