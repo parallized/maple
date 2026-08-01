@@ -9,8 +9,7 @@ import {
   type ProjectManagerHistoryItem,
   type ProjectWorkflow,
   type TodoStatus,
-  type WorkerKind,
-  type WorkflowExecutionMode
+  type WorkerKind
 } from "@maple/protocol";
 import { touchRevision } from "../database/revision";
 import { createSecret, hashSecret } from "../lib/crypto";
@@ -34,6 +33,7 @@ interface ClaimedManagerJob extends ManagerCandidateRow {
 interface WorkflowRow {
   id: string;
   project_id: string;
+  worker_kind: string;
   title: string;
   summary: string;
   created_at: string;
@@ -54,7 +54,6 @@ interface ManagerHistoryRow {
 
 export interface TodoExecutionContext {
   workflow: ProjectWorkflow | null;
-  executionMode: WorkflowExecutionMode | null;
   dispatchBrief: string | null;
   managerWorkerKind: WorkerKind | null;
 }
@@ -63,6 +62,7 @@ function toWorkflow(row: WorkflowRow): ProjectWorkflow {
   return {
     id: row.id,
     projectId: row.project_id,
+    workerKind: row.worker_kind as WorkerKind,
     title: row.title,
     summary: row.summary,
     createdAt: row.created_at,
@@ -113,7 +113,7 @@ export class ProjectManagerService {
         `UPDATE todo_routes
          SET workflow_id = NULL, source_status = ?, state = 'pending', manager_runner_id = NULL,
              manager_worker_kind = NULL, selected_worker_kind = NULL,
-             execution_mode = NULL, dispatch_brief = NULL,
+             dispatch_brief = NULL,
              attempt_id = NULL, lease_token_hash = NULL, lease_expires_at = NULL,
              completed_at = NULL, updated_at = ?
          WHERE todo_id = ?`,
@@ -266,9 +266,9 @@ export class ProjectManagerService {
       let workflowId = input.workflowId;
       if (workflowId) {
         const workflow = this.database
-          .query("SELECT id FROM project_workflows WHERE id = ? AND project_id = ?")
-          .get(workflowId, route.project_id);
-        if (!workflow) return null;
+          .query("SELECT id, worker_kind FROM project_workflows WHERE id = ? AND project_id = ?")
+          .get(workflowId, route.project_id) as Pick<WorkflowRow, "id" | "worker_kind"> | null;
+        if (!workflow || workflow.worker_kind !== route.worker_kind) return null;
         this.database.run(
           `UPDATE project_workflows SET title = ?, summary = ?, updated_at = ? WHERE id = ?`,
           [input.workflowTitle.trim(), input.workflowSummary.trim(), now, workflowId]
@@ -276,9 +276,9 @@ export class ProjectManagerService {
       } else {
         workflowId = crypto.randomUUID();
         this.database.run(
-          `INSERT INTO project_workflows(id, project_id, title, summary, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [workflowId, route.project_id, input.workflowTitle.trim(), input.workflowSummary.trim(), now, now]
+          `INSERT INTO project_workflows(id, project_id, worker_kind, title, summary, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [workflowId, route.project_id, route.worker_kind, input.workflowTitle.trim(), input.workflowSummary.trim(), now, now]
         );
       }
 
@@ -289,7 +289,7 @@ export class ProjectManagerService {
               manager_usage_cached_input_tokens = manager_usage_cached_input_tokens + ?,
               manager_usage_output_tokens = manager_usage_output_tokens + ?,
               manager_usage_reasoning_output_tokens = manager_usage_reasoning_output_tokens + ?,
-              selected_worker_kind = ?, execution_mode = ?, dispatch_brief = ?,
+              selected_worker_kind = ?, dispatch_brief = ?,
              lease_token_hash = NULL, lease_expires_at = NULL,
              completed_at = ?, updated_at = ?
          WHERE todo_id = ?`,
@@ -301,7 +301,6 @@ export class ProjectManagerService {
           input.usage?.outputTokens ?? 0,
           input.usage?.reasoningOutputTokens ?? 0,
           input.selectedWorkerKind,
-          input.executionMode,
           input.dispatchBrief.trim(),
           now,
           now,
@@ -325,7 +324,6 @@ export class ProjectManagerService {
       todo,
       workflow,
       selectedWorkerKind: input.selectedWorkerKind,
-      executionMode: input.executionMode,
       dispatchBrief: input.dispatchBrief.trim()
     };
   }
@@ -409,22 +407,18 @@ export class ProjectManagerService {
   executionContext(todoId: string): TodoExecutionContext {
     const row = this.database
       .query(
-        `SELECT tr.dispatch_brief, tr.execution_mode, tr.manager_worker_kind,
-                w.id, w.project_id, w.title, w.summary, w.created_at, w.updated_at
+        `SELECT tr.dispatch_brief, tr.manager_worker_kind,
+                w.id, w.project_id, w.worker_kind, w.title, w.summary, w.created_at, w.updated_at
          FROM todo_routes tr
          LEFT JOIN project_workflows w ON w.id = tr.workflow_id
          WHERE tr.todo_id = ? AND tr.state = 'routed'`
       )
       .get(todoId) as (WorkflowRow & {
         dispatch_brief: string | null;
-        execution_mode: string | null;
         manager_worker_kind: string | null;
       }) | null;
     return {
       workflow: row?.id ? toWorkflow(row) : null,
-      executionMode: row?.execution_mode === "serial" || row?.execution_mode === "parallel"
-        ? row.execution_mode
-        : null,
       dispatchBrief: row?.dispatch_brief ?? null,
       managerWorkerKind: (row?.manager_worker_kind as WorkerKind | null | undefined) ?? null
     };

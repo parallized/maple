@@ -292,12 +292,12 @@ export interface TodoLog extends RunLogEntry {
   createdAt: string;
 }
 
-export type WorkflowExecutionMode = "serial" | "parallel";
-
 /** 一个项目内可持续复用上下文的工作流。 */
 export interface ProjectWorkflow {
   id: string;
   projectId: string;
+  /** Workflow 固定使用的 Worker；更换 Worker 必须创建新 Workflow。 */
+  workerKind: WorkerKind;
   title: string;
   summary: string;
   createdAt: string;
@@ -359,8 +359,6 @@ export interface ExecutionJob {
   executionSettings?: WorkspaceExecutionSettings;
   /** 项目经理已归组时提供，旧版 Server/CLI 可以缺省。 */
   workflow?: ProjectWorkflow | null;
-  /** serial 才续接 Workflow 的长期 Worker session；parallel 必须使用独立 session。 */
-  workflowExecutionMode?: WorkflowExecutionMode | null;
   /** 项目经理给 Worker 的短派单备注，不是实施 Plan。 */
   dispatchBrief?: string | null;
   /** 最初完成派单的 Leader PM；Worker 失败时只允许由它生成收口报告。 */

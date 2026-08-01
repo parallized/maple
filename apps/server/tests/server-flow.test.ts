@@ -373,6 +373,126 @@ describe("Maple Server execution flow", () => {
     ]));
   });
 
+  it("migrates legacy Workflow modes into fixed Worker buckets", () => {
+    const directory = mkdtempSync(join(tmpdir(), "maple-workflow-bucket-migration-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "maple.sqlite");
+    const initial = createDatabase(databasePath);
+    seedTestAccount(initial);
+    const now = "2026-08-01T00:00:00.000Z";
+    initial.run(
+      `INSERT INTO projects(id, workspace_id, external_key, workspace_external_key, name, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ["project-workflow-migration", TEST_WORKSPACE_ID, "local:workflow-migration", "local:workflow-migration", "Workflow migration", now, now]
+    );
+    initial.run(
+      `INSERT INTO project_workflows(id, project_id, worker_kind, title, summary, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "workflow-related",
+        "project-workflow-migration",
+        "codex",
+        "Related work",
+        "Preserve this bucket.",
+        now,
+        now,
+        "workflow-empty",
+        "project-workflow-migration",
+        "kimi",
+        "Empty work",
+        "Fallback bucket.",
+        now,
+        now
+      ]
+    );
+    initial.run(
+      `INSERT INTO todos(id, project_id, title, status, worker_kind, created_at, updated_at)
+       VALUES (?, ?, ?, 'review', ?, ?, ?), (?, ?, ?, 'review', ?, ?, ?)`,
+      [
+        "todo-workflow-early",
+        "project-workflow-migration",
+        "Early Kimi task",
+        "kimi",
+        "2026-08-01T00:01:00.000Z",
+        now,
+        "todo-workflow-late",
+        "project-workflow-migration",
+        "Later Codex task",
+        "codex",
+        "2026-08-01T00:02:00.000Z",
+        now
+      ]
+    );
+    initial.run(
+      `INSERT INTO todo_routes(todo_id, workflow_id, state, selected_worker_kind, dispatch_brief, created_at, updated_at, completed_at)
+       VALUES (?, ?, 'routed', ?, ?, ?, ?, ?), (?, ?, 'routed', ?, ?, ?, ?, ?)`,
+      [
+        "todo-workflow-early",
+        "workflow-related",
+        "kimi",
+        "Keep the earliest route.",
+        "2026-08-01T00:01:00.000Z",
+        now,
+        now,
+        "todo-workflow-late",
+        "workflow-related",
+        "codex",
+        "Keep the later route.",
+        "2026-08-01T00:02:00.000Z",
+        now,
+        now
+      ]
+    );
+    initial.close();
+
+    const legacy = new Database(databasePath, { create: true, strict: true });
+    legacy.exec("PRAGMA foreign_keys = OFF;");
+    legacy.exec(`
+      DROP TRIGGER IF EXISTS project_workflows_worker_kind_insert_guard;
+      DROP TRIGGER IF EXISTS project_workflows_worker_kind_update_guard;
+      DROP INDEX IF EXISTS idx_workflows_project;
+      CREATE TABLE project_workflows_legacy (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO project_workflows_legacy(id, project_id, title, summary, created_at, updated_at)
+      SELECT id, project_id, title, summary, created_at, updated_at FROM project_workflows;
+      DROP TABLE project_workflows;
+      ALTER TABLE project_workflows_legacy RENAME TO project_workflows;
+      CREATE INDEX idx_workflows_project ON project_workflows(project_id, updated_at DESC);
+      ALTER TABLE todo_routes
+        ADD COLUMN execution_mode TEXT CHECK(execution_mode IN ('serial', 'parallel'));
+      UPDATE todo_routes SET execution_mode = 'serial';
+    `);
+    legacy.close();
+
+    const migrated = createDatabase(databasePath);
+    databases.push(migrated);
+    expect(migrated.query(
+      "SELECT id, worker_kind FROM project_workflows ORDER BY id"
+    ).all()).toEqual([
+      { id: "workflow-empty", worker_kind: "codex" },
+      { id: "workflow-related", worker_kind: "kimi" }
+    ]);
+    expect(migrated.query(
+      "SELECT workflow_id, dispatch_brief FROM todo_routes WHERE todo_id = ?"
+    ).get("todo-workflow-early")).toEqual({
+      workflow_id: "workflow-related",
+      dispatch_brief: "Keep the earliest route."
+    });
+    const routeColumns = migrated.query("PRAGMA table_info(todo_routes)").all() as Array<{ name: string }>;
+    expect(routeColumns.map((column) => column.name)).not.toContain("execution_mode");
+    const workflowColumns = migrated.query("PRAGMA table_info(project_workflows)").all() as Array<{
+      name: string;
+      notnull: number;
+    }>;
+    expect(workflowColumns.find((column) => column.name === "worker_kind")?.notnull).toBe(1);
+  });
+
   it("migrates legacy raw log tables without losing compatibility", () => {
     const directory = mkdtempSync(join(tmpdir(), "maple-log-migration-test-"));
     temporaryDirectories.push(directory);
@@ -553,9 +673,9 @@ describe("Maple Server execution flow", () => {
       ["binding-delete", "project-delete", "runner-delete", workspace, now, now, now]
     );
     database.run(
-      `INSERT INTO project_workflows(id, project_id, title, summary, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      ["workflow-delete", "project-delete", "Delete workflow", "Delete summary", now, now]
+      `INSERT INTO project_workflows(id, project_id, worker_kind, title, summary, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ["workflow-delete", "project-delete", "codex", "Delete workflow", "Delete summary", now, now]
     );
     database.run(
       `INSERT INTO todos(id, project_id, title, status, worker_kind, created_at, updated_at)
@@ -1420,7 +1540,9 @@ describe("Maple Server execution flow", () => {
   });
 
   it("routes new Todo through its project manager before waking a Worker", async () => {
-    const app = createTestApp();
+    const database = createDatabase(":memory:");
+    databases.push(database);
+    const app = createAuthenticatedTestApp(database, testConfig());
     const pairing = (await (
       await request(app, "/api/pairings", { method: "POST", token: ADMIN_TOKEN })
     ).json()) as CreatePairingResponse;
@@ -1519,7 +1641,6 @@ describe("Maple Server execution flow", () => {
         workflowId: null,
         workflowTitle: "Token refresh",
         workflowSummary: "Implement and verify the token refresh lifecycle.",
-        executionMode: "serial",
         dispatchBrief: "Continue the authentication lifecycle work."
       }
     });
@@ -1542,12 +1663,13 @@ describe("Maple Server execution flow", () => {
           workflowId: null,
           workflowTitle: "Token refresh",
           workflowSummary: "Implement and verify the token refresh lifecycle.",
-          executionMode: "serial",
           dispatchBrief: "Continue the authentication lifecycle work."
         }
       })
     ).json()) as CompleteProjectManagerJobResponse;
     expect(firstDispatch.selectedWorkerKind).toBe("codex");
+    expect(firstDispatch.workflow.workerKind).toBe("codex");
+    expect("executionMode" in firstDispatch).toBe(false);
     expect(firstDispatch.todo.workerKind).toBe("codex");
     expect(firstDispatch.todo.status).toBe("queued");
     expect(firstDispatch.todo.executionPhase).toBe("planning");
@@ -1573,7 +1695,39 @@ describe("Maple Server execution flow", () => {
     expect(secondManagerClaim.job?.todo.status).toBe("queued");
     expect(secondManagerClaim.job?.todo.executionPhase).toBe("planning");
     expect(secondManagerClaim.job?.workflows[0]?.id).toBe(firstDispatch.workflow.id);
+    expect(secondManagerClaim.job?.workflows[0]?.workerKind).toBe("codex");
     expect(secondManagerClaim.job?.history.some((item) => item.todoId === firstTodo.id)).toBe(true);
+    database.run(
+      `INSERT INTO project_workflows(id, project_id, worker_kind, title, summary, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "workflow-kimi",
+        registration.project.id,
+        "kimi",
+        "Kimi-only workflow",
+        "This bucket is fixed to Kimi.",
+        secondTodo.createdAt,
+        secondTodo.updatedAt
+      ]
+    );
+    const rejectedWorkflowWorker = await request(
+      app,
+      `/api/runner/project-manager/${secondTodo.id}/complete`,
+      {
+        method: "POST",
+        token: exchange.runnerToken,
+        body: {
+          leaseToken: secondManagerClaim.job!.leaseToken,
+          managerWorkerKind: "codex",
+          selectedWorkerKind: "codex",
+          workflowId: "workflow-kimi",
+          workflowTitle: "Token refresh",
+          workflowSummary: "Implement and verify the token refresh lifecycle.",
+          dispatchBrief: "Use the existing authentication context."
+        }
+      }
+    );
+    expect(rejectedWorkflowWorker.status).toBe(409);
     expect((await request(app, `/api/runner/project-manager/${secondTodo.id}/complete`, {
       method: "POST",
       token: exchange.runnerToken,
@@ -1584,12 +1738,48 @@ describe("Maple Server execution flow", () => {
         workflowId: firstDispatch.workflow.id,
         workflowTitle: "Token refresh",
         workflowSummary: "Implement and verify the token refresh lifecycle.",
-        executionMode: "serial",
         dispatchBrief: "Use the existing authentication context."
       }
     })).status).toBe(200);
 
-    // serial Workflow 始终按创建顺序推进，后来的高优先级 Todo 不能越过上下文前序。
+    const independentTodo = (await (
+      await request(app, `/api/projects/${registration.project.id}/todos`, {
+        method: "POST",
+        token: ADMIN_TOKEN,
+        body: {
+          title: "Document independent token metrics",
+          details: "This work has no dependency on refresh handling.",
+          priority: -100,
+          workerKind: "codex"
+        }
+      })
+    ).json()) as Todo;
+    const independentManagerClaim = (await (
+      await request(app, "/api/runner/project-manager/claim", {
+        method: "POST",
+        token: exchange.runnerToken
+      })
+    ).json()) as ClaimProjectManagerJobResponse;
+    expect(independentManagerClaim.job?.todo.id).toBe(independentTodo.id);
+    const independentDispatch = (await (
+      await request(app, `/api/runner/project-manager/${independentTodo.id}/complete`, {
+        method: "POST",
+        token: exchange.runnerToken,
+        body: {
+          leaseToken: independentManagerClaim.job!.leaseToken,
+          managerWorkerKind: "codex",
+          selectedWorkerKind: "codex",
+          workflowId: null,
+          workflowTitle: "Independent token metrics",
+          workflowSummary: "Document token metrics independently from refresh handling.",
+          dispatchBrief: "Complete the independent metrics documentation."
+        }
+      })
+    ).json()) as CompleteProjectManagerJobResponse;
+    expect(independentDispatch.workflow.id).not.toBe(firstDispatch.workflow.id);
+    expect(independentDispatch.workflow.workerKind).toBe("codex");
+
+    // 同一 Workflow 桶始终按创建顺序推进，后来的高优先级 Todo 不能越过上下文前序。
     const firstClaim = (await (
       await request(app, "/api/runner/jobs/claim", { method: "POST", token: exchange.runnerToken })
     ).json()) as ClaimJobResponse;
@@ -1599,7 +1789,8 @@ describe("Maple Server execution flow", () => {
     expect(firstClaim.job?.todo.activeAttemptId).not.toBeNull();
     expect(firstClaim.job?.attempt.workerKind).toBe("codex");
     expect(firstClaim.job?.workflow?.id).toBe(firstDispatch.workflow.id);
-    expect(firstClaim.job?.workflowExecutionMode).toBe("serial");
+    expect(firstClaim.job?.workflow?.workerKind).toBe("codex");
+    expect("workflowExecutionMode" in firstClaim.job!).toBe(false);
     expect(firstClaim.job?.dispatchBrief).toBe("Continue the authentication lifecycle work.");
     const started = await request(app, `/api/runner/jobs/${firstTodo.id}/start`, {
       method: "POST",
@@ -1611,10 +1802,27 @@ describe("Maple Server execution flow", () => {
     expect(startedMutation.todo.executionPhase).toBe("running");
     expect(startedMutation.todo.startedAt).not.toBeNull();
 
-    const seriallyBlocked = (await (
+    // 不同 Workflow 桶可以占用另一个并发槽，不受当前桶的活动锁影响。
+    const crossBucketClaim = (await (
       await request(app, "/api/runner/jobs/claim", { method: "POST", token: exchange.runnerToken })
     ).json()) as ClaimJobResponse;
-    expect(seriallyBlocked.job).toBeNull();
+    expect(crossBucketClaim.job?.todo.id).toBe(independentTodo.id);
+    expect(crossBucketClaim.job?.workflow?.id).toBe(independentDispatch.workflow.id);
+    expect((await request(app, `/api/runner/jobs/${independentTodo.id}/start`, {
+      method: "POST",
+      token: exchange.runnerToken,
+      body: { leaseToken: crossBucketClaim.job!.leaseToken }
+    })).status).toBe(200);
+    expect((await request(app, `/api/runner/jobs/${independentTodo.id}/complete`, {
+      method: "POST",
+      token: exchange.runnerToken,
+      body: { leaseToken: crossBucketClaim.job!.leaseToken, success: true, summary: "Metrics documented." }
+    })).status).toBe(200);
+
+    const bucketBlocked = (await (
+      await request(app, "/api/runner/jobs/claim", { method: "POST", token: exchange.runnerToken })
+    ).json()) as ClaimJobResponse;
+    expect(bucketBlocked.job).toBeNull();
 
     expect((await request(app, `/api/runner/jobs/${firstTodo.id}/complete`, {
       method: "POST",
@@ -1626,7 +1834,8 @@ describe("Maple Server execution flow", () => {
     ).json()) as ClaimJobResponse;
     expect(secondClaim.job?.todo.id).toBe(secondTodo.id);
     expect(secondClaim.job?.attempt.workerKind).toBe("codex");
-    expect(secondClaim.job?.workflowExecutionMode).toBe("serial");
+    expect(secondClaim.job?.workflow?.id).toBe(firstDispatch.workflow.id);
+    expect("workflowExecutionMode" in secondClaim.job!).toBe(false);
   });
 
   it("persists todo tags, details doc and project tag catalog", async () => {
@@ -1969,7 +2178,6 @@ describe("Maple Server execution flow", () => {
         workflowId: null,
         workflowTitle: "Strict Worker execution",
         workflowSummary: "Run only the Worker selected on each Todo.",
-        executionMode: "serial",
         dispatchBrief: "Execute this Todo with its specified Worker."
       }
     })).status).toBe(200);

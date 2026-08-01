@@ -485,9 +485,27 @@ export function createServerPlatform(api: DashboardApi, options?: ServerPlatform
       }
     },
 
-    // ── 验收设置（Server 端持久化，GET/PATCH /api/settings/acceptance）──
-    async loadAcceptanceSettings() {
+    // ── models.dev 定价快照（GET /api/model-pricing；失败时静默降级为无成本估算）──
+    async loadModelPricing() {
       try {
+        const response = await api.modelPricing();
+        return response.items.map((item) => ({
+          providerId: item.providerId,
+          modelId: item.modelId,
+          modelName: item.modelName,
+          inputUsdPerMillion: item.inputUsdPerMillion,
+          reasoningUsdPerMillion: item.reasoningUsdPerMillion,
+          outputUsdPerMillion: item.outputUsdPerMillion,
+          cacheReadUsdPerMillion: item.cacheReadUsdPerMillion
+        }));
+      } catch (error) {
+        handleApiError(error);
+        return [];
+      }
+    },
+
+    // ── 验收设置（Server 端持久化，GET/PATCH /api/settings/acceptance）──
+    async loadAcceptanceSettings() {      try {
         return await api.acceptanceSettings();
       } catch (error) {
         handleApiError(error);

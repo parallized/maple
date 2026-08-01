@@ -245,7 +245,6 @@ export interface CompleteProjectManagerJobRequest {
   workflowId: string | null;
   workflowTitle: string;
   workflowSummary: string;
-  executionMode: "serial" | "parallel";
   dispatchBrief: string;
 }
 
@@ -253,7 +252,6 @@ export interface CompleteProjectManagerJobResponse {
   todo: Todo;
   workflow: ProjectWorkflow;
   selectedWorkerKind: WorkerKind;
-  executionMode: "serial" | "parallel";
   dispatchBrief: string;
 }
 

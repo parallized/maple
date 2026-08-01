@@ -342,13 +342,13 @@ describe("Runner structured run events", () => {
           workflow: {
             id: "workflow-1",
             projectId: execution.project.id,
+            workerKind: "kimi" as const,
             title: "Adapter workflow",
             summary: "Run the selected adapter.",
             createdAt: execution.todo.createdAt,
             updatedAt: execution.todo.updatedAt
           },
           selectedWorkerKind: "kimi" as const,
-          executionMode: "serial" as const,
           dispatchBrief: "Use the selected adapter."
         };
       },
@@ -443,7 +443,6 @@ describe("Runner structured run events", () => {
             workflowId: null,
             workflowTitle: "Adapter workflow",
             workflowSummary: "Run the selected adapter.",
-            executionMode: "serial",
             dispatchBrief: "Use the selected adapter."
           }
         };
@@ -810,7 +809,7 @@ describe("Runner structured run events", () => {
     expect(warnings.join("\n")).toContain("回传队列等待重试");
   });
 
-  it("resumes a serial Workflow Worker session after restart but isolates parallel work", async () => {
+  it("resumes a Workflow Worker session after restart and isolates a different Workflow", async () => {
     const root = mkdtempSync(join(tmpdir(), "maple-workflow-session-"));
     temporaryDirectories.push(root);
     const projectPath = join(root, "project");
@@ -822,25 +821,29 @@ describe("Runner structured run events", () => {
     base.workflow = {
       id: "workflow-1",
       projectId: base.project.id,
+      workerKind: "codex",
       title: "Persistent workflow",
       summary: "Keep implementation context across Todos.",
       createdAt: base.todo.createdAt,
       updatedAt: base.todo.updatedAt
     };
-    base.workflowExecutionMode = "serial";
     const second = structuredClone(base);
     second.todo.id = "todo-2";
     second.todo.title = "Continue adapter work";
     second.attempt.id = "attempt-2";
     second.attempt.todoId = second.todo.id;
     second.leaseToken = "job-lease-token-22345678901234567890";
-    const parallel = structuredClone(second);
-    parallel.todo.id = "todo-3";
-    parallel.todo.title = "Independent adapter work";
-    parallel.attempt.id = "attempt-3";
-    parallel.attempt.todoId = parallel.todo.id;
-    parallel.leaseToken = "job-lease-token-32345678901234567890";
-    parallel.workflowExecutionMode = "parallel";
+    const independent = structuredClone(second);
+    independent.todo.id = "todo-3";
+    independent.todo.title = "Independent adapter work";
+    independent.attempt.id = "attempt-3";
+    independent.attempt.todoId = independent.todo.id;
+    independent.leaseToken = "job-lease-token-32345678901234567890";
+    independent.workflow = {
+      ...independent.workflow!,
+      id: "workflow-2",
+      title: "Independent workflow"
+    };
 
     const config: CliConfig = {
       version: 1,
@@ -923,7 +926,8 @@ describe("Runner structured run events", () => {
 
     await runOnce(base);
     await runOnce(second);
-    await runOnce(parallel);
+    freshSessionId = "workflow-session-2";
+    await runOnce(independent);
 
     const recovery = structuredClone(second);
     recovery.todo.id = "todo-4";
@@ -952,6 +956,8 @@ describe("Runner structured run events", () => {
     expect(prompts.every((prompt) => !prompt.includes("最终报告不得超过"))).toBe(true);
     expect(new AgentSessionStore(configPath).read("workflow", "workflow-1", "codex")?.sessionId)
       .toBe("replacement-session");
+    expect(new AgentSessionStore(configPath).read("workflow", "workflow-2", "codex")?.sessionId)
+      .toBe("workflow-session-2");
   });
 });
 

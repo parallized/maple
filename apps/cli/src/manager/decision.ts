@@ -64,14 +64,12 @@ export function parseProjectManagerDecision(output: string, job: ProjectManagerJ
   const parsed = parseJsonObject(output);
   const selectedWorkerKind = job.todo.workerKind;
   const requestedWorkflowId = parsed?.workflowId;
-  const workflowId = typeof requestedWorkflowId === "string"
-    && requestedWorkflowId !== "NEW"
-    && job.workflows.some((workflow) => workflow.id === requestedWorkflowId)
-      ? requestedWorkflowId
-      : null;
-  const existingWorkflow = workflowId
-    ? job.workflows.find((workflow) => workflow.id === workflowId)
+  const existingWorkflow = typeof requestedWorkflowId === "string" && requestedWorkflowId !== "NEW"
+    ? job.workflows.find(
+        (workflow) => workflow.id === requestedWorkflowId && workflow.workerKind === selectedWorkerKind
+      )
     : undefined;
+  const workflowId = existingWorkflow?.id ?? null;
   const workflowTitle = boundedString(
     parsed?.workflowTitle,
     existingWorkflow?.title ?? job.todo.title,
@@ -92,7 +90,6 @@ export function parseProjectManagerDecision(output: string, job: ProjectManagerJ
     workflowId,
     workflowTitle,
     workflowSummary,
-    executionMode: parsed?.executionMode === "parallel" ? "parallel" : "serial",
     dispatchBrief
   };
 }

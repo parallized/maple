@@ -40,6 +40,7 @@ import {
 } from "./lib/utils";
 import { applyUiFont } from "./lib/ui-font";
 import { collectTokenUsage } from "./lib/token-usage";
+import { estimateTokenCostUsd } from "./lib/token-cost";
 import { normalizeTagsForAiLanguage } from "./lib/tag-language";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
 import { buildSidebarWorkers } from "./lib/worker-sidebar";
@@ -74,7 +75,7 @@ import type {
   WorkerKind,
   WorkerLogEvent,
 } from "./domain";
-import type { BoardPlatform, WorkerProbe } from "./platform/types";
+import type { BoardPlatform, ModelPriceQuote, WorkerProbe } from "./platform/types";
 import { PlatformProvider } from "./platform/context";
 import type { InstallTargetId } from "./lib/install-targets";
 
@@ -270,6 +271,31 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version }
     [sidebarWorkers, usedSidebarWorkerKinds]
   );
 
+  // models.dev 定价快照：平台支持时加载一次，用于概览图表的成本估算。
+  const [modelPricing, setModelPricing] = useState<ModelPriceQuote[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void platform.loadModelPricing?.()
+      .then((items) => {
+        if (!cancelled) setModelPricing(items);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [platform]);
+
+  // Worker 类型 → 执行端上报的模型 id 列表，用于 models.dev 定价匹配。
+  const modelIdsByKind = useMemo(() => {
+    const map: Partial<Record<WorkerKind, string[]>> = {};
+    for (const worker of sidebarWorkers) {
+      if (worker.state !== "online" && worker.state !== "offline") continue;
+      const ids = worker.title.split(" / ").map((id) => id.trim()).filter(Boolean);
+      if (ids.length > 0) map[worker.kind] = ids;
+    }
+    return map;
+  }, [sidebarWorkers]);
+
   useEffect(() => {
     setProjects((prev) => {
       let changed = false;
@@ -338,13 +364,54 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version }
       .map((project) => {
         const byWorker: Partial<Record<WorkerKind, number>> = {};
         const byLeader: Partial<Record<WorkerKind, number>> = {};
+        // 明细与成本按角色独立累计；hover 判定才是整柱共用。
+        const emptyRole = () => ({
+          inputTokens: 0,
+          cachedInputTokens: 0,
+          outputTokens: 0,
+          reasoningOutputTokens: 0,
+          totalTokens: 0
+        });
+        const workerUsage = emptyRole();
+        const leaderUsage = emptyRole();
         let total = 0;
         for (const bucket of project.tokenUsage ?? []) {
-          const target = bucket.agentRole === "leader" ? byLeader : byWorker;
+          const isLeader = bucket.agentRole === "leader";
+          const target = isLeader ? byLeader : byWorker;
+          const usage = isLeader ? leaderUsage : workerUsage;
           target[bucket.workerKind] = (target[bucket.workerKind] ?? 0) + bucket.totalTokens;
           total += bucket.totalTokens;
+          usage.totalTokens += bucket.totalTokens;
+          usage.inputTokens += bucket.inputTokens;
+          usage.cachedInputTokens += bucket.cachedInputTokens;
+          usage.outputTokens += bucket.outputTokens;
+          usage.reasoningOutputTokens += bucket.reasoningOutputTokens;
         }
-        return { projectId: project.id, name: project.name, totalTokens: total, byWorker, byLeader };
+        const buckets = project.tokenUsage ?? [];
+        return {
+          projectId: project.id,
+          name: project.name,
+          totalTokens: total,
+          byWorker,
+          byLeader,
+          worker: {
+            ...workerUsage,
+            costUsd: estimateTokenCostUsd(
+              buckets.filter((bucket) => bucket.agentRole !== "leader"),
+              modelPricing,
+              modelIdsByKind
+            )
+          },
+          leader: {
+            ...leaderUsage,
+            costUsd: estimateTokenCostUsd(
+              buckets.filter((bucket) => bucket.agentRole === "leader"),
+              modelPricing,
+              modelIdsByKind
+            )
+          },
+          taskCount: project.tasks.length
+        };
       })
       .filter((entry) => entry.totalTokens > 0);
 
@@ -358,7 +425,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version }
       statusDistribution,
       projectTokenUsage
     };
-  }, [projects, executingWorkers]);
+  }, [projects, executingWorkers, modelPricing, modelIdsByKind]);
 
   const workerAvailability = useMemo(
     () =>

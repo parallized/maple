@@ -292,6 +292,7 @@ CREATE TABLE IF NOT EXISTS todo_logs (
 CREATE TABLE IF NOT EXISTS project_workflows (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  worker_kind TEXT NOT NULL CHECK(worker_kind IN ('codex', 'deepseek', 'claude', 'kimi', 'glm', 'iflow', 'gemini', 'opencode')),
   title TEXT NOT NULL,
   summary TEXT NOT NULL,
   created_at TEXT NOT NULL,
@@ -310,7 +311,6 @@ CREATE TABLE IF NOT EXISTS todo_routes (
   manager_usage_output_tokens INTEGER NOT NULL DEFAULT 0,
   manager_usage_reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
   selected_worker_kind TEXT,
-  execution_mode TEXT CHECK(execution_mode IN ('serial', 'parallel')),
   dispatch_brief TEXT,
   attempt_id TEXT,
   lease_token_hash TEXT,
@@ -405,6 +405,8 @@ function migrate(database: Database): void {
   ensureColumn(database, "todos", "retry_after", "TEXT");
   migrateTodoWorkerConstraint(database);
   ensureTodoWorkerInvariant(database);
+  migrateProjectWorkflowWorker(database);
+  ensureProjectWorkflowWorkerInvariant(database);
   ensureColumn(database, "projects", "tag_catalog_json", "TEXT");
   ensureColumn(database, "projects", "workspace_id", "TEXT");
   ensureColumn(database, "projects", "workspace_external_key", "TEXT");
@@ -444,6 +446,7 @@ function migrate(database: Database): void {
   ensureColumn(database, "todo_routes", "manager_usage_cached_input_tokens", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(database, "todo_routes", "manager_usage_output_tokens", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(database, "todo_routes", "manager_usage_reasoning_output_tokens", "INTEGER NOT NULL DEFAULT 0");
+  dropColumn(database, "todo_routes", "execution_mode");
   purgeUnreleasedLegacyWorkspace(database);
   database.exec(`
     UPDATE projects SET workspace_external_key = external_key WHERE workspace_external_key IS NULL;
@@ -562,6 +565,60 @@ function ensureTodoWorkerInvariant(database: Database): void {
     WHEN NEW.worker_kind IS NULL OR NEW.worker_kind NOT IN (${allowedWorkers})
     BEGIN
       SELECT RAISE(ABORT, 'todos.worker_kind must be a supported Worker');
+    END;
+  `);
+}
+
+function migrateProjectWorkflowWorker(database: Database): void {
+  const allowedWorkers = WORKER_KINDS.map((kind) => `'${kind}'`).join(", ");
+  const hadWorkerKind = hasColumn(database, "project_workflows", "worker_kind");
+  ensureColumn(
+    database,
+    "project_workflows",
+    "worker_kind",
+    `TEXT NOT NULL DEFAULT 'codex' CHECK(worker_kind IN (${allowedWorkers}))`
+  );
+
+  const targetFilter = hadWorkerKind
+    ? `WHERE worker_kind IS NULL OR worker_kind NOT IN (${allowedWorkers})`
+    : "";
+  database.exec(`
+    UPDATE project_workflows
+    SET worker_kind = COALESCE((
+      SELECT t.worker_kind
+      FROM todo_routes tr
+      JOIN todos t ON t.id = tr.todo_id
+      WHERE tr.workflow_id = project_workflows.id
+        AND t.worker_kind IN (${allowedWorkers})
+      ORDER BY tr.created_at ASC, t.created_at ASC, t.rowid ASC
+      LIMIT 1
+    ), 'codex')
+    ${targetFilter};
+  `);
+}
+
+/**
+ * 旧库若已存在 nullable worker_kind，SQLite 无法原地补 NOT NULL/CHECK；
+ * 触发器为这类库提供与新表约束一致的写入保护。
+ */
+function ensureProjectWorkflowWorkerInvariant(database: Database): void {
+  const allowedWorkers = WORKER_KINDS.map((kind) => `'${kind}'`).join(", ");
+  database.exec(`
+    DROP TRIGGER IF EXISTS project_workflows_worker_kind_insert_guard;
+    DROP TRIGGER IF EXISTS project_workflows_worker_kind_update_guard;
+
+    CREATE TRIGGER project_workflows_worker_kind_insert_guard
+    BEFORE INSERT ON project_workflows
+    WHEN NEW.worker_kind IS NULL OR NEW.worker_kind NOT IN (${allowedWorkers})
+    BEGIN
+      SELECT RAISE(ABORT, 'project_workflows.worker_kind must be a supported Worker');
+    END;
+
+    CREATE TRIGGER project_workflows_worker_kind_update_guard
+    BEFORE UPDATE OF worker_kind ON project_workflows
+    WHEN NEW.worker_kind IS NULL OR NEW.worker_kind NOT IN (${allowedWorkers})
+    BEGIN
+      SELECT RAISE(ABORT, 'project_workflows.worker_kind must be a supported Worker');
     END;
   `);
 }

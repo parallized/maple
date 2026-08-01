@@ -123,7 +123,7 @@ if (-not ($pathEntries | Where-Object { $_.TrimEnd("\") -ieq $binDir.TrimEnd("\"
 $env:Path = "$binDir;$env:Path"
 Write-Host "[maple]       Command ready: $wrapperPath"
 
-# Starting the CLI once creates the managed Skill and MCP config under ~/.maple/runtime.
+# Starting the CLI once creates the managed MCP config under ~/.maple/runtime.
 $MapleInstallStage = "[5/7] initializing and verifying the CUI runtime"
 Write-Host "[maple] [5/7] Initializing and verifying the CUI runtime..."
 & $bunPath $cliPath status | Out-Null

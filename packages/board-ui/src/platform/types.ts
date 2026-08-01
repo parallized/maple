@@ -38,6 +38,17 @@ export type InstallMeta = {
   latestSkillsVersion: number;
 };
 
+/** models.dev 定价条目（USD / 1M tokens；null 表示该档位未公布）。 */
+export type ModelPriceQuote = {
+  providerId: string;
+  modelId: string;
+  modelName: string;
+  inputUsdPerMillion: number | null;
+  reasoningUsdPerMillion: number | null;
+  outputUsdPerMillion: number | null;
+  cacheReadUsdPerMillion: number | null;
+};
+
 export type RunWorkerRequest = {
   workerId: string;
   taskTitle: string;
@@ -147,6 +158,9 @@ export interface BoardPlatform {
   loadDeepSeekConnection?(): Promise<DeepSeekConnectionStatus>;
   connectDeepSeek?(apiKey: string): Promise<DeepSeekConnectionStatus>;
   disconnectDeepSeek?(): Promise<DeepSeekConnectionStatus>;
+
+  // ── models.dev 定价快照（未实现时图表不显示成本估算）──
+  loadModelPricing?(): Promise<ModelPriceQuote[]>;
 
   // ── Worker 执行(仅 canExecuteWorkers)──
   runWorker(req: RunWorkerRequest): Promise<WorkerCommandResult>;

@@ -11,6 +11,7 @@ import type {
   DeviceAuthorizationReview,
   HomeStatsResponse,
   LoginAccountRequest,
+  ModelPricingResponse,
   Project,
   RegisterAccountRequest,
   RunnerCommand,
@@ -154,6 +155,10 @@ export class DashboardApi {
 
   snapshot(signal?: AbortSignal): Promise<DashboardSnapshot> {
     return this.request("GET", "/api/dashboard", undefined, signal);
+  }
+
+  modelPricing(signal?: AbortSignal): Promise<ModelPricingResponse> {
+    return this.request("GET", "/api/model-pricing?limit=5000", undefined, signal);
   }
 
   createRunnerCommand(runnerId: string, input: CreateRunnerCommandRequest): Promise<RunnerCommand> {

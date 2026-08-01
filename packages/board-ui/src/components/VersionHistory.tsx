@@ -62,7 +62,7 @@ export function VersionHistory({ version, uiLanguage }: VersionHistoryProps) {
             exit={{ opacity: 0, y: 4, scale: 0.98 }}
             transition={{ duration: 0.16, ease: "easeOut" }}
             style={{ transformOrigin: "bottom left" }}
-            className="absolute bottom-full left-0 mb-2 flex max-h-[60vh] w-[min(300px,76vw)] flex-col overflow-hidden rounded-[12px] border border-(--color-base-300) bg-(--color-base-100)"
+            className="absolute bottom-full left-0 z-[90] mb-2 flex max-h-[60vh] w-[min(300px,76vw)] flex-col overflow-hidden rounded-[12px] border border-(--color-base-300) bg-(--color-base-100)"
           >
             <div className="flex items-center gap-1.5 px-3.5 pt-3 pb-2">
               <Icon icon="mingcute:history-line" className="text-[14px] text-(--color-secondary)/70" />

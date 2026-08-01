@@ -1,19 +1,22 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildWorkerCommand } from "../src/execution/worker-command";
 import { ensureRuntimeLayout, runtimeEnvironment } from "../src/runtime/layout";
 
 describe("Maple managed runtime", () => {
-  it("keeps Skill and MCP assets under one Maple runtime root", () => {
+  it("keeps MCP and provider assets under one Maple runtime root", () => {
     const root = mkdtempSync(join(tmpdir(), "maple-runtime-test-"));
     try {
+      const legacySkillPath = join(root, "skills", "maple", "SKILL.md");
+      mkdirSync(join(root, "skills", "maple"), { recursive: true });
+      writeFileSync(legacySkillPath, "legacy managed skill", "utf8");
       const layout = ensureRuntimeLayout({ MAPLE_RUNTIME_HOME: root });
-      expect(layout.skillPath.startsWith(root)).toBe(true);
+      expect(existsSync(legacySkillPath)).toBe(false);
+      expect(existsSync(join(root, "skills"))).toBe(false);
       expect(layout.mcpConfigPath.startsWith(root)).toBe(true);
       expect(layout.deepSeekModelCatalogPath.startsWith(root)).toBe(true);
-      expect(readFileSync(layout.skillPath, "utf8")).toContain("Do not install project-local Maple files");
       const config = JSON.parse(readFileSync(layout.mcpConfigPath, "utf8"));
       expect(config.mcpServers.maple.command).toBe(layout.mcpCommand);
       expect(config.mcpServers.maple.args).toEqual(layout.mcpArgs);
@@ -28,7 +31,6 @@ describe("Maple managed runtime", () => {
   it("injects the centralized MCP into Codex and Claude per invocation", () => {
     const env = runtimeEnvironment({
       root: "C:/Users/test/.maple/runtime",
-      skillPath: "C:/Users/test/.maple/runtime/skills/maple/SKILL.md",
       mcpConfigPath: "C:/Users/test/.maple/runtime/mcp/mcp.json",
       mcpCommand: "bun",
       mcpArgs: ["C:/Users/test/.maple/bin/maple-cli.js", "mcp"],

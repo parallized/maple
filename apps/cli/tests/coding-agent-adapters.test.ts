@@ -546,7 +546,6 @@ describe("process execution lifecycle", () => {
       workflowId: null,
       workflowTitle: "Fast route",
       workflowSummary: "Route immediately.",
-      executionMode: "serial",
       workerKind: "codex",
       dispatchBrief: "Start the Worker."
     });

@@ -71,6 +71,7 @@ function managerJob(): ProjectManagerJob {
     workflows: [{
       id: "workflow-auth",
       projectId: "project-1",
+      workerKind: "codex",
       title: "Token refresh",
       summary: "Implement and verify token refresh.",
       createdAt: now,
@@ -81,7 +82,7 @@ function managerJob(): ProjectManagerJob {
       title: "Implement token refresh",
       details: "Add endpoint.",
       status: "running",
-      workerKind: "kimi",
+      workerKind: "codex",
       workflowId: "workflow-auth",
       resultSummary: null,
       dispatchBrief: "Implement the endpoint.",
@@ -200,7 +201,6 @@ describe("Project manager dispatch", () => {
       workflowId: "workflow-auth",
       workflowTitle: "Token refresh",
       workflowSummary: "Finish refresh handling and its tests.",
-      executionMode: "serial",
       workerKind: "kimi",
       dispatchBrief: "Continue the existing authentication context."
     }), managerJob());
@@ -209,10 +209,24 @@ describe("Project manager dispatch", () => {
       workflowId: "workflow-auth",
       workflowTitle: "Token refresh",
       workflowSummary: "Finish refresh handling and its tests.",
-      executionMode: "serial",
       selectedWorkerKind: "codex",
       dispatchBrief: "Continue the existing authentication context."
     });
+  });
+
+  it("creates a new Workflow when the requested bucket belongs to another Worker", () => {
+    const job = managerJob();
+    job.workflows[0]!.workerKind = "kimi";
+
+    const decision = parseProjectManagerDecision(JSON.stringify({
+      workflowId: "workflow-auth",
+      workflowTitle: "Token refresh",
+      workflowSummary: "Finish refresh handling and its tests.",
+      dispatchBrief: "Continue the existing authentication context."
+    }), job);
+
+    expect(decision.workflowId).toBeNull();
+    expect(decision.selectedWorkerKind).toBe("codex");
   });
 
   it("keeps project instructions in the stable prefix and forbids implementation planning", () => {
@@ -227,6 +241,10 @@ describe("Project manager dispatch", () => {
     expect(prompt).toContain("只返回 JSON");
     expect(prompt).toContain("立即返回派单 JSON");
     expect(prompt).toContain("不改派用户指定的 Worker");
+    expect(prompt).toContain("只有任务彼此独立且可安全并发时才新建 Workflow");
+    expect(prompt).toContain("Workflow 的 Worker 固定");
+    expect(prompt).toContain('"workerKind":"codex"');
+    expect(prompt).not.toContain("executionMode");
     expect(prompt.indexOf("AGENTS.md")).toBeLessThan(prompt.indexOf("新 Todo"));
   });
 
@@ -398,7 +416,6 @@ describe("Project manager dispatch", () => {
           workflowId: "workflow-auth",
           workflowTitle: "Token refresh",
           workflowSummary: "Finish refresh handling and its tests.",
-          executionMode: "serial",
           workerKind: "kimi",
           dispatchBrief: "Continue the existing authentication context."
         }),
@@ -497,7 +514,6 @@ describe("Project manager dispatch", () => {
           workflowId: "workflow-auth",
           workflowTitle: "Token refresh",
           workflowSummary: "Continue refresh handling.",
-          executionMode: "serial",
           workerKind: "codex",
           dispatchBrief: "Recover from Maple history."
         }),

@@ -5,16 +5,18 @@ import {
   type ModelPricingSnapshot,
   type ParsedModelPricingEntry
 } from "../repositories/model-pricing-repository";
+import { resolveFetchProxyUrl } from "../network/system-proxy";
 
 const DEFAULT_INTERVAL_HOURS = 24;
 const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
 const DEFAULT_LEASE_SECONDS = 90;
+const DEFAULT_RETRY_MS = 60 * 60 * 1_000;
 const MAX_PROVIDERS = 1_000;
 const MAX_MODELS = 50_000;
 
 type JsonRecord = Record<string, unknown>;
-type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type Fetcher = (input: RequestInfo | URL, init?: BunFetchRequestInit) => Promise<Response>;
 
 export type ModelPricingSyncResult =
   | { outcome: "updated"; modelCount: number; pricedModelCount: number; fetchedAt: string }
@@ -26,6 +28,8 @@ export interface ModelPricingSyncServiceOptions {
   fetcher?: Fetcher;
   now?: () => Date;
   logger?: Pick<Console, "info" | "warn" | "error">;
+  proxyUrl?: string | null;
+  retryIntervalMs?: number;
 }
 
 /** Pulls and atomically caches the public models.dev pricing catalog. */
@@ -36,7 +40,9 @@ export class ModelPricingSyncService {
   private readonly fetchTimeoutMs: number;
   private readonly maxBytes: number;
   private readonly leaseSeconds: number;
+  private readonly retryMs: number;
   private readonly fetcher: Fetcher;
+  private readonly proxyUrl: string | null;
   private readonly now: () => Date;
   private readonly logger: Pick<Console, "info" | "warn" | "error">;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -71,7 +77,11 @@ export class ModelPricingSyncService {
       64 * 1_024 * 1_024
     );
     this.leaseSeconds = Math.max(DEFAULT_LEASE_SECONDS, Math.ceil(this.fetchTimeoutMs / 1_000) + 30);
+    this.retryMs = positiveMilliseconds(options.retryIntervalMs, Math.min(DEFAULT_RETRY_MS, this.intervalMs));
     this.fetcher = options.fetcher ?? fetch;
+    this.proxyUrl = options.proxyUrl === undefined
+      ? resolveFetchProxyUrl(this.sourceUrl)
+      : options.proxyUrl?.trim() || null;
     this.now = options.now ?? (() => new Date());
     this.logger = options.logger ?? console;
     this.repository.configureSource(this.sourceUrl);
@@ -118,11 +128,13 @@ export class ModelPricingSyncService {
       headers.set("user-agent", "Maple model-pricing-sync");
       if (status.etag) headers.set("if-none-match", status.etag);
       if (status.lastModified) headers.set("if-modified-since", status.lastModified);
-      const response = await this.fetcher(this.sourceUrl, {
+      const request: BunFetchRequestInit = {
         method: "GET",
         headers,
         signal: controller.signal
-      });
+      };
+      if (this.proxyUrl) request.proxy = this.proxyUrl;
+      const response = await this.fetcher(this.sourceUrl, request);
       const fetchedAt = this.now().toISOString();
       const etag = response.headers.get("etag");
       const lastModified = response.headers.get("last-modified");
@@ -174,22 +186,38 @@ export class ModelPricingSyncService {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
-      void this.syncNow()
-        .catch((error) => {
-          this.logger.warn(`[maple-server] model pricing scheduler failed: ${errorMessage(error)}`);
-        })
-        .finally(() => {
-          if (this.started) this.schedule(this.intervalMs);
-        });
+      void this.runScheduledSync();
     }, Math.max(0, Math.floor(delayMs)));
     // A background refresh must never keep an otherwise idle CLI/test process alive.
     const unref = (this.timer as unknown as { unref?: () => void }).unref;
     unref?.call(this.timer);
   }
+
+  private async runScheduledSync(): Promise<void> {
+    let nextDelay = this.intervalMs;
+    try {
+      const result = await this.syncNow();
+      if (result.outcome === "failed" || (
+        result.outcome === "skipped"
+        && result.reason !== "disabled"
+      )) {
+        nextDelay = this.retryMs;
+      }
+    } catch (error) {
+      nextDelay = this.retryMs;
+      this.logger.warn(`[maple-server] model pricing scheduler failed: ${errorMessage(error)}`);
+    } finally {
+      if (this.started) this.schedule(nextDelay);
+    }
+  }
 }
 
 function boundedInteger(value: number | undefined, fallback: number, minimum: number, maximum: number): number {
   return Number.isSafeInteger(value) ? Math.min(maximum, Math.max(minimum, value!)) : fallback;
+}
+
+function positiveMilliseconds(value: number | undefined, fallback: number): number {
+  return Number.isSafeInteger(value) && value! > 0 ? value! : fallback;
 }
 
 function isRecord(value: unknown): value is JsonRecord {

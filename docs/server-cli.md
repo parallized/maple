@@ -109,17 +109,16 @@ Server 不再生成或接受 Admin Token。Web 管理操作必须使用账户 Se
 
 ## Maple Runtime
 
-Skills、MCP、Playwright 和临时成果统一位于：
+MCP、Playwright 和临时成果统一位于：
 
 ```text
 ~/.maple/runtime/
-  skills/maple/SKILL.md
   mcp/mcp.json
   playwright/
   artifacts/
 ```
 
-CLI 每次启动都会自检 Skill 与 MCP 配置。内置 `maple mcp` 只暴露当前进程角色、项目目录和 Skill 路径；任务流转继续使用 Runner API。Codex 与 Claude 通过本次进程参数加载 MCP，不修改 `.codex`、`.claude`、`.gemini`、`.iflow` 或 `.windsurf`。
+CLI 每次启动都会自检 MCP 配置。内置 `maple mcp` 只暴露当前进程角色、项目目录和 Runtime 根目录；任务流转继续使用 Runner API。Codex 与 Claude 通过本次进程参数加载 MCP，不修改 `.codex`、`.claude`、`.gemini`、`.iflow` 或 `.windsurf`。
 
 Playwright 包、启动器和 Chromium 缓存均在 `~/.maple/runtime/playwright`，不会在项目目录生成依赖、配置或浏览器缓存。设置 `MAPLE_SKIP_PLAYWRIGHT_INSTALL=1` 可跳过安装。
 

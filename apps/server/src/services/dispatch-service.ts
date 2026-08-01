@@ -82,7 +82,6 @@ export class DispatchService {
              )
              AND (
                route.todo_id IS NULL
-               OR route.execution_mode = 'parallel'
                OR route.workflow_id IS NULL
                OR NOT EXISTS (
                  SELECT 1
@@ -96,7 +95,6 @@ export class DispatchService {
              )
              AND (
                route.todo_id IS NULL
-               OR route.execution_mode = 'parallel'
                OR route.workflow_id IS NULL
                OR NOT EXISTS (
                  SELECT 1
@@ -186,7 +184,6 @@ export class DispatchService {
       acceptanceSettings: attempt.acceptanceSettings ?? acceptanceSettings,
       executionSettings,
       workflow: context.workflow,
-      workflowExecutionMode: context.executionMode,
       dispatchBrief: context.dispatchBrief,
       managerWorkerKind: context.managerWorkerKind
     };

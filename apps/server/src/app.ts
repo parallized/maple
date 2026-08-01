@@ -908,7 +908,6 @@ export function createServerApp(options: CreateServerAppOptions) {
           workflowId: t.Union([t.String({ minLength: 1, maxLength: 100 }), t.Null()]),
           workflowTitle: t.String({ minLength: 1, maxLength: 160 }),
           workflowSummary: t.String({ minLength: 1, maxLength: 4_000 }),
-          executionMode: t.Union([t.Literal("serial"), t.Literal("parallel")]),
           dispatchBrief: t.String({ minLength: 1, maxLength: 2_000 })
         })
       }

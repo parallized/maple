@@ -421,7 +421,7 @@ export class RunnerLoop {
           content: result.error
         });
       } else {
-        const workflowId = job.workflowExecutionMode === "serial" ? job.workflow?.id : undefined;
+        const workflowId = job.workflow?.id;
         const existingSession = workflowId
           ? this.sessionStore.read("workflow", workflowId, job.attempt.workerKind)
           : null;

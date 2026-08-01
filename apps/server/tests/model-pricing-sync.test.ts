@@ -4,6 +4,7 @@ import { createServerApp } from "../src/app";
 import { createDatabase } from "../src/database/client";
 import type { ServerConfig } from "../src/config";
 import { ModelPricingRepository } from "../src/repositories/model-pricing-repository";
+import { parseWindowsProxyServer, resolveFetchProxyUrl } from "../src/network/system-proxy";
 import { ModelPricingSyncService } from "../src/services/model-pricing-sync-service";
 import { ensureStandaloneIdentity } from "../src/standalone/identity";
 
@@ -66,6 +67,63 @@ function setup() {
 }
 
 describe("models.dev model pricing synchronization", () => {
+  it("uses the Windows system proxy when Bun proxy environment variables are absent", () => {
+    const registry = new Map([
+      ["ProxyEnable", "0x1"],
+      ["ProxyServer", "http=127.0.0.1:8080;https=127.0.0.1:8443"]
+    ]);
+    expect(resolveFetchProxyUrl("https://models.dev/api.json", {
+      platform: "win32",
+      env: {},
+      readWindowsRegistryValue: (name) => registry.get(name) ?? null
+    })).toBe("http://127.0.0.1:8443/");
+    expect(resolveFetchProxyUrl("https://models.dev/api.json", {
+      platform: "win32",
+      env: { HTTPS_PROXY: "http://environment-proxy:8080" },
+      readWindowsRegistryValue: (name) => registry.get(name) ?? null
+    })).toBeNull();
+    expect(parseWindowsProxyServer("127.0.0.1:7890", "https:"))
+      .toBe("http://127.0.0.1:7890/");
+  });
+
+  it("passes an explicitly resolved proxy to the models.dev request", async () => {
+    const { repository } = setup();
+    let requestProxy: string | undefined;
+    const service = new ModelPricingSyncService(repository, config(), {
+      proxyUrl: "http://127.0.0.1:7890",
+      fetcher: async (_input, init) => {
+        requestProxy = init?.proxy as string | undefined;
+        return new Response(JSON.stringify(payload()), { status: 200 });
+      }
+    });
+
+    await expect(service.syncNow()).resolves.toMatchObject({ outcome: "updated" });
+    expect(requestProxy).toBe("http://127.0.0.1:7890");
+  });
+
+  it("retries a failed initial refresh before returning to the daily interval", async () => {
+    const { repository } = setup();
+    let calls = 0;
+    const service = new ModelPricingSyncService(repository, config({ modelPricingSyncIntervalHours: 24 }), {
+      retryIntervalMs: 5,
+      fetcher: async () => {
+        calls += 1;
+        return calls === 1
+          ? new Response("upstream unavailable", { status: 503 })
+          : new Response(JSON.stringify(payload()), { status: 200 });
+      },
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined }
+    });
+
+    service.start();
+    const deadline = Date.now() + 1_000;
+    while (calls < 2 && Date.now() < deadline) await Bun.sleep(5);
+    service.stop();
+
+    expect(calls).toBe(2);
+    expect(repository.status()).toMatchObject({ modelCount: 2, pricedModelCount: 1, lastError: null });
+  });
+
   it("stores a normalized snapshot and preserves nested pricing tiers", async () => {
     const { repository } = setup();
     const service = new ModelPricingSyncService(repository, config(), {

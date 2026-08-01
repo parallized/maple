@@ -363,7 +363,7 @@ describe("Maple hosted authentication", () => {
       cookie: second.cookie,
       workspaceId: second.session.workspace.id
     });
-    expect(await untouched.json()).toEqual({ theme: "system", uiFont: "default", uiLanguage: "zh" });
+    expect(await untouched.json()).toEqual({ theme: "system", uiFont: "chill-round", uiLanguage: "zh" });
 
     const removedAdmin = await request(app, "/api/dashboard", { token: "obsolete-admin-token" });
     expect(removedAdmin.status).toBe(401);

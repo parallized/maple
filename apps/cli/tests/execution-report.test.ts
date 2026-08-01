@@ -13,8 +13,8 @@ describe("execution report", () => {
       todo: { title: "快速看一眼这项目是啥", details: "", tags: [] }
     } as unknown as ExecutionJob);
 
-    expect(prompt).toContain("优先遵守用户提示、项目 AGENTS.md 及已有 Skills/MCP");
-    expect(prompt).toContain("小任务/小修复约 100 字，普通开发约 100～200 字");
+    expect(prompt).not.toContain("Skill");
+    expect(prompt).toContain("小任务/小修复尽量在 100 字内，普通开发约 100～200 字");
     expect(prompt).toContain("审计、迁移、架构重构或用户要求完整报告时再展开");
     expect(prompt.length).toBeLessThan(1_200);
     expect(prompt).not.toContain("最终报告不得超过");

@@ -282,7 +282,7 @@ export function OverviewView({ uiLanguage, metrics, runners, workerAvailability,
               </span>
             </div>
             <div className="min-h-[180px]">
-              <ProjectTokenChart data={projectTokenUsage} />
+              <ProjectTokenChart data={projectTokenUsage} uiLanguage={uiLanguage} />
             </div>
           </div>
         </FadeContent>
