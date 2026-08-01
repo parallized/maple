@@ -92,6 +92,8 @@ export type BoardExecutionSettings = {
   leaderConstitution: string;
   retryIntervalSeconds: WorkerRetryConfig["intervalSeconds"];
   retryMaxAttempts: WorkerRetryConfig["maxAttempts"];
+  /** 执行端同时运行的任务上限（1-16），与 Server 工作区设置一致。 */
+  concurrency: number;
 };
 
 /**

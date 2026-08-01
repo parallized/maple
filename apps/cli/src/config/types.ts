@@ -28,4 +28,6 @@ export interface CliConfig {
   serverUrl: string;
   runner: RunnerCredential | null;
   projects: LocalProject[];
+  /** 用户按 CTRL + P 忽略的 CLI 更新版本；再次出现更高版本时会重新提示。 */
+  updateIgnoredVersion?: string;
 }

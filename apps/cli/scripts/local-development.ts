@@ -98,6 +98,7 @@ export function createLocalDevelopmentPlan(
       env: {
         ...env,
         MAPLE_STANDALONE_WEB_ROOT: options.webRoot,
+        MAPLE_STANDALONE_DASHBOARD_URL: webUrl,
         MAPLE_STANDALONE_ALLOWED_ORIGINS: appendAllowedOrigin(
           env.MAPLE_STANDALONE_ALLOWED_ORIGINS,
           webUrl

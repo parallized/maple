@@ -70,7 +70,8 @@ export const kimiAdapter: CodingAgentAdapter = {
         ...(model ? ["--model", model] : []),
         ...(options?.resumeSessionId ? ["--session", options.resumeSessionId] : []),
         ...(options?.additionalWritableDirectories ?? []).flatMap((directory) => ["--add-dir", directory]),
-        options?.readOnly ? "--plan" : "--auto",
+        // Kimi CLI 禁止 --prompt 与 --auto / --plan / --yolo 组合；
+        // 非交互 prompt 模式下工具调用本身即自动执行，无需（也无法）显式指定权限模式。
         "--prompt",
         prompt,
         "--output-format",

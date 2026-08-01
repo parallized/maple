@@ -59,14 +59,15 @@ describe("Maple CLI core", () => {
     expect(() => concurrencyOption(parseCliArgs(["connect", "--concurrency", "2.5"]))).toThrow();
   });
 
-  it("falls back to concurrency 2 when workspace settings are temporarily unavailable", async () => {
+  it("falls back to the default concurrency when workspace settings are temporarily unavailable", async () => {
     const api = {
       executionSettings: async () => {
         throw new Error("offline");
       }
     } as unknown as MapleApiClient;
 
-    expect(await resolveRunnerConcurrency(api, parseCliArgs(["connect"]))).toBe(2);
+    expect(await resolveRunnerConcurrency(api, parseCliArgs(["connect"])))
+      .toBe(DEFAULT_WORKSPACE_EXECUTION_SETTINGS.concurrency);
   });
 
   it("uses sandboxed Codex in non-Git projects and sends the prompt through stdin", () => {

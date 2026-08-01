@@ -119,6 +119,7 @@ describe("key parser", () => {
     const parser = new KeyParser();
     expect(parser.push("\r")).toEqual([{ name: "enter" }]);
     expect(parser.push("\x03")).toEqual([{ name: "ctrl-c" }]);
+    expect(parser.push("\x15\x10")).toEqual([{ name: "ctrl-u" }, { name: "ctrl-p" }]);
     expect(parser.push("\x7f")).toEqual([{ name: "backspace" }]);
     expect(parser.push("\x1b[3~")).toEqual([{ name: "delete" }]);
     expect(parser.push("\x1b[Z")).toEqual([{ name: "tab" }]);

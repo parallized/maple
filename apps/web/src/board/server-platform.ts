@@ -233,6 +233,7 @@ export function createServerPlatform(api: DashboardApi, options?: ServerPlatform
           id: task.id,
           title: task.title,
           details: task.details,
+          parentId: task.parentId ?? undefined,
           workerKind: task.workerKind ?? fallbackWorkerKind ?? "codex",
           tags: [...task.tags],
           status: task.status === "草稿" ? "draft" : "todo"

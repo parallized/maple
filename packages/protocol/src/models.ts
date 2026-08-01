@@ -111,7 +111,7 @@ export const DEFAULT_WORKSPACE_EXECUTION_SETTINGS: WorkspaceExecutionSettings = 
   aiOutputLanguage: "follow_ui",
   constitution: "",
   leaderConstitution: "",
-  concurrency: 2,
+  concurrency: 4,
   retryIntervalSeconds: 10,
   retryMaxAttempts: 5
 };
@@ -235,6 +235,8 @@ export interface Todo {
   title: string;
   details: string;
   status: TodoStatus;
+  /** 父任务 id；无父任务时为空。表格里以树形结构展示子任务。 */
+  parentId?: string | null;
   priority: number;
   workerKind: WorkerKind;
   claimedByRunnerId: string | null;

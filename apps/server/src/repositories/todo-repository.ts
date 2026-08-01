@@ -5,6 +5,7 @@ import type {
   TodoAttempt,
   TodoDetailResponse,
   TodoLog,
+  TodoStatus,
   TokenUsageBreakdown,
   UpdateTodoRequest,
   WorkerKind
@@ -107,16 +108,24 @@ export class TodoRepository {
       if (existing) return existing;
       if (workspaceId && this.get(id)) throw new Error("Todo ID 已被其他工作区占用");
     }
+    let parentId: string | null = null;
+    if (input.parentId) {
+      const parent = this.get(input.parentId, workspaceId);
+      if (!parent) throw new Error("父任务不存在");
+      if (parent.projectId !== projectId) throw new Error("父任务必须属于同一项目");
+      parentId = parent.id;
+    }
     this.database.run(
       `INSERT INTO todos(
-         id, project_id, title, details, status, priority, worker_kind, tags_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         id, project_id, title, details, status, parent_id, priority, worker_kind, tags_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         projectId,
         input.title.trim(),
         input.details?.trim() ?? "",
         input.status ?? "todo",
+        parentId,
         input.priority ?? 0,
         input.workerKind,
         input.tags ? JSON.stringify(input.tags) : null,
@@ -136,6 +145,19 @@ export class TodoRepository {
       if (!current) return null;
       const now = nowIso();
 
+      if (input.parentId !== undefined && (input.parentId ?? null) !== (current.parentId ?? null)) {
+        const nextParentId = input.parentId ?? null;
+        if (nextParentId) {
+          const parent = this.get(nextParentId, workspaceId);
+          if (!parent) throw new Error("父任务不存在");
+          if (parent.projectId !== current.projectId) throw new Error("父任务必须属于同一项目");
+          if (nextParentId === current.id) throw new Error("任务不能成为自己的子任务");
+          if (this.isDescendantOf(current.id, nextParentId)) {
+            throw new Error("不能把任务移动到自己的子任务下");
+          }
+        }
+      }
+
       if (input.status && input.status !== current.status && current.activeAttemptId) {
         this.database.run(
           `UPDATE todo_attempts
@@ -147,10 +169,12 @@ export class TodoRepository {
       if (input.status && input.status !== current.status) {
         this.database.run(
           `UPDATE todo_routes
-           SET state = 'routed', attempt_id = NULL, lease_token_hash = NULL,
-               lease_expires_at = NULL, completed_at = ?, updated_at = ?
+           SET state = 'pending', attempt_id = NULL, lease_token_hash = NULL,
+               lease_expires_at = NULL, manager_runner_id = NULL, manager_worker_kind = NULL,
+               selected_worker_kind = NULL, dispatch_brief = NULL,
+               completed_at = NULL, updated_at = ?
            WHERE todo_id = ? AND state = 'claimed'`,
-          [now, now, todoId]
+          [now, todoId]
         );
       }
 
@@ -179,6 +203,10 @@ export class TodoRepository {
         fields.push("tags_json = ?");
         values.push(JSON.stringify(input.tags));
       }
+      if (input.parentId !== undefined && (input.parentId ?? null) !== (current.parentId ?? null)) {
+        fields.push("parent_id = ?");
+        values.push(input.parentId ?? null);
+      }
       if (input.detailsDoc !== undefined) {
         fields.push("details_doc = ?");
         values.push(input.detailsDoc);
@@ -189,7 +217,6 @@ export class TodoRepository {
         fields.push("claimed_by_runner_id = NULL", "active_attempt_id = NULL", "lease_token_hash = NULL", "lease_expires_at = NULL");
         if (["todo", "rework", "draft"].includes(input.status)) {
           fields.push("started_at = NULL", "completed_at = NULL", "last_error = NULL");
-          if (input.status !== "draft") fields.push("result_summary = NULL");
         } else if (["review", "done", "blocked", "cancelled"].includes(input.status)) {
           fields.push("completed_at = ?");
           values.push(now);
@@ -202,6 +229,83 @@ export class TodoRepository {
     });
 
     return update.immediate();
+  }
+
+  /** todoId 是否位于 ancestorId 的子任务链上（向上逐级查找父任务，用于环校验）。 */
+  isDescendantOf(ancestorId: string, todoId: string): boolean {
+    let currentId: string | null = todoId;
+    for (let depth = 0; depth < 100; depth++) {
+      const row = this.database
+        .query("SELECT parent_id FROM todos WHERE id = ?")
+        .get(currentId) as { parent_id: string | null } | null;
+      if (!row) return false;
+      if (row.parent_id === ancestorId) return true;
+      if (!row.parent_id) return false;
+      currentId = row.parent_id;
+    }
+    return false;
+  }
+
+  /** 直接子任务数量（表格行用于展开箭头与状态调整标注）。 */
+  subtaskCount(todoId: string): number {
+    const row = this.database
+      .query("SELECT COUNT(*) AS count FROM todos WHERE parent_id = ?")
+      .get(todoId) as { count: number };
+    return row.count;
+  }
+
+  private descendantIds(todoId: string, workspaceId?: string): string[] {
+    const rows = this.database
+      .query(
+        `WITH RECURSIVE subtree(id) AS (
+           SELECT id FROM todos WHERE parent_id = ?
+           UNION ALL
+           SELECT t.id FROM todos t JOIN subtree s ON t.parent_id = s.id
+         )
+         SELECT s.id FROM subtree s
+         JOIN todos t ON t.id = s.id
+         JOIN projects p ON p.id = t.project_id
+         ${workspaceId ? "WHERE p.workspace_id = ?" : ""}`
+      )
+      .all(...(workspaceId ? [todoId, workspaceId] : [todoId])) as Array<{ id: string }>;
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * 把 todo 的所有子孙任务状态整体调整：
+   * 执行父任务时置待办；父任务状态变更时让子任务跟随（含放弃进行中的执行租约）。
+   */
+  setDescendantsStatus(todoId: string, status: TodoStatus, workspaceId?: string): number {
+    const descendants = this.descendantIds(todoId, workspaceId);
+    if (descendants.length === 0) return 0;
+    const now = nowIso();
+    const terminal = ["review", "done", "blocked", "cancelled"].includes(status);
+    this.database.transaction(() => {
+      for (const descendantId of descendants) {
+        const current = this.get(descendantId, workspaceId);
+        if (!current) continue;
+        if (current.activeAttemptId) {
+          this.database.run(
+            `UPDATE todo_attempts
+             SET state = 'abandoned', error = ?, completed_at = ?
+             WHERE id = ? AND state IN ('claimed', 'running')`,
+            ["父任务状态调整，子任务执行租约已撤销。", now, current.activeAttemptId]
+          );
+        }
+        this.database.run(
+          `UPDATE todos
+           SET status = ?, updated_at = ?,
+               claimed_by_runner_id = NULL, active_attempt_id = NULL,
+               lease_token_hash = NULL, lease_expires_at = NULL,
+               started_at = NULL, last_error = NULL, retry_after = NULL,
+               completed_at = ?
+           WHERE id = ?`,
+          [status, now, terminal ? now : null, descendantId]
+        );
+      }
+    }).immediate();
+    touchRevision(this.database);
+    return descendants.length;
   }
 
   delete(todoId: string, workspaceId?: string): "deleted" | "active" | "missing" {

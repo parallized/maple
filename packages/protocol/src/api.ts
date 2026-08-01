@@ -208,6 +208,8 @@ export interface CreateTodoRequest {
   id?: string;
   title: string;
   details?: string;
+  /** 父任务 id；传入时作为该任务的子任务创建。 */
+  parentId?: string | null;
   priority?: number;
   workerKind: WorkerKind;
   status?: Extract<TodoStatus, "draft" | "todo">;
@@ -217,6 +219,8 @@ export interface CreateTodoRequest {
 export interface UpdateTodoRequest {
   title?: string;
   details?: string;
+  /** 调整父任务；传 null 表示提升为顶层任务。 */
+  parentId?: string | null;
   priority?: number;
   workerKind?: WorkerKind;
   status?: TodoStatus;

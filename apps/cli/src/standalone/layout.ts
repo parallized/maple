@@ -21,6 +21,19 @@ export function resolveStandalonePort(value: string | undefined): number {
   return port;
 }
 
+/**
+ * 面向用户展示的看板地址：本地开发时看板由 Vite(5173) 提供，独立服务端口只做 API，
+ * 打开服务端口无法正常使用 Dashboard。生产 Standalone 未设置该变量时回退到 Server 地址。
+ */
+export function displayDashboardUrl(
+  serverUrl: string,
+  env: Record<string, string | undefined> = process.env
+): string {
+  const dashboard = env.MAPLE_STANDALONE_DASHBOARD_URL?.trim();
+  if (dashboard && /^https?:\/\//i.test(dashboard)) return dashboard;
+  return serverUrl;
+}
+
 function isLoopbackHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }

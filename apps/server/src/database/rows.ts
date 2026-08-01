@@ -84,10 +84,11 @@ export interface RunnerCommandRow {
 export interface TodoRow {
   id: string;
   project_id: string;
-  title: string;
-  details: string;
-  status: string;
-  priority: number;
+    title: string;
+    details: string;
+    status: string;
+    parent_id: string | null;
+    priority: number;
   worker_kind: string;
   claimed_by_runner_id: string | null;
   active_attempt_id: string | null;
@@ -309,9 +310,10 @@ export function toTodo(row: TodoRow): Todo {
     id: row.id,
     projectId: row.project_id,
     title: row.title,
-    details: row.details,
-    status: row.status as TodoStatus,
-    priority: row.priority,
+      details: row.details,
+      status: row.status as TodoStatus,
+      parentId: row.parent_id ?? null,
+      priority: row.priority,
     workerKind: row.worker_kind as WorkerKind,
     claimedByRunnerId: row.claimed_by_runner_id,
     activeAttemptId: row.active_attempt_id,

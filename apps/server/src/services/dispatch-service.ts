@@ -157,6 +157,8 @@ export class DispatchService {
           now
         ]
       );
+      // 执行父任务时，顺带把它底下的子任务全部置为待办，随执行队列一起被领取。
+      this.todos.setDescendantsStatus(candidate.todo_id, "todo");
       touchRevision(this.database);
       return {
         todoId: candidate.todo_id,

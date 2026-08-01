@@ -32,6 +32,10 @@ export function loadConfig(path = resolveConfigPath()): CliConfig {
   return {
     version: 1,
     serverUrl: typeof parsed.serverUrl === "string" ? parsed.serverUrl : "",
+    updateIgnoredVersion:
+      typeof parsed.updateIgnoredVersion === "string" && parsed.updateIgnoredVersion.trim()
+        ? parsed.updateIgnoredVersion
+        : undefined,
     runner:
       parsed.runner &&
       typeof parsed.runner.id === "string" &&

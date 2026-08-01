@@ -1,6 +1,8 @@
 import type { WorkerKind } from "@maple/protocol";
 import type { MapleApiClient } from "../api/client";
 import { formatCacheUsage, readCacheUsage } from "../cache/usage";
+import { CLI_VERSION } from "../commands";
+import { saveConfig } from "../config/store";
 import type { CliConfig, LocalProject } from "../config/types";
 import { workerLabel } from "../execution/adapters/registry";
 import { formatRunLogEntry } from "../execution/run-log";
@@ -8,6 +10,8 @@ import type { WorkerShell } from "../execution/shells";
 import { detectCodingAgentTools } from "../execution/tool-availability";
 import { selectProjectDirectory, type DirectoryPicker } from "../project/directory-picker";
 import { selectAndRegisterProject } from "../project/register";
+import { applyCliUpdate, fetchLatestCliVersion, isNewerVersion, updateHintText } from "../update/updater";
+import { displayDashboardUrl } from "../standalone/layout";
 import {
   RunnerLoop,
   type ProjectManagerActivityState,
@@ -170,6 +174,10 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
   let addingProject = false;
   let terminalPromptActive = false;
   let projectNotice: { kind: "success" | "info" | "error"; message: string } | null = null;
+  let latestVersion: string | null = null;
+  let updateNotice: { kind: "success" | "error"; text: string } | null = null;
+  let updating = false;
+  let updateIgnoredVersion = options.config.updateIgnoredVersion ?? undefined;
   const managerStates = new Map<string, ProjectManagerActivityState>();
   let dirty = true;
 
@@ -294,7 +302,7 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
     const paddedBody = body.map((line) => (line ? `  ${line}` : line));
 
     const workspaceName = currentConfig.runner?.workspaceName?.trim() || "Maple";
-    const host = serverHost(currentConfig.serverUrl);
+    const host = serverHost(displayDashboardUrl(currentConfig.serverUrl));
     const header = `${style.accent(symbols.dot)} ${style.strong("Maple Runner")}${style.dim(` · ${workspaceName}${host ? ` · ${host}` : ""}`)}`;
 
     // 没有任何 Worker 活动过就不渲染标签，避免“1 空闲”这类占位噪声。
@@ -373,7 +381,29 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
     }
     // 底部信息区与记录区之间一条细分割线（左右各留 2 格），底部再留一行空行。
     const divider = style.panel(`  ${symbols.hr.repeat(Math.max(1, width - 4))}  `);
-    screen.render([`  ${header}`, ...paddedBody, tabBar ? `  ${tabBar}` : "", divider, `  ${projectBar}`, statusLine, ""]);
+    // 末行版本条：左侧当前版本，右侧在有新版本时给出更新提示（宽度不足时省略提示）。
+    const versionLabel = `Maple v${CLI_VERSION}`;
+    let versionLine = `  ${style.dim(versionLabel)}`;
+    if (updating) {
+      versionLine = `  ${style.dim(versionLabel)}  ${style.accent("正在更新…")}`;
+    } else if (updateNotice) {
+      const noticeStyle = updateNotice.kind === "success" ? style.success : style.danger;
+      versionLine = `  ${style.dim(versionLabel)}  ${noticeStyle(updateNotice.text)}`;
+    } else if (latestVersion) {
+      const hint = updateHintText(latestVersion);
+      const gap = width - 4 - displayWidth(versionLabel) - displayWidth(hint);
+      if (gap >= 2) versionLine = `  ${style.dim(versionLabel)}${" ".repeat(gap)}${style.accent(hint)}  `;
+    }
+    screen.render([
+      `  ${header}`,
+      ...paddedBody,
+      tabBar ? `  ${tabBar}` : "",
+      divider,
+      `  ${projectBar}`,
+      statusLine,
+      versionLine,
+      ""
+    ]);
     dirty = false;
   };
 
@@ -396,7 +426,20 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
     }
   };
   void refreshCacheUsage();
-  const cacheTimer = setInterval(() => void refreshCacheUsage(), 60_000);
+  // 新版本检查：启动一次，之后每 10 分钟复查；失败静默，不打扰 Runner。
+  const checkForUpdate = async () => {
+    const latest = await fetchLatestCliVersion(currentConfig.serverUrl);
+    if (latest && isNewerVersion(CLI_VERSION, latest) && latest !== updateIgnoredVersion) {
+      latestVersion = latest;
+    }
+    dirty = true;
+  };
+  void checkForUpdate();
+  let updateCheckTicks = 0;
+  const cacheTimer = setInterval(() => {
+    void refreshCacheUsage();
+    if (++updateCheckTicks % 10 === 0 && !updating) void checkForUpdate();
+  }, 60_000);
   // 终端尺寸变化时按新行列数重算布局（记录区高度、居中、标签栏宽度）。
   const onResize = () => {
     dirty = true;
@@ -481,6 +524,47 @@ export async function runRunnerView(options: RunnerViewOptions): Promise<void> {
         } finally {
           addingProject = false;
           source.clear();
+          dirty = true;
+          render();
+        }
+        continue;
+      }
+      if (key.name === "ctrl-u") {
+        if (!updating && !stopping) {
+          updating = true;
+          updateNotice = null;
+          dirty = true;
+          render();
+          void (async () => {
+            const result = await applyCliUpdate(currentConfig.serverUrl);
+            updating = false;
+            if (result.ok) {
+              if (latestVersion) updateIgnoredVersion = latestVersion;
+              latestVersion = null;
+              try {
+                saveConfig({ ...currentConfig, updateIgnoredVersion });
+              } catch {
+                // 忽略持久化失败，重启后若仍提示可再按 CTRL + P。
+              }
+            }
+            updateNotice = result.ok
+              ? { kind: "success", text: result.message }
+              : { kind: "error", text: result.message };
+            dirty = true;
+          })();
+        }
+        continue;
+      }
+      if (key.name === "ctrl-p") {
+        if (latestVersion) {
+          updateIgnoredVersion = latestVersion;
+          latestVersion = null;
+          updateNotice = null;
+          try {
+            saveConfig({ ...currentConfig, updateIgnoredVersion });
+          } catch {
+            // 忽略持久化失败，仅本次会话内不再提示。
+          }
           dirty = true;
           render();
         }

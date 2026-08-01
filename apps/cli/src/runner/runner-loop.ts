@@ -10,6 +10,7 @@ import type {
 } from "@maple/protocol";
 import { MapleApiClient } from "../api/client";
 import { CLI_CAPABILITIES } from "../capabilities";
+import { CLI_VERSION } from "../commands";
 import { loadConfig, saveConfig } from "../config/store";
 import type { CliConfig, LocalProject } from "../config/types";
 import { deepSeekCredentialRevision } from "../credentials/deepseek";
@@ -32,9 +33,9 @@ import { selectProjectManagerWorkerForJob } from "../manager/decision";
 import { runProjectManagerFailureReport } from "../manager/failure-report";
 import type { DirectoryPicker } from "../project/directory-picker";
 import { AgentSessionStore } from "../session/store";
+import { displayDashboardUrl } from "../standalone/layout";
 import { handleRunnerCommand } from "./runner-command-handler";
 
-const CLI_VERSION = "0.1.7";
 const RUNNER_COMMAND_POLL_MS = 1_500;
 /** Server 连接失败后的固定重试间隔（用户要求每秒重试，不做指数退避）。 */
 const CONNECTION_RETRY_MS = 1_000;
@@ -213,7 +214,7 @@ export class RunnerLoop {
   }
 
   async run(signal: AbortSignal): Promise<void> {
-    this.output.info(`[maple] 已连接 ${this.api.serverUrl}`);
+    this.output.info(`[maple] 已连接 ${displayDashboardUrl(this.api.serverUrl)}`);
     this.output.info(`[maple] 已注册 ${this.config.projects.filter((project) => project.projectId).length} 个项目，并发数 ${this.concurrency}`);
     this.output.info("[maple] 正在等待 Todo。按 Ctrl+C 安全停止。\n");
     this.setConnection("connecting", "正在连接 Server…");
@@ -292,7 +293,7 @@ export class RunnerLoop {
           this.active.add(task);
           this.output.active?.(this.active.size);
         }
-        this.setConnection("online", `已连接 ${this.api.serverUrl}`);
+        this.setConnection("online", `已连接 ${displayDashboardUrl(this.api.serverUrl)}`);
         if (this.active.size >= this.concurrency) {
           await Promise.race([...this.active, wait(RUNNER_COMMAND_POLL_MS, signal, claimWakeSignal)]);
         }

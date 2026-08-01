@@ -22,11 +22,11 @@ function setup(): { database: Database; settings: SettingsRepository } {
 }
 
 describe("Workspace execution settings", () => {
-  it("defaults concurrency to 2 and persists values across the full 1-16 range", () => {
+  it("defaults concurrency to 4 and persists values across the full 1-16 range", () => {
     const { database, settings } = setup();
     settings.seedDefaults(WORKSPACE_ID);
 
-    expect(settings.getExecution(WORKSPACE_ID).concurrency).toBe(2);
+    expect(settings.getExecution(WORKSPACE_ID).concurrency).toBe(4);
     expect(settings.updateExecution({ concurrency: 1 }, WORKSPACE_ID).concurrency).toBe(1);
     expect(settings.updateExecution({ concurrency: 16 }, WORKSPACE_ID).concurrency).toBe(16);
     expect(database.query(

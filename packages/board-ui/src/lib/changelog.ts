@@ -8,6 +8,32 @@ export type ChangelogEntry = {
 /** 版本更新历史，新版本追加在数组最前。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.4",
+    date: "2026-08-01",
+    highlights: {
+      zh: [
+        "任务支持父子层级，看板树形展示",
+        "子任务状态随父任务级联调整",
+        "返工保留结果报告，不再清空",
+        "已完成任务沉底，返工浮回未完成区",
+        "并发执行数可调，满员自动标排队",
+        "CLI 版本条与一键更新（Ctrl+U / Ctrl+P）",
+        "全局宪法输入后自动保存",
+        "修复本地看板地址与 Kimi 参数",
+      ],
+      en: [
+        "Parent / child task tree on board",
+        "Subtask status follows parent",
+        "Rework keeps the result report",
+        "Completed sink to bottom",
+        "Concurrency with queue badge",
+        "CLI version bar and hotkeys",
+        "Constitution auto-saves",
+        "Fixed dev URL and Kimi flags",
+      ],
+    },
+  },
+  {
     version: "0.2.3",
     date: "2026-08-01",
     highlights: {

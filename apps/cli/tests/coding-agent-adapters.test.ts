@@ -13,7 +13,7 @@ describe("Coding Agent commands", () => {
   it.each([
     ["codex", "codex", ["--ask-for-approval", "never", "exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "-"], "stdin"],
     ["claude", "claude", ["--print", "--permission-mode", "auto", "--verbose", "--output-format", "stream-json", PROMPT], "argument"],
-    ["kimi", "kimi", ["--auto", "--prompt", PROMPT, "--output-format", "stream-json"], "argument"],
+    ["kimi", "kimi", ["--prompt", PROMPT, "--output-format", "stream-json"], "argument"],
     ["gemini", "gemini", ["-p", PROMPT, "--output-format", "stream-json", "--approval-mode=yolo"], "argument"],
     ["opencode", "opencode", ["run", "--auto", "--format", "json", PROMPT], "argument"],
     ["glm", "opencode", ["run", "--auto", "--format", "json", "--model", "zai-coding-plan/glm-5.2", PROMPT], "argument"],
@@ -28,16 +28,16 @@ describe("Coding Agent commands", () => {
     expect([...command.args, command.stdin].filter((value) => value === PROMPT)).toHaveLength(1);
   });
 
-  it("supports Kimi executable and model overrides in autonomous mode", () => {
+  it("supports Kimi executable and model overrides in prompt mode", () => {
     const command = buildWorkerCommand("kimi", PROMPT, "direct", {
       MAPLE_KIMI_BIN: "kimi-code-custom",
       MAPLE_KIMI_MODEL: "kimi-for-coding"
     });
     expect(command).toEqual({
       executable: "kimi-code-custom",
-      args: ["--model", "kimi-for-coding", "--auto", "--prompt", PROMPT, "--output-format", "stream-json"]
+      args: ["--model", "kimi-for-coding", "--prompt", PROMPT, "--output-format", "stream-json"]
     });
-    expect(command.args).toContain("--auto");
+    expect(command.args).not.toContain("--auto");
     expect(command.args).not.toContain("--plan");
   });
 
@@ -140,7 +140,7 @@ describe("Coding Agent commands", () => {
   it.each([
     ["codex", ["--ask-for-approval", "never", "exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "resume", "session-1", "-"]],
     ["claude", ["--print", "--resume", "session-1", "--permission-mode", "auto", "--verbose", "--output-format", "stream-json", PROMPT]],
-    ["kimi", ["--session", "session-1", "--auto", "--prompt", PROMPT, "--output-format", "stream-json"]],
+    ["kimi", ["--session", "session-1", "--prompt", PROMPT, "--output-format", "stream-json"]],
     ["gemini", ["--resume", "session-1", "-p", PROMPT, "--output-format", "stream-json", "--approval-mode=yolo"]],
     ["opencode", ["run", "--auto", "--format", "json", "--session", "session-1", PROMPT]],
     ["glm", ["run", "--auto", "--format", "json", "--model", "zai-coding-plan/glm-5.2", "--session", "session-1", PROMPT]],

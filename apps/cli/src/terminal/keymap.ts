@@ -17,6 +17,8 @@ export type KeyName =
   | "tab"
   | "ctrl-c"
   | "ctrl-d"
+  | "ctrl-u"
+  | "ctrl-p"
   | "char";
 
 export interface Key {
@@ -53,6 +55,8 @@ const ESCAPE_SEQUENCES: Record<string, KeyName | null> = {
 const CONTROL_KEYS: Record<number, KeyName> = {
   0x03: "ctrl-c",
   0x04: "ctrl-d",
+  0x10: "ctrl-p",
+  0x15: "ctrl-u",
   0x09: "tab",
   0x0a: "enter",
   0x0d: "enter",

@@ -36,7 +36,7 @@ export function buildExecutionPrompt(job: ExecutionJob, options: ExecutionPrompt
     ...managerContext,
     outputLanguageInstruction(job),
     ...(constitution ? [`项目宪法：${constitution}`] : []),
-    "完成后根据 Todo 任务像人类聊天一样输出简约文本：小任务/小修复尽量在 100 字内，普通开发约 100～200 字，审计、迁移、架构重构或用户要求完整报告时再展开",
+    "完成后根据 Todo 任务像人类聊天一样输出简约文本，在报告中不声明自己 Maple Worker 身份，不将 Maple Todo 元数据情况告诉用户：小任务/小修复尽量在 100 字内，普通开发约 100～200 字，审计、迁移、架构重构或用户要求完整报告时再展开",
     ...screenshotRequirements
   ].join("\n");
 }

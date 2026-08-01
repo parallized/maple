@@ -359,7 +359,9 @@ describe("Project manager dispatch", () => {
     expect(claudeArgs).not.toContain("auto");
 
     const kimiArgs = buildWorkerCommand("kimi", "route", "direct", {}, { readOnly: true }).args;
-    expect(kimiArgs).toContain("--plan");
+    // Kimi CLI 禁止 --prompt 与 --auto / --plan 组合，非交互模式不携带权限模式参数。
+    expect(kimiArgs).toContain("--prompt");
+    expect(kimiArgs).not.toContain("--plan");
     expect(kimiArgs).not.toContain("--auto");
 
     expect(buildWorkerCommand("opencode", "route", "direct", {}, { readOnly: true }).args)

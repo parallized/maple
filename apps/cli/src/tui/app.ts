@@ -7,6 +7,7 @@ import { loadConfig, normalizeServerUrl } from "../config/store";
 import type { CliConfig } from "../config/types";
 import { selectProjectDirectory } from "../project/directory-picker";
 import { registerProject } from "../project/register";
+import { displayDashboardUrl } from "../standalone/layout";
 import { detectTerminalCapabilities, isMsysPtySession, shellLabel, type TerminalCapabilities } from "../terminal/capabilities";
 import { FullscreenSession } from "../terminal/fullscreen";
 import { KeySource } from "../terminal/input";
@@ -50,7 +51,7 @@ function printBanner(ctx: WidgetContext, cap: TerminalCapabilities): void {
 }
 
 function mainMenuTitle(config: CliConfig): string {
-  const server = config.serverUrl || "未配置 Server";
+  const server = config.serverUrl ? displayDashboardUrl(config.serverUrl) : "未配置 Server";
   const runner = config.runner?.workspaceId ? config.runner.name : "需重新授权";
   return `${server} · 执行端 ${runner} · 项目 ${config.projects.length}`;
 }

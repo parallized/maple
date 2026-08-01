@@ -23,7 +23,35 @@ export function isTaskInFlight(task: Task): boolean {
   return task.status === "队列中" || task.status === "进行中";
 }
 
-export function createTask(taskTitle: string, status: TaskStatus = "待办", workerKind: WorkerKind = DEFAULT_BASE_WORKER): Task {
+/** 任务是否因并发已满而排队等待（规划中/队列中，且执行流水线已达到并发上限）。 */
+export function isTaskWaitingBlocked(task: Task, tasks: Task[], concurrency: number): boolean {
+  if (concurrency < 1) return false;
+  if (task.executionPhase !== "planning" && task.executionPhase !== "queued") return false;
+  return tasks.filter((item) => isTaskInFlight(item)).length >= concurrency;
+}
+
+/**
+ * 表格排序：已完成任务沉底（稳定排序，其余保持原顺序）。
+ * 返工（改回待办/待返工）的任务会因此自动浮到「最后一个非已完成任务」下方，
+ * 即向上越过连续的已完成行。
+ */
+export function sortTasksByCompletion(tasks: Task[]): Task[] {
+  return tasks
+    .map((task, index) => ({ task, index }))
+    .sort((left, right) => {
+      const leftDone = left.task.status === "已完成" ? 1 : 0;
+      const rightDone = right.task.status === "已完成" ? 1 : 0;
+      return leftDone - rightDone || left.index - right.index;
+    })
+    .map(({ task }) => task);
+}
+
+export function createTask(
+  taskTitle: string,
+  status: TaskStatus = "待办",
+  workerKind: WorkerKind = DEFAULT_BASE_WORKER,
+  parentId?: string | null
+): Task {
   const now = new Date().toISOString();
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -31,6 +59,7 @@ export function createTask(taskTitle: string, status: TaskStatus = "待办", wor
     details: "",
     detailsDoc: undefined,
     status,
+    parentId: parentId ?? null,
     workerKind,
     needsConfirmation: false,
     tags: [],

@@ -20,6 +20,9 @@ import { PopoverMenu } from "./PopoverMenu";
 
 type TaskDetailPanelProps = {
   task: Task;
+  subtaskCount?: number;
+  /** 因并发已满而排队等待时，在状态徽标上挂「排队」标记。 */
+  waitingBlocked?: boolean;
   tagLanguage: UiLanguage;
   tagCatalog?: TagCatalog | null;
   onUpdateTitle?: (title: string) => void;
@@ -102,6 +105,8 @@ function renderAuthorIcon(author: string, size = 14) {
 
 export function TaskDetailPanel({
   task,
+  subtaskCount = 0,
+  waitingBlocked = false,
   tagLanguage,
   tagCatalog,
   onUpdateTitle,
@@ -357,9 +362,23 @@ export function TaskDetailPanel({
                           : task.status,
                   )}`}>
                     {task.executionPhase === "queued" ? (
-                      "队列中"
+                      <>
+                        {"队列中"}
+                        {waitingBlocked ? (
+                          <span className="task-queue-chip" title="并发已满，排队等待执行">
+                            排队
+                          </span>
+                        ) : null}
+                      </>
                     ) : task.executionPhase === "planning" ? (
-                      "规划中"
+                      <>
+                        <span className="shimmer-metal">规划中</span>
+                        {waitingBlocked ? (
+                          <span className="task-queue-chip" title="并发已满，排队等待执行">
+                            排队
+                          </span>
+                        ) : null}
+                      </>
                     ) : task.executionPhase === "running" ? (
                       <>
                         <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin opacity-80 mr-0.5" />
@@ -378,6 +397,13 @@ export function TaskDetailPanel({
                 align="left"
                 items={[
                   { kind: "heading", label: "修改状态" },
+                  ...(subtaskCount > 0
+                    ? [{
+                        kind: "note" as const,
+                        icon: "mingcute:tree-line",
+                        label: `含 ${subtaskCount} 个子任务，调整状态会同步到子任务`
+                      }]
+                    : []),
                   ...(["草稿", "待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"] as const).map((s) => ({
                     kind: "item" as const,
                     key: `status-${s}`,

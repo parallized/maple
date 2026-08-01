@@ -7,6 +7,11 @@ export type PopoverMenuItem =
       kind: "heading";
       label: string;
     }
+  | {
+      kind: "note";
+      label: string;
+      icon?: string;
+    }
   | ({
       kind: "item";
       key: string;
@@ -43,6 +48,18 @@ function MenuItems({ items, menuId, align, onClose, portal }: {
           return (
             <div key={`heading-${index}`} className="px-3 py-1.5 mt-1 text-muted text-[10.5px] font-semibold uppercase tracking-wider opacity-60" role="presentation">
               {item.label}
+            </div>
+          );
+        }
+        if (item.kind === "note") {
+          return (
+            <div
+              key={`note-${index}`}
+              className="px-3 py-1.5 flex items-center gap-1.5 text-muted text-[12px] leading-snug"
+              role="presentation"
+            >
+              {item.icon ? <Icon icon={item.icon} className="text-[13px] opacity-70 shrink-0" /> : null}
+              <span>{item.label}</span>
             </div>
           );
         }

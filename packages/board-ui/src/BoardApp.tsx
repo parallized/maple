@@ -32,12 +32,13 @@ import {
 import type { AiLanguage, ExternalEditorApp, ThemeMode, UiFont, UiLanguage, WorkerRetryConfig } from "./lib/constants";
 import {
   applyTheme,
-  parseArgs,
-  createTask,
-  createTaskReport,
-  isTaskInFlight,
-  normalizeProjects
-} from "./lib/utils";
+    parseArgs,
+    createTask,
+    createTaskReport,
+    isTaskInFlight,
+    isTaskWaitingBlocked,
+    normalizeProjects
+  } from "./lib/utils";
 import { applyUiFont } from "./lib/ui-font";
 import { collectTokenUsage } from "./lib/token-usage";
 import { estimateTokenCostUsd } from "./lib/token-cost";
@@ -225,6 +226,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
   const [workerRetryConfig, setWorkerRetryConfigState] = useState<WorkerRetryConfig>(() =>
     normalizeWorkerRetryConfig(isTauri ? loadWorkerRetryConfig() : DEFAULT_WORKER_RETRY_CONFIG)
   );
+  const [workerConcurrency, setWorkerConcurrency] = useState(4);
   const [theme, setThemeState] = useState<ThemeMode>(() => isTauri ? loadTheme() : "system");
   const [uiFont, setUiFont] = useState<UiFont>(() => isTauri ? loadUiFont() : "chill-round");
   const [baseWorker, setBaseWorker] = useState<WorkerKind>(() => isTauri ? loadBaseWorker() : DEFAULT_BASE_WORKER);
@@ -597,6 +599,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
           intervalSeconds: settings.retryIntervalSeconds,
           maxAttempts: settings.retryMaxAttempts
         }));
+        setWorkerConcurrency(settings.concurrency);
         setExecutionSettingsReady(true);
       })
       .catch(() => {});
@@ -612,7 +615,8 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
       constitution,
       leaderConstitution,
       retryIntervalSeconds: workerRetryConfig.intervalSeconds,
-      retryMaxAttempts: workerRetryConfig.maxAttempts
+      retryMaxAttempts: workerRetryConfig.maxAttempts,
+      concurrency: workerConcurrency
     }).catch(() => {});
     // Constitution has an explicit save action; it is intentionally not a trigger here.
   }, [
@@ -624,7 +628,8 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
     constitution,
     leaderConstitution,
     workerRetryConfig.intervalSeconds,
-    workerRetryConfig.maxAttempts
+    workerRetryConfig.maxAttempts,
+    workerConcurrency
   ]);
   useEffect(() => {
     let cancelled = false;
@@ -679,6 +684,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
       setNotice(savedText);
     } catch {
       setNotice(failedText);
+      throw new Error(failedText);
     }
   }
 
@@ -1097,15 +1103,30 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
   }
 
   function removeLocalTask(projectId: string, taskId: string): void {
+    const project = projectsRef.current.find((item) => item.id === projectId);
+    const removedIds = new Set<string>([taskId]);
+    if (project) {
+      // 删除父任务时把整棵子树一起从本地移除，与服务端 ON DELETE CASCADE 保持一致。
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const task of project.tasks) {
+          if (task.parentId && removedIds.has(task.parentId) && !removedIds.has(task.id)) {
+            removedIds.add(task.id);
+            changed = true;
+          }
+        }
+      }
+    }
     const nextProjects = projectsRef.current.map((project) => (
       project.id === projectId
-        ? { ...project, tasks: project.tasks.filter((task) => task.id !== taskId) }
+        ? { ...project, tasks: project.tasks.filter((task) => !removedIds.has(task.id)) }
         : project
     ));
     projectsRef.current = nextProjects;
     setProjects(nextProjects);
-    if (selectedTaskId === taskId) setSelectedTaskId(null);
-    if (editingTaskIdRef.current === taskId) setEditingTask(null);
+    if (selectedTaskId && removedIds.has(selectedTaskId)) setSelectedTaskId(null);
+    if (editingTaskIdRef.current && removedIds.has(editingTaskIdRef.current)) setEditingTask(null);
   }
 
   function reconcileServerTask(projectId: string, taskId: string, serverTask: Task): void {
@@ -1159,6 +1180,23 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
     const newTask = createTask("", "草稿", baseWorker);
     const nextProjects = projectsRef.current.map((item) => (
       item.id === projectId ? { ...item, tasks: [newTask, ...item.tasks] } : item
+    ));
+    projectsRef.current = nextProjects;
+    setProjects(nextProjects);
+    setEditingTask(newTask.id);
+  }
+
+  /** 任务行最左侧的添加按钮创建子任务：插入父任务下方并进入标题编辑。 */
+  function addSubtask(projectId: string, parentTaskId: string) {
+    const project = projectsRef.current.find((item) => item.id === projectId);
+    if (!project) return;
+    const parentIndex = project.tasks.findIndex((task) => task.id === parentTaskId);
+    const parentTask = project.tasks[parentIndex];
+    const newTask = createTask("", "草稿", parentTask?.workerKind ?? baseWorker, parentTaskId);
+    const nextTasks = [...project.tasks];
+    nextTasks.splice(parentIndex >= 0 ? parentIndex + 1 : 0, 0, newTask);
+    const nextProjects = projectsRef.current.map((item) => (
+      item.id === projectId ? { ...item, tasks: nextTasks } : item
     ));
     projectsRef.current = nextProjects;
     setProjects(nextProjects);
@@ -1887,10 +1925,12 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
                     displayType={boardDisplayType}
                     leaderWorker={leaderWorker}
                     workers={visibleSidebarWorkers}
+                    executionConcurrency={workerConcurrency}
                     onOpenLeaderSettings={() => openSettingsTab("models")}
                     onSetDisplayType={setBoardDisplayType}
                     onAddDraftTask={addDraftTask}
                     onCommitTaskTitle={commitTaskTitle}
+                    onAddSubtask={addSubtask}
                     onUpdateTaskStatus={(projectId, taskId, status) => updateTask(projectId, taskId, (t) => ({ ...t, status: status as TaskStatus }))}
                     onUpdateTaskWorker={(projectId, taskId, kind) => updateTask(projectId, taskId, (t) => ({ ...t, workerKind: kind }))}
                     onDeleteTask={deleteTask}
@@ -1934,12 +1974,14 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
                     onBaseWorkerChange={setBaseWorker}
                     onLeaderWorkerChange={setLeaderWorker}
                     onExternalEditorAppChange={setExternalEditorApp}
-                    onSaveConstitution={(worker, leader) => void saveConstitution(worker, leader)}
+                    onSaveConstitution={saveConstitution}
                     onDetailModeChange={setDetailMode}
-                    workerRetryIntervalSeconds={workerRetryConfig.intervalSeconds}
-                    workerRetryMaxAttempts={workerRetryConfig.maxAttempts}
-                    onWorkerRetryIntervalChange={(seconds) => setWorkerRetryConfig({ intervalSeconds: seconds })}
-                    onWorkerRetryMaxAttemptsChange={(count) => setWorkerRetryConfig({ maxAttempts: count })}
+                      workerRetryIntervalSeconds={workerRetryConfig.intervalSeconds}
+                      workerRetryMaxAttempts={workerRetryConfig.maxAttempts}
+                      workerConcurrency={workerConcurrency}
+                      onWorkerRetryIntervalChange={(seconds) => setWorkerRetryConfig({ intervalSeconds: seconds })}
+                      onWorkerRetryMaxAttemptsChange={(count) => setWorkerRetryConfig({ maxAttempts: count })}
+                      onWorkerConcurrencyChange={setWorkerConcurrency}
                     onRefreshProbes={() => setInstallProbeToken((n) => n + 1)}
                     extraTabs={settingsExtraTabs}
                     tabRequest={settingsTabRequest}
@@ -1986,6 +2028,12 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
             </button>
 	            <TaskDetailPanel
 	              task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
+	              subtaskCount={boardProject.tasks.filter((t) => t.parentId === selectedTaskId).length}
+	              waitingBlocked={isTaskWaitingBlocked(
+	                boardProject.tasks.find((t) => t.id === selectedTaskId)!,
+	                boardProject.tasks,
+	                workerConcurrency
+	              )}
 	              tagLanguage={effectiveAiLanguage}
 	              tagCatalog={boardProject.tagCatalog}
 	              onClose={() => setSelectedTaskId(null)}
@@ -2025,6 +2073,12 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
             <div className="ui-modal-body">
 	              <TaskDetailPanel
 	                task={boardProject.tasks.find((t) => t.id === selectedTaskId)!}
+	                subtaskCount={boardProject.tasks.filter((t) => t.parentId === selectedTaskId).length}
+	                waitingBlocked={isTaskWaitingBlocked(
+	                  boardProject.tasks.find((t) => t.id === selectedTaskId)!,
+	                  boardProject.tasks,
+	                  workerConcurrency
+	                )}
 	                tagLanguage={effectiveAiLanguage}
 	                tagCatalog={boardProject.tagCatalog}
 	                onClose={() => setSelectedTaskId(null)}

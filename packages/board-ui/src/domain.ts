@@ -130,6 +130,8 @@ export type Task = {
   details: string;
   detailsDoc?: unknown;
   status: TaskStatus;
+  /** 父任务 id；为空时是顶层任务。表格以树形结构展示子任务。 */
+  parentId?: string | null;
   /** 执行该任务的 Worker 类型；新建任务默认为「基模」。 */
   workerKind: WorkerKind;
   needsConfirmation?: boolean;

@@ -209,6 +209,7 @@ CREATE TABLE IF NOT EXISTS todos (
   title TEXT NOT NULL,
   details TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
+  parent_id TEXT REFERENCES todos(id) ON DELETE CASCADE,
   priority INTEGER NOT NULL DEFAULT 0,
   worker_kind TEXT NOT NULL CHECK(worker_kind IN ('codex', 'deepseek', 'claude', 'kimi', 'glm', 'iflow', 'gemini', 'opencode')),
   claimed_by_runner_id TEXT REFERENCES runners(id) ON DELETE SET NULL,
@@ -413,6 +414,7 @@ function migrate(database: Database): void {
   migrateTodoWorker(database);
   ensureColumn(database, "todos", "tags_json", "TEXT");
   ensureColumn(database, "todos", "details_doc", "TEXT");
+  ensureColumn(database, "todos", "parent_id", "TEXT REFERENCES todos(id) ON DELETE CASCADE");
   ensureColumn(database, "todos", "retry_after", "TEXT");
   migrateTodoWorkerConstraint(database);
   ensureTodoWorkerInvariant(database);
@@ -467,6 +469,7 @@ function migrate(database: Database): void {
     CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_runners_workspace ON runners(workspace_id, last_seen_at DESC);
     CREATE INDEX IF NOT EXISTS idx_todos_retry ON todos(status, retry_after);
+    CREATE INDEX IF NOT EXISTS idx_todos_parent ON todos(project_id, parent_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_todo_logs_delivery
       ON todo_logs(delivery_id) WHERE delivery_id IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_todo_artifacts_delivery
@@ -658,6 +661,7 @@ function migrateTodoWorkerConstraint(database: Database): void {
           title TEXT NOT NULL,
           details TEXT NOT NULL DEFAULT '',
           status TEXT NOT NULL,
+          parent_id TEXT REFERENCES todos(id) ON DELETE CASCADE,
           priority INTEGER NOT NULL DEFAULT 0,
           worker_kind TEXT NOT NULL CHECK(worker_kind IN (${allowedWorkers})),
           claimed_by_runner_id TEXT REFERENCES runners(id) ON DELETE SET NULL,
@@ -676,13 +680,13 @@ function migrateTodoWorkerConstraint(database: Database): void {
         );
 
         INSERT INTO todos_worker_migration (
-          id, project_id, title, details, status, priority, worker_kind,
+          id, project_id, title, details, status, parent_id, priority, worker_kind,
           claimed_by_runner_id, active_attempt_id, lease_token_hash, lease_expires_at,
           retry_after, result_summary, last_error, tags_json, details_doc,
           created_at, updated_at, started_at, completed_at
         )
         SELECT
-          id, project_id, title, details, status, priority, worker_kind,
+          id, project_id, title, details, status, parent_id, priority, worker_kind,
           claimed_by_runner_id, active_attempt_id, lease_token_hash, lease_expires_at,
           retry_after, result_summary, last_error, tags_json, details_doc,
           created_at, updated_at, started_at, completed_at

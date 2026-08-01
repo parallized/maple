@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { createLocalDevelopmentPlan } from "../scripts/local-development";
 import {
+  displayDashboardUrl,
   parseStandaloneAllowedOrigins,
   resolveStandalonePort
 } from "../src/standalone/layout";
@@ -83,6 +84,7 @@ describe("Maple Local startup", () => {
       "45999"
     ]);
     expect(plan.standalone.env.MAPLE_STANDALONE_WEB_ROOT).toBe("C:/maple/apps/web");
+    expect(plan.standalone.env.MAPLE_STANDALONE_DASHBOARD_URL).toBe("http://127.0.0.1:5173");
     expect(plan.standalone.env.MAPLE_STANDALONE_OPEN_BROWSER).toBe("0");
     expect(plan.standalone.env.MAPLE_STANDALONE_ALLOWED_ORIGINS)
       .toBe("http://localhost:4173,http://127.0.0.1:5173");
@@ -115,5 +117,15 @@ describe("Maple Local startup", () => {
     expect(resolveStandalonePort(undefined)).toBe(45_821);
     expect(resolveStandalonePort("45999")).toBe(45_999);
     expect(() => resolveStandalonePort("70000")).toThrow("1 到 65535");
+  });
+
+  it("shows the Vite dashboard address in local development and falls back to the Server address", () => {
+    expect(displayDashboardUrl("http://127.0.0.1:45821", {
+      MAPLE_STANDALONE_DASHBOARD_URL: "http://127.0.0.1:5173"
+    })).toBe("http://127.0.0.1:5173");
+    expect(displayDashboardUrl("http://127.0.0.1:45821", {})).toBe("http://127.0.0.1:45821");
+    expect(displayDashboardUrl("http://127.0.0.1:45821", {
+      MAPLE_STANDALONE_DASHBOARD_URL: "not-a-url"
+    })).toBe("http://127.0.0.1:45821");
   });
 });

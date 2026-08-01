@@ -46,6 +46,7 @@ export function mapTodoToTask(todo: Todo): Task {
     details: todo.details ?? "",
     detailsDoc: parseDetailsDoc(todo.detailsDoc),
     status: toTaskStatus(todo.status),
+    parentId: todo.parentId ?? null,
     workerKind: toBoardWorkerKind(todo.workerKind),
     needsConfirmation: false,
     tags: todo.tags ?? [],

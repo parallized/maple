@@ -359,7 +359,7 @@ h3 {
 }
 
 .col-confirm {
-  width: 16px !important;
+  width: 44px !important;
   padding: 0 !important;
   text-align: center !important;
 }
@@ -1027,6 +1027,11 @@ h3 {
   text-overflow: ellipsis;
 }
 
+/* 状态徽标的延伸条需要越过单元格边界，状态列不做内容裁剪。 */
+.task-row td.col-status {
+  overflow: visible;
+}
+
 .task-row td.col-status .ui-badge:hover {
   filter: brightness(0.95);
   transform: translateY(-1px);
@@ -1056,6 +1061,93 @@ h3 {
 
 .task-row:hover .row-delete-btn {
   opacity: 1;
+}
+
+/* 行删除按钮浮在状态延伸条之上，避免被 blur 遮罩挡住。 */
+.task-row .row-delete-btn {
+  position: relative;
+  z-index: 6;
+}
+
+.task-row:hover .row-add-subtask {
+  opacity: 1;
+}
+
+/* 并发已满时的「排队」小标记：挂在 队列中/规划中 状态徽标上。 */
+.task-queue-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: color-mix(in srgb, var(--color-warning) 85%, var(--color-base-content));
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ── 状态徽标 hover 向右延伸条 ──
+ * 行悬停时从状态徽标右缘展开到表格最右：backdrop blur 遮罩下层内容，
+ * 左端保持徽标色，向右渐变透明。深色浮层禁用灰黑阴影，用品牌紫微光。 */
+.status-strip-anchor {
+  position: relative;
+  display: inline-block;
+}
+
+.status-strip {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 22px;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  overflow: hidden;
+  z-index: 5;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--strip-color) 55%, transparent) 0%,
+    color-mix(in srgb, var(--strip-color) 30%, transparent) 42%,
+    color-mix(in srgb, var(--strip-color) 10%, transparent) 100%
+  );
+  transition: width 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.status-strip-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--color-primary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateX(-6px);
+  transition:
+    opacity 0.18s ease 0.14s,
+    transform 0.18s ease 0.14s,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.task-row:hover .status-strip-action {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.status-strip-action:hover {
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
 
 .task-row .task-open-btn {

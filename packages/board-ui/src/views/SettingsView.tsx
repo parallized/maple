@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FadeContent } from "../components/ReactBits";
 import { DeepSeekConnectionDialog } from "../components/DeepSeekConnectionDialog";
 import { WorkerConfigCard, type WorkerProbe } from "../components/WorkerConfigCard";
@@ -47,8 +47,10 @@ type SettingsViewProps = {
   onDetailModeChange: (mode: DetailMode) => void;
   workerRetryIntervalSeconds: number;
   workerRetryMaxAttempts: number;
+  workerConcurrency: number;
   onWorkerRetryIntervalChange: (seconds: number) => void;
   onWorkerRetryMaxAttemptsChange: (count: number) => void;
+  onWorkerConcurrencyChange: (count: number) => void;
   onRefreshProbes: () => void;
   extraTabs?: SettingsExtraTab[];
   /** 外部请求切换到指定页签(如点看板 Leader 状态条跳「模型和工具」);nonce 变化即生效。 */
@@ -79,8 +81,10 @@ export function SettingsView({
   onDetailModeChange,
   workerRetryIntervalSeconds,
   workerRetryMaxAttempts,
+  workerConcurrency,
   onWorkerRetryIntervalChange,
   onWorkerRetryMaxAttemptsChange,
+  onWorkerConcurrencyChange,
   onRefreshProbes,
   extraTabs,
   tabRequest
@@ -97,7 +101,14 @@ export function SettingsView({
   }, [tabRequest?.nonce]);
   const [constitutionDraft, setConstitutionDraft] = useState<string>(() => constitution);
   const [leaderConstitutionDraft, setLeaderConstitutionDraft] = useState<string>(() => leaderConstitution);
-  const [constitutionSaving, setConstitutionSaving] = useState(false);
+  const [constitutionSaveState, setConstitutionSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const onSaveConstitutionRef = useRef(onSaveConstitution);
+  onSaveConstitutionRef.current = onSaveConstitution;
+  const constitutionDraftRef = useRef(constitutionDraft);
+  constitutionDraftRef.current = constitutionDraft;
+  const leaderConstitutionDraftRef = useRef(leaderConstitutionDraft);
+  leaderConstitutionDraftRef.current = leaderConstitutionDraft;
+  const lastSavedDraftRef = useRef({ worker: constitution, leader: leaderConstitution });
 
   const canManageDeepSeek = typeof platform.loadDeepSeekConnection === "function"
     && typeof platform.connectDeepSeek === "function"
@@ -230,17 +241,42 @@ export function SettingsView({
   const selectableModelWorkers = WORKER_KINDS.filter(
     (worker) => worker.kind !== "deepseek" || deepSeekSelectable
   );
-  const constitutionDirty = constitutionDraft !== constitution || leaderConstitutionDraft !== leaderConstitution;
-
-  async function handleSaveConstitution() {
-    if (!constitutionDirty || constitutionSaving) return;
-    try {
-      setConstitutionSaving(true);
-      await Promise.resolve(onSaveConstitution(constitutionDraft, leaderConstitutionDraft));
-    } finally {
-      setConstitutionSaving(false);
+  // 全局宪法自动保存：输入停顿 800ms 后落盘，不再需要手动按钮。
+  const constitutionInitialized = useRef(false);
+  useEffect(() => {
+    if (!constitutionInitialized.current) {
+      constitutionInitialized.current = true;
+      return;
     }
-  }
+    const timer = setTimeout(() => {
+      setConstitutionSaveState("saving");
+      Promise.resolve(onSaveConstitutionRef.current(constitutionDraft, leaderConstitutionDraft))
+        .then(() => {
+          lastSavedDraftRef.current = { worker: constitutionDraft, leader: leaderConstitutionDraft };
+          setConstitutionSaveState("saved");
+        })
+        .catch(() => setConstitutionSaveState("error"));
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [constitutionDraft, leaderConstitutionDraft]);
+
+  // 切走页签时若有未落盘的改动（仍在防抖等待中），立即补一次保存，避免丢失。
+  useEffect(() => {
+    return () => {
+      const lastSaved = lastSavedDraftRef.current;
+      if (
+        constitutionDraftRef.current !== lastSaved.worker
+        || leaderConstitutionDraftRef.current !== lastSaved.leader
+      ) {
+        void Promise.resolve(
+          onSaveConstitutionRef.current(
+            constitutionDraftRef.current,
+            leaderConstitutionDraftRef.current
+          )
+        ).catch(() => {});
+      }
+    };
+  }, []);
 
   const tabs = [
     { id: "general", label: t("常规", "General"), icon: "mingcute:settings-3-line" },
@@ -249,7 +285,7 @@ export function SettingsView({
       ? [{ id: "workers", label: t("Worker", "Worker"), icon: "mingcute:plugin-2-line" }]
       : []),
     { id: "constitution", label: t("宪法", "Constitution"), icon: "mingcute:book-2-line" },
-    { id: "retry", label: t("重试策略", "Retry Policy"), icon: "mingcute:refresh-2-line" },
+    { id: "retry", label: t("执行策略", "Execution"), icon: "mingcute:refresh-2-line" },
     ...(canEditAcceptance
       ? [{ id: "acceptance", label: t("验收", "Acceptance"), icon: "mingcute:camera-line" }]
       : []),
@@ -741,32 +777,27 @@ export function SettingsView({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          className={`flex-1 flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold transition-all ${
-                            constitutionDirty
-                              ? "bg-primary text-white shadow-lg shadow-primary/20 active:scale-[0.98]"
-                              : "bg-base-300/20 text-muted cursor-not-allowed"
-                          }`}
-                          disabled={!constitutionDirty || constitutionSaving}
-                          onClick={() => void handleSaveConstitution()}
-                        >
-                          <Icon icon={constitutionSaving ? "mingcute:loading-3-line" : "mingcute:save-line"} className={constitutionSaving ? "animate-spin" : "text-lg"} />
-                          {constitutionSaving ? t("正在保存...", "Saving...") : t("保存全局宪法", "Save Constitution")}
-                        </button>
-                        <button
-                          type="button"
-                          className="w-11 h-11 flex items-center justify-center rounded-xl bg-base-300/10 text-muted hover:text-error hover:bg-error/10 transition-all"
-                          disabled={constitutionSaving || (constitutionDraft.length === 0 && leaderConstitutionDraft.length === 0)}
-                          onClick={() => {
-                            setConstitutionDraft("");
-                            setLeaderConstitutionDraft("");
-                          }}
-                          title={t("清空内容", "Clear content")}
-                        >
-                          <Icon icon="mingcute:delete-2-line" className="text-lg" />
-                        </button>
+                      <div className="flex items-center justify-end min-h-5">
+                        {constitutionSaveState === "saving" ? (
+                          <span className="text-[11px] text-muted/70 flex items-center gap-1.5">
+                            <Icon icon="mingcute:loading-3-line" className="text-[13px] animate-spin" />
+                            {t("自动保存中…", "Auto-saving…")}
+                          </span>
+                        ) : constitutionSaveState === "saved" ? (
+                          <span className="text-[11px] text-(--color-success) flex items-center gap-1.5">
+                            <Icon icon="mingcute:check-line" className="text-[13px]" />
+                            {t("已自动保存", "Auto-saved")}
+                          </span>
+                        ) : constitutionSaveState === "error" ? (
+                          <span className="text-[11px] text-(--color-error) flex items-center gap-1.5">
+                            <Icon icon="mingcute:alert-line" className="text-[13px]" />
+                            {t("自动保存失败，请重试", "Auto-save failed, try again")}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-muted/40">
+                            {t("输入后自动保存", "Auto-saves as you type")}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </section>
@@ -777,50 +808,79 @@ export function SettingsView({
                     <div className="flex flex-col gap-1 mb-8 px-1">
                       <h3 className="text-[12px] font-bold text-muted/60 uppercase tracking-[0.15em] m-0 flex items-center gap-2">
                         <Icon icon="mingcute:refresh-2-line" className="text-sm" />
-                        {t("自动重试策略", "Retry Policy")}
+                        {t("执行策略", "Execution")}
                       </h3>
                       <p className="text-xs text-muted/60 leading-relaxed mt-1">
                         {t(
-                          "当 Worker 任务结束后仍存在「进行中」项时，Maple 将按此策略尝试自动恢复。",
-                          "Maple restarts workers based on this policy if tasks remain in progress."
+                          "控制执行端的并行任务数，以及任务失败后的自动重试行为。",
+                          "Control how many tasks a runner executes at once, and how failed tasks are retried."
                         )}
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-10 px-1">
-                      <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-8">
+                      <div className="flex flex-col gap-4 px-1">
                         <div className="flex flex-col gap-1">
-                          <span className="text-sm font-semibold">{t("重试间隔", "Retry Interval")}</span>
-                          <span className="text-[12px] text-muted leading-relaxed">{t("单次尝试失败后的等待时间。", "Wait time between attempts.")}</span>
+                          <span className="text-sm font-semibold">{t("并发执行数", "Concurrency")}</span>
+                          <span className="text-[12px] text-muted leading-relaxed">
+                            {t(
+                              "执行端同时运行的任务上限（1-16），超出部分会排队等待。",
+                              "Maximum tasks a runner executes at the same time (1-16); the rest wait in queue."
+                            )}
+                          </span>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 pt-1">
                           <input
-                            type="number"
+                            type="range"
                             min={1}
-                            max={600}
-                            value={workerRetryIntervalSeconds}
-                            onChange={(event) => onWorkerRetryIntervalChange(Number(event.currentTarget.value))}
-                            className="flex-1 ui-input h-10 bg-base-300/10 border-base-300/10 font-mono text-center"
+                            max={16}
+                            step={1}
+                            value={workerConcurrency}
+                            onChange={(event) => onWorkerConcurrencyChange(Number(event.currentTarget.value))}
+                            className="flex-1 accent-(--color-primary)"
+                            aria-label={t("并发执行数", "Concurrency")}
                           />
-                          <span className="text-[10px] font-bold text-muted uppercase tracking-wider">{t("秒", "Sec")}</span>
+                          <span className="w-10 h-10 flex items-center justify-center rounded-lg bg-base-300/10 border border-base-300/10 font-mono text-sm font-bold tabular-nums">
+                            {workerConcurrency}
+                          </span>
                         </div>
                       </div>
 
-                      <div className="flex flex-col gap-4">
-                        <div className="flex flex-col gap-1">
-                          <span className="text-sm font-semibold">{t("最大重试次数", "Max Retries")}</span>
-                          <span className="text-[12px] text-muted leading-relaxed">{t("自动放弃前的尝试上限。", "Max total attempts.")}</span>
+                      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-10 px-1">
+                        <div className="flex flex-col gap-4">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-semibold">{t("重试间隔", "Retry Interval")}</span>
+                            <span className="text-[12px] text-muted leading-relaxed">{t("单次尝试失败后的等待时间。", "Wait time between attempts.")}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="number"
+                              min={1}
+                              max={600}
+                              value={workerRetryIntervalSeconds}
+                              onChange={(event) => onWorkerRetryIntervalChange(Number(event.currentTarget.value))}
+                              className="flex-1 ui-input h-10 bg-base-300/10 border-base-300/10 font-mono text-center"
+                            />
+                            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">{t("秒", "Sec")}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="number"
-                            min={1}
-                            max={20}
-                            value={workerRetryMaxAttempts}
-                            onChange={(event) => onWorkerRetryMaxAttemptsChange(Number(event.currentTarget.value))}
-                            className="flex-1 ui-input h-10 bg-base-300/10 border-base-300/10 font-mono text-center"
-                          />
-                          <span className="text-[10px] font-bold text-muted uppercase tracking-wider">{t("次", "Times")}</span>
+
+                        <div className="flex flex-col gap-4">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-sm font-semibold">{t("最大重试次数", "Max Retries")}</span>
+                            <span className="text-[12px] text-muted leading-relaxed">{t("自动放弃前的尝试上限。", "Max total attempts.")}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="number"
+                              min={1}
+                              max={20}
+                              value={workerRetryMaxAttempts}
+                              onChange={(event) => onWorkerRetryMaxAttemptsChange(Number(event.currentTarget.value))}
+                              className="flex-1 ui-input h-10 bg-base-300/10 border-base-300/10 font-mono text-center"
+                            />
+                            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">{t("次", "Times")}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -988,4 +1048,3 @@ export function SettingsView({
   );
 
 }
-

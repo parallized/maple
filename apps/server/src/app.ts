@@ -805,11 +805,12 @@ export function createServerApp(options: CreateServerAppOptions) {
         return todo;
       },
       {
-        body: t.Object({
-          id: t.Optional(t.String({ minLength: 6, maxLength: 64 })),
-          title: t.String({ minLength: 1, maxLength: 300 }),
-          details: t.Optional(t.String({ maxLength: 100_000 })),
-          priority: t.Optional(t.Integer({ minimum: -100, maximum: 100 })),
+          body: t.Object({
+            id: t.Optional(t.String({ minLength: 6, maxLength: 64 })),
+            title: t.String({ minLength: 1, maxLength: 300 }),
+            details: t.Optional(t.String({ maxLength: 100_000 })),
+            parentId: t.Optional(t.Union([t.String({ minLength: 1, maxLength: 80 }), t.Null()])),
+            priority: t.Optional(t.Integer({ minimum: -100, maximum: 100 })),
           workerKind: workerKindSchema,
           status: t.Optional(t.Union([t.Literal("draft"), t.Literal("todo")])),
           tags: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 40 }), { maxItems: 20 }))
@@ -865,9 +866,13 @@ export function createServerApp(options: CreateServerAppOptions) {
             return apiError(422, "managed_status", "队列中和进行中状态只能由 CLI 执行租约更新。");
           }
         }
-        const todo = todos.update(params.todoId, body, workspaceId);
-        if (!todo) return notFound("Todo 不存在。");
-        if (
+          const todo = todos.update(params.todoId, body, workspaceId);
+          if (!todo) return notFound("Todo 不存在。");
+          // 父任务状态变更时，子任务跟随调整；前端菜单里已对含子任务的任务给出提示。
+          if (body.status !== undefined && todos.subtaskCount(todo.id) > 0) {
+            todos.setDescendantsStatus(todo.id, body.status, workspaceId);
+          }
+          if (
           (todo.status === "todo" || todo.status === "rework")
           && (body.title !== undefined || body.details !== undefined || body.status !== undefined)
         ) {
@@ -878,8 +883,9 @@ export function createServerApp(options: CreateServerAppOptions) {
       {
         body: t.Object({
           title: t.Optional(t.String({ maxLength: 300 })),
-          details: t.Optional(t.String({ maxLength: 100_000 })),
-          priority: t.Optional(t.Integer({ minimum: -100, maximum: 100 })),
+            details: t.Optional(t.String({ maxLength: 100_000 })),
+            parentId: t.Optional(t.Union([t.String({ minLength: 1, maxLength: 80 }), t.Null()])),
+            priority: t.Optional(t.Integer({ minimum: -100, maximum: 100 })),
           workerKind: t.Optional(workerKindSchema),
           status: t.Optional(todoStatusSchema),
           tags: t.Optional(t.Array(t.String({ minLength: 1, maxLength: 40 }), { maxItems: 20 })),

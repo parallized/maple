@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react";
 import { AnimatePresence, motion } from "framer-motion";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { InlineTaskInput } from "../components/InlineTaskInput";
 import { PopoverMenu, type PopoverMenuItem } from "../components/PopoverMenu";
@@ -14,9 +14,15 @@ import { usePlatform } from "../platform/context";
 import { formatTagLabel } from "../lib/tag-label";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
-import { statusBadgeClass, statusDotClass } from "../lib/status-colors";
+import { statusBadgeClass, statusColorVar, statusDotClass } from "../lib/status-colors";
 import { useMediaQuery } from "../lib/use-media-query";
-import { getLastMentionTime, getTimeLevel, relativeTimeZh } from "../lib/utils";
+import {
+  getLastMentionTime,
+  getTimeLevel,
+  isTaskWaitingBlocked,
+  relativeTimeZh,
+  sortTasksByCompletion
+} from "../lib/utils";
 import type { SidebarWorkerItem } from "../lib/worker-sidebar";
 
 type BoardViewProps = {
@@ -30,12 +36,15 @@ type BoardViewProps = {
   displayType: BoardDisplayType;
   leaderWorker: WorkerKind;
   workers: SidebarWorkerItem[];
+  /** 工作区并发上限（1-16）；用于标记因并发已满而排队等待的任务。 */
+  executionConcurrency: number;
   /** 点击 Leader 状态条:跳转设置「模型和工具」页签。 */
   onOpenLeaderSettings: () => void;
   onSetDisplayType: (type: BoardDisplayType) => void;
   onAddDraftTask: (projectId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => boolean | Promise<boolean>;
   onDeleteTask: (projectId: string, taskId: string) => void;
+  onAddSubtask: (projectId: string, parentTaskId: string) => void;
   onSelectTask: (taskId: string | null) => void;
   onEditTask: (taskId: string | null) => void;
   onUpdateTaskStatus: (projectId: string, taskId: string, status: TaskStatus) => void;
@@ -46,7 +55,7 @@ type BoardViewProps = {
 };
 
 const TASK_TITLE_MAX_WIDTH = 340;const DEFAULT_COL_WIDTHS: Record<string, number> = {
-  confirm: 20,
+  confirm: 44,
   taskIcon: 24,
   task: TASK_TITLE_MAX_WIDTH,
   worker: 40,
@@ -67,11 +76,13 @@ export function BoardView({
   displayType,
   leaderWorker,
   workers,
+  executionConcurrency,
   onOpenLeaderSettings,
   onSetDisplayType,
   onAddDraftTask,
   onCommitTaskTitle,
   onDeleteTask,
+  onAddSubtask,
   onSelectTask,
   onEditTask,
   onUpdateTaskStatus,
@@ -118,6 +129,11 @@ export function BoardView({
 
   const selectedTask = boardProject && selectedTaskId ? boardProject.tasks.find((task) => task.id === selectedTaskId) ?? null : null;
   const isMobile = useMediaQuery("(max-width: 980px)");
+  // 已完成沉底：返工任务自动浮到未完成区（本地状态变更立即生效，轮询保持与 Server 一致）。
+  const orderedTasks = useMemo(
+    () => (boardProject ? sortTasksByCompletion(boardProject.tasks) : []),
+    [boardProject]
+  );
 
   if (!boardProject) {
     return (
@@ -244,10 +260,11 @@ export function BoardView({
         >
           {displayType === "gallery" ? (
             <TaskGallery
-              tasks={boardProject.tasks}
+              tasks={orderedTasks}
               projectId={boardProject.id}
               selectedTaskId={selectedTaskId}
               editingTaskId={editingTaskId}
+              executionConcurrency={executionConcurrency}
               tagLanguage={tagLanguage}
               tagCatalog={boardProject.tagCatalog}
               onSelectTask={onSelectTask}
@@ -258,7 +275,7 @@ export function BoardView({
             />
           ) : (
             <TaskTable
-              tasks={boardProject.tasks}
+              tasks={orderedTasks}
               projectId={boardProject.id}
               selectedTaskId={selectedTaskId}
               editingTaskId={editingTaskId}
@@ -267,12 +284,14 @@ export function BoardView({
               tagCatalog={boardProject.tagCatalog}
               colWidths={colWidths}
               tableRef={tableRef}
+              executionConcurrency={executionConcurrency}
               onSelectTask={onSelectTask}
               onEditTask={onEditTask}
               onCommitTaskTitle={onCommitTaskTitle}
               onUpdateTaskStatus={onUpdateTaskStatus}
               onUpdateTaskWorker={onUpdateTaskWorker}
               onDeleteTask={onDeleteTask}
+              onAddSubtask={onAddSubtask}
               onResizeStart={handleResizeStart}
               onResizeDblClick={handleResizeDblClick}
             />
@@ -539,6 +558,7 @@ type TaskTableProps = {
   tagCatalog?: TagCatalog | null;
   colWidths: Record<string, number>;
   tableRef: React.Ref<HTMLTableElement>;
+  executionConcurrency: number;
   onSelectTask: (taskId: string) => void;
   onEditTask: (taskId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
@@ -547,6 +567,7 @@ type TaskTableProps = {
   onDeleteTask: (projectId: string, taskId: string) => void;
   onResizeStart: (col: string, e: React.MouseEvent) => void;
   onResizeDblClick: (col: string) => void;
+  onAddSubtask: (projectId: string, parentTaskId: string) => void;
 };
 
 /** 任务 Worker 指定菜单（表格行 / 画廊卡片共用）。 */
@@ -590,9 +611,11 @@ function TaskWorkerMenu({ task, projectId, onUpdateTaskWorker }: {
 /** 任务状态修改菜单（表格行 / 画廊卡片共用）。
     执行阶段只认服务端下发的 executionPhase：queued → 队列中，planning → 规划中（无 spinner/时间），
     running → spinner + 运行时长（不显示文字）；缺失/null 时按旧 status 展示（兼容旧 Server）。 */
-function TaskStatusMenu({ task, projectId, onUpdateTaskStatus }: {
+function TaskStatusMenu({ task, projectId, subtaskCount, waitingBlocked, onUpdateTaskStatus }: {
   task: Task;
   projectId: string;
+  subtaskCount: number;
+  waitingBlocked: boolean;
   onUpdateTaskStatus: (projectId: string, taskId: string, status: TaskStatus) => void;
 }) {
   // 徽标配色跟随「显示状态」：执行阶段优先，与展示文案口径一致。
@@ -612,9 +635,15 @@ function TaskStatusMenu({ task, projectId, onUpdateTaskStatus }: {
           className={`ui-badge cursor-pointer hover:brightness-95 hover:-translate-y-px active:scale-[0.98] transition-all ${statusBadgeClass(displayStatus)}`}
         >
           {task.executionPhase === "queued" ? (
-            "队列中"
+            <>
+              {"队列中"}
+              {waitingBlocked ? <TaskQueueChip /> : null}
+            </>
           ) : task.executionPhase === "planning" ? (
-            "规划中"
+            <>
+              <span className="shimmer-metal">规划中</span>
+              {waitingBlocked ? <TaskQueueChip /> : null}
+            </>
           ) : task.executionPhase === "running" ? (
             <>
               <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin opacity-80 mr-0.5" />
@@ -633,6 +662,13 @@ function TaskStatusMenu({ task, projectId, onUpdateTaskStatus }: {
       align="left"
       items={[
         { kind: "heading", label: "修改状态" },
+        ...(subtaskCount > 0
+          ? [{
+              kind: "note" as const,
+              icon: "mingcute:tree-line",
+              label: `含 ${subtaskCount} 个子任务，调整状态会同步到子任务`
+            }]
+          : []),
         ...(["草稿", "待办", "待返工", "队列中", "进行中", "需要更多信息", "已完成", "已阻塞"] as const).map((s) => ({
           kind: "item" as const,
           key: `status-${s}`,
@@ -650,9 +686,23 @@ function TaskStatusMenu({ task, projectId, onUpdateTaskStatus }: {
   );
 }
 
+/** 并发已满时挂在「队列中 / 规划中」徽标上的排队标记。 */
+function TaskQueueChip() {
+  return (
+    <span className="task-queue-chip" title="并发已满，排队等待执行">
+      排队
+    </span>
+  );
+}
+
 type TaskRowProps = {
   task: Task;
   index: number;
+  depth: number;
+  subtaskCount: number;
+  hasChildren: boolean;
+  expanded: boolean;
+  waitingBlocked: boolean;
   selectedTaskId: string | null;
   editingTaskId: string | null;
   projectId: string;
@@ -665,11 +715,18 @@ type TaskRowProps = {
   onUpdateTaskStatus: (projectId: string, taskId: string, status: TaskStatus) => void;
   onUpdateTaskWorker: (projectId: string, taskId: string, kind: WorkerKind) => void;
   onDeleteTask: (projectId: string, taskId: string) => void;
+  onToggleChildren: (taskId: string) => void;
+  onAddSubtask: (projectId: string, parentTaskId: string) => void;
 };
 
 const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   task,
   index,
+  depth,
+  subtaskCount,
+  hasChildren,
+  expanded,
+  waitingBlocked,
   selectedTaskId,
   editingTaskId,
   projectId,
@@ -682,7 +739,38 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   onUpdateTaskStatus,
   onUpdateTaskWorker,
   onDeleteTask,
+  onToggleChildren,
+  onAddSubtask,
 }: TaskRowProps, ref) => {
+  // 状态徽标向右延伸的悬浮条：hover 行时从徽标右侧展开到表格最右，遮罩并渐变淡出。
+  const statusAnchorRef = useRef<HTMLDivElement>(null);
+  const [stripActive, setStripActive] = useState(false);
+  const [stripWidth, setStripWidth] = useState(0);
+  const measureStrip = useCallback(() => {
+    const anchor = statusAnchorRef.current;
+    if (!anchor) return;
+    const row = anchor.closest("tr");
+    if (!row) return;
+    const rowRect = row.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
+    setStripWidth(Math.max(0, rowRect.right - anchorRect.right));
+  }, []);
+  useEffect(() => {
+    if (!stripActive) return;
+    const onResize = () => measureStrip();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [stripActive, measureStrip]);
+  const displayStatus =
+    task.executionPhase === "queued"
+      ? "队列中"
+      : task.executionPhase === "planning"
+        ? "规划中"
+        : task.executionPhase === "running"
+          ? "进行中"
+          : task.status;
+  const stripColor = statusColorVar(displayStatus);
+
   return (
     <motion.tr
       ref={ref}
@@ -702,17 +790,50 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           onSelectTask(task.id);
         }
       }}
+      onMouseEnter={() => {
+        measureStrip();
+        setStripActive(true);
+      }}
+      onMouseLeave={() => setStripActive(false)}
     >
       <td className="col-confirm">
-        {task.status === "已完成" && task.needsConfirmation ? (
-          <span className="task-confirm-text" title="待确认">
-            <Icon icon="mingcute:question-2-fill" />
-          </span>
-        ) : task.status === "需要更多信息" ? (
-          <span className="task-question-text" title="需要更多信息">
-            <Icon icon="mingcute:question-2-fill" />
-          </span>
-        ) : null}
+        <div className="flex items-center gap-0.5">
+          {hasChildren ? (
+            <button
+              type="button"
+              className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn row-tree-toggle"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleChildren(task.id);
+              }}
+              aria-label={expanded ? "收起子任务" : "展开子任务"}
+              title={expanded ? "收起子任务" : "展开子任务"}
+            >
+              <Icon icon={expanded ? "mingcute:down-line" : "mingcute:right-line"} className="text-[13px]" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn row-add-subtask opacity-0 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddSubtask(projectId, task.id);
+            }}
+            aria-label="添加子任务"
+            title="添加子任务"
+          >
+            <Icon icon="mingcute:add-line" className="text-[13px]" />
+          </button>
+          {task.status === "已完成" && task.needsConfirmation ? (
+            <span className="task-confirm-text" title="待确认">
+              <Icon icon="mingcute:question-2-fill" />
+            </span>
+          ) : task.status === "需要更多信息" ? (
+            <span className="task-question-text" title="需要更多信息">
+              <Icon icon="mingcute:question-2-fill" />
+            </span>
+          ) : null}
+        </div>
       </td>
       {/* 特殊状态图标列：暂时整列隐藏，保留实现以便恢复。
       <td className="col-taskIcon">
@@ -736,7 +857,10 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
             autoFocus
           />
         ) : (
-          <div className="task-title-cell flex items-center gap-1 min-w-0">
+          <div
+            className="task-title-cell flex items-center gap-1 min-w-0"
+            style={{ paddingLeft: `${Math.min(depth, 6) * 16}px` }}
+          >
             <span
               className="task-title-text flex-1 cursor-text px-0.5 overflow-hidden text-ellipsis whitespace-nowrap"
               style={{ maxWidth: `${TASK_TITLE_MAX_WIDTH}px` }}
@@ -765,7 +889,33 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
         <TaskWorkerMenu task={task} projectId={projectId} onUpdateTaskWorker={onUpdateTaskWorker} />
       </td>
       <td className="col-status">
-        <TaskStatusMenu task={task} projectId={projectId} onUpdateTaskStatus={onUpdateTaskStatus} />
+        <div ref={statusAnchorRef} className="status-strip-anchor">
+          <TaskStatusMenu
+            task={task}
+            projectId={projectId}
+            subtaskCount={subtaskCount}
+            waitingBlocked={waitingBlocked}
+            onUpdateTaskStatus={onUpdateTaskStatus}
+          />
+          <div
+            className="status-strip"
+            style={{ width: stripActive ? stripWidth : 0, "--strip-color": stripColor } as React.CSSProperties}
+          >
+            {task.status === "草稿" ? (
+              <button
+                type="button"
+                className="status-strip-action"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUpdateTaskStatus(projectId, task.id, "待办");
+                }}
+              >
+                <Icon icon="mingcute:skip-forward-line" className="text-[13px]" />
+                {uiLanguage === "en" ? "Enter execution queue" : "进入执行队列"}
+              </button>
+            ) : null}
+          </div>
+        </div>
       </td>
       <td className="col-lastMention text-[12px]">
         {(() => {
@@ -822,6 +972,7 @@ function TaskTable({
   tagCatalog,
   colWidths,
   tableRef,
+  executionConcurrency,
   onSelectTask,
   onEditTask,
   onCommitTaskTitle,
@@ -829,16 +980,46 @@ function TaskTable({
   onUpdateTaskWorker,
   onDeleteTask,
   onResizeStart,
-  onResizeDblClick
+  onResizeDblClick,
+  onAddSubtask
 }: TaskTableProps) {
   const INITIAL_ROWS = 80;
   const PAGE_ROWS = 80;
+  const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set());
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const task of tasks) {
+      if (!task.parentId) continue;
+      const list = map.get(task.parentId) ?? [];
+      list.push(task);
+      map.set(task.parentId, list);
+    }
+    for (const list of map.values()) {
+      list.sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id));
+    }
+    return map;
+  }, [tasks]);
 
-  const [visibleCount, setVisibleCount] = useState(() => Math.min(tasks.length, INITIAL_ROWS));
+  const flattened = useMemo(() => {
+    const rows: Array<{ task: Task; depth: number }> = [];
+    const walk = (task: Task, depth: number) => {
+      rows.push({ task, depth });
+      if (collapsedIds.has(task.id)) return;
+      for (const child of childrenByParent.get(task.id) ?? []) walk(child, depth + 1);
+    };
+    for (const task of tasks) {
+      // 有父任务且父任务存在时由父任务递归展开；孤立子任务按顶层行兜底。
+      if (task.parentId && childrenByParent.has(task.parentId)) continue;
+      walk(task, 0);
+    }
+    return rows;
+  }, [tasks, childrenByParent, collapsedIds]);
+
+  const [visibleCount, setVisibleCount] = useState(() => Math.min(flattened.length, INITIAL_ROWS));
   const loadMoreRef = useRef<HTMLTableRowElement | null>(null);
   const prevProjectIdRef = useRef(projectId);
-  const hasMore = visibleCount < tasks.length;
-  const visibleTasks = tasks.slice(0, visibleCount);
+  const hasMore = visibleCount < flattened.length;
+  const visibleRows = flattened.slice(0, visibleCount);
 
   useEffect(() => {
     const projectChanged = prevProjectIdRef.current !== projectId;
@@ -847,13 +1028,13 @@ function TaskTable({
     }
 
     setVisibleCount((prev) => {
-      const initial = Math.min(tasks.length, INITIAL_ROWS);
+      const initial = Math.min(flattened.length, INITIAL_ROWS);
       if (projectChanged) return initial;
-      if (prev > tasks.length) return tasks.length;
-      if (prev === 0 && tasks.length > 0) return initial;
+      if (prev > flattened.length) return flattened.length;
+      if (prev === 0 && flattened.length > 0) return initial;
       return prev;
     });
-  }, [projectId, tasks.length]);
+  }, [projectId, flattened.length]);
 
   useEffect(() => {
     if (!hasMore) return;
@@ -871,7 +1052,20 @@ function TaskTable({
 
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, tasks.length]);
+  }, [hasMore, flattened.length]);
+
+  // 新建子任务进入标题编辑时，自动展开其父任务，避免编辑行被折叠隐藏。
+  useEffect(() => {
+    if (!editingTaskId) return;
+    const editingTask = tasks.find((task) => task.id === editingTaskId);
+    if (!editingTask?.parentId) return;
+    setCollapsedIds((prev) => {
+      if (!prev.has(editingTask.parentId!)) return prev;
+      const next = new Set(prev);
+      next.delete(editingTask.parentId!);
+      return next;
+    });
+  }, [editingTaskId, tasks]);
 
   return (
     <table ref={tableRef} className="task-table">
@@ -916,11 +1110,16 @@ function TaskTable({
       </thead>
       <tbody>
         <AnimatePresence>
-          {visibleTasks.map((task, index) => (
+          {visibleRows.map(({ task, depth }, index) => (
             <TaskRow
               key={task.id}
               task={task}
               index={index}
+              depth={depth}
+              subtaskCount={childrenByParent.get(task.id)?.length ?? 0}
+              hasChildren={Boolean(childrenByParent.get(task.id)?.length)}
+              expanded={!collapsedIds.has(task.id)}
+              waitingBlocked={isTaskWaitingBlocked(task, tasks, executionConcurrency)}
               selectedTaskId={selectedTaskId}
               editingTaskId={editingTaskId}
               projectId={projectId}
@@ -933,6 +1132,15 @@ function TaskTable({
               onUpdateTaskStatus={onUpdateTaskStatus}
               onUpdateTaskWorker={onUpdateTaskWorker}
               onDeleteTask={onDeleteTask}
+              onToggleChildren={(taskId) => {
+                setCollapsedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(taskId)) next.delete(taskId);
+                  else next.add(taskId);
+                  return next;
+                });
+              }}
+              onAddSubtask={onAddSubtask}
             />
           ))}
         </AnimatePresence>
@@ -992,6 +1200,7 @@ type TaskGalleryProps = {
   projectId: string;
   selectedTaskId: string | null;
   editingTaskId: string | null;
+  executionConcurrency: number;
   tagLanguage: UiLanguage;
   tagCatalog?: TagCatalog | null;
   onSelectTask: (taskId: string) => void;
@@ -1006,6 +1215,7 @@ function TaskGallery({
   projectId,
   selectedTaskId,
   editingTaskId,
+  executionConcurrency,
   tagLanguage,
   tagCatalog,
   onSelectTask,
@@ -1050,7 +1260,13 @@ function TaskGallery({
             <div className="relative flex flex-col gap-2.5 p-3 pt-[104px]">
               {/* 顶行：状态 + 特殊状态标记 / Worker（画廊不显示删除按钮，避免挤压布局） */}
               <div className="flex items-center gap-1.5">
-              <TaskStatusMenu task={task} projectId={projectId} onUpdateTaskStatus={onUpdateTaskStatus} />
+              <TaskStatusMenu
+                task={task}
+                projectId={projectId}
+                subtaskCount={tasks.filter((item) => item.parentId === task.id).length}
+                waitingBlocked={isTaskWaitingBlocked(task, tasks, executionConcurrency)}
+                onUpdateTaskStatus={onUpdateTaskStatus}
+              />
               {task.status === "已完成" && task.needsConfirmation ? (
                 <span className="task-confirm-text" title="待确认">
                   <Icon icon="mingcute:question-2-fill" />
