@@ -1,4 +1,4 @@
-import { applyUiFont, loadTheme } from "@maple/board-ui";
+import { applyUiFont } from "@maple/board-ui/ui-font";
 import { Icon } from "@iconify/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
@@ -61,7 +61,13 @@ type ResolvedTheme = "light" | "dark";
 /* ── 主题：复用 dashboard 的 .light/.dark + token，跨页一致 ── */
 
 function resolveInitialTheme(): ResolvedTheme {
-  const stored = loadTheme();
+  /* 直接读 storage 键，避免为了 loadTheme 把 board-ui 整包拉进落地页 chunk。 */
+  let stored: string | null = null;
+  try {
+    stored = localStorage.getItem(THEME_KEY);
+  } catch {
+    /* 私密模式忽略 */
+  }
   if (stored === "light" || stored === "dark") return stored;
   if (typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
     return "dark";

@@ -5,6 +5,9 @@ COPY apps ./apps
 COPY packages ./packages
 COPY scripts ./scripts
 RUN bun install --frozen-lockfile
+RUN cd packages/kanban-core && bun run build \
+  && cd ../agent-runtime && bun run build \
+  && cd ../worker-skills && bun run build
 RUN bun apps/server/scripts/build.ts
 
 FROM oven/bun:1.3.14-debian

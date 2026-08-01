@@ -1,17 +1,14 @@
-import { BoardApp } from "@maple/board-ui";
 import type { AuthSessionResponse } from "@maple/protocol";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import pkg from "../package.json";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardApi, DashboardApiError } from "./api/client";
-import { createServerPlatform } from "./board/server-platform";
-import { AccountControl } from "./components/AccountControl";
-import { buildAccountSettingsTabs } from "./components/account-settings";
 import { ConnectionScreen } from "./components/ConnectionScreen";
 import { DeviceAuthorizationScreen } from "./components/DeviceAuthorizationScreen";
 import { DocsPage } from "./components/DocsPage";
 import { HomePage } from "./components/HomePage";
 import { SecurityReviewScreen } from "./components/SecurityReviewScreen";
 import { defaultServerUrl } from "./lib/connection";
+
+const DashboardPage = lazy(() => import("./DashboardPage").then((module) => ({ default: module.DashboardPage })));
 
 function normalizePath(value: string): string {
   const trimmed = value.replace(/\/+$/, "");
@@ -101,16 +98,6 @@ export function App() {
     }
   }, [session, pathname, navigate]);
 
-  const platform = useMemo(
-    () => session?.session.trust === "trusted"
-      ? createServerPlatform(api, {
-          onUnauthorized: signedOut,
-          storageScope: `${session.user.id}:${session.workspace.id}`
-        })
-      : null,
-    [api, session?.workspace.id, session?.session.trust, signedOut]
-  );
-
   if (session === undefined) {
     return <main className="flex min-h-screen items-center justify-center bg-(--color-base-200) text-(--color-secondary)">正在连接 Maple</main>;
   }
@@ -165,22 +152,9 @@ export function App() {
   /* 其余路径由路由守卫重定向到 /dashboard，渲染前等待导航完成。 */
   if (pathname !== "/dashboard") return null;
 
-  if (!platform) return null;
   return (
-    <BoardApp
-      key={session.workspace.id}
-      platform={platform}
-      version={pkg.version}
-      settingsExtraTabs={buildAccountSettingsTabs({ api, session, onSession: adoptSession, onSignedOut: signedOut })}
-      sidebarFooter={({ openSettings }) => (
-        <AccountControl
-          api={api}
-          session={session}
-          onSession={adoptSession}
-          onSignedOut={signedOut}
-          onOpenSettings={openSettings}
-        />
-      )}
-    />
+    <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-(--color-base-200) text-(--color-secondary)">正在打开看板</main>}>
+      <DashboardPage api={api} session={session} onSession={adoptSession} onSignedOut={signedOut} />
+    </Suspense>
   );
 }
