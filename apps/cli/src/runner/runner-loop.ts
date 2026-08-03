@@ -616,6 +616,7 @@ export class RunnerLoop {
         summary: result.summary,
         error: result.error ?? undefined,
         usage: result.usage ?? undefined,
+        sessionId: result.sessionId ?? undefined,
         leaderUsage: leaderUsage ?? undefined,
         failureDisposition: result.success ? undefined : "blocked"
       });

@@ -6,6 +6,7 @@ import { loadConfig, saveConfig } from "../config/store";
 import type { CliConfig } from "../config/types";
 import { detectCodingAgentTools, toWorkerInventory } from "../execution/tool-availability";
 import { defaultRunnerName } from "../runner/runner-name";
+import { hostPlatform } from "../host-platform";
 
 /** Provisions the in-process Runner without OAuth or a pairing endpoint. */
 export function provisionStandaloneCli(
@@ -18,7 +19,7 @@ export function provisionStandaloneCli(
   const credential = server.provisionRunner({
     runnerName: defaultRunnerName(localHostname),
     hostname: localHostname,
-    platform: `${process.platform}/${process.arch}`,
+      platform: hostPlatform(),
     version: CLI_VERSION,
     supportedWorkers: tools.filter((tool) => tool.available).map((tool) => tool.kind),
     workerInventory: toWorkerInventory(tools),

@@ -20,9 +20,7 @@ const STATIC_SECURITY_HEADERS = {
 
 const INSTALLER_PATHS = new Set([
   "/install.ps1",
-  "/install.sh",
-  "/install-local.ps1",
-  "/install-local.sh"
+  "/install.sh"
 ]);
 
 function notFound(message: string): Response {

@@ -144,43 +144,21 @@ export function OverviewView({ uiLanguage, metrics, runners, workerAvailability,
                         padAngle={0.02}
                       >
                         {(pie) => {
-                          const midRadius = half * 0.85;
-                          return (
-                            <>
-                              {/* 每个环带独立的顺时针渐变：起点实色 → 末尾淡出 */}
-                              <defs>
-                                {pie.arcs.map((arc, index) => (
-                                  <linearGradient
-                                    key={`fade-${index}`}
-                                    id={`overview-dist-fade-${index}`}
-                                    gradientUnits="userSpaceOnUse"
-                                    x1={Math.cos(arc.startAngle) * midRadius}
-                                    y1={Math.sin(arc.startAngle) * midRadius}
-                                    x2={Math.cos(arc.endAngle) * midRadius}
-                                    y2={Math.sin(arc.endAngle) * midRadius}
-                                  >
-                                    <stop offset="0%" stopColor={arc.data.color} stopOpacity={1} />
-                                    <stop offset="100%" stopColor={arc.data.color} stopOpacity={0.06} />
-                                  </linearGradient>
-                                ))}
-                              </defs>
-                              {pie.arcs.map((arc, index) => {
-                                const { label } = arc.data;
-                                return (
-                                  <g key={`arc-${label}-${index}`}>
-                                    <motion.path
-                                      d={pie.path(arc) || ""}
-                                      fill={`url(#overview-dist-fade-${index})`}
-                                      initial={{ opacity: 0, scale: 0.8 }}
-                                      animate={{ opacity: 1, scale: 1 }}
-                                      transition={{ duration: 0.5, delay: index * 0.05 }}
-                                      className="transition-colors duration-300"
-                                    />
-                                  </g>
-                                );
-                              })}
-                            </>
-                          );
+                          return pie.arcs.map((arc, index) => {
+                            const { label } = arc.data;
+                            return (
+                              <g key={`arc-${label}-${index}`}>
+                                <motion.path
+                                  d={pie.path(arc) || ""}
+                                  fill={arc.data.color}
+                                  initial={{ opacity: 0, scale: 0.8 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  transition={{ duration: 0.5, delay: index * 0.05 }}
+                                  className="transition-colors duration-300"
+                                />
+                              </g>
+                            );
+                          });
                         }}
                       </Pie>
                     </Group>

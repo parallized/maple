@@ -1,12 +1,12 @@
-import { WORKER_KINDS } from "@maple/protocol";
-import { MapleApiClient } from "../api/client";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { ParsedArgs } from "../args";
 import { unbindRunner } from "../auth/unbind";
-import { helpText, prepareConnection, removeProjectBinding, resolveRunnerConcurrency } from "../commands";
+import { helpText, prepareConnection, resolveRunnerConcurrency } from "../commands";
 import { loadConfig, normalizeServerUrl } from "../config/store";
 import type { CliConfig } from "../config/types";
-import { selectProjectDirectory } from "../project/directory-picker";
-import { registerProject } from "../project/register";
 import { displayDashboardUrl } from "../standalone/layout";
 import { detectTerminalCapabilities, isMsysPtySession, shellLabel, type TerminalCapabilities } from "../terminal/capabilities";
 import { FullscreenSession } from "../terminal/fullscreen";
@@ -26,20 +26,6 @@ import { selectMainMenu } from "./main-menu";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function runTerminalInputSession(
-  ctx: WidgetContext,
-  interaction: () => Promise<string | null>
-): Promise<string | null> {
-  ctx.keys?.clear();
-  ctx.keys?.suspend();
-  try {
-    return await interaction();
-  } finally {
-    ctx.keys?.resume();
-    ctx.keys?.clear();
-  }
 }
 
 function printBanner(ctx: WidgetContext, cap: TerminalCapabilities): void {
@@ -62,13 +48,23 @@ const SERVER_PRESETS: SelectOption[] = [
 ];
 
 export const MAIN_MENU_OPTIONS: SelectOption[] = [
-  { value: "connect", label: "连接并运行", hint: "领取 Todo 并在本机执行", icon: "🚀" },
-  { value: "projects", label: "项目管理", hint: "本机目录绑定", icon: "📁" },
+  { value: "connect", label: "连接官方服务", hint: "连接 Maple 云端并领取 Todo 执行", icon: "🚀" },
+  { value: "local", label: "启动本地服务", hint: "本机一体版，无需登录", icon: "🏠" },
   { value: "unbind", label: "解除绑定", hint: "撤销当前工作区授权", icon: "🔓" },
   { value: "status", label: "状态详情", hint: "连接与配置概览", icon: "📊" },
   { value: "help", label: "使用帮助", hint: "命令与快捷键说明", icon: "💡" },
   { value: "exit", label: "退出", icon: "🚪" }
 ];
+
+/** 菜单选项：本地一体版不提供「启动本地服务」，连接项指向本机服务。 */
+function mainMenuOptionsFor(options: TuiOptions): SelectOption[] {
+  if (!options.standalone) return MAIN_MENU_OPTIONS;
+  return MAIN_MENU_OPTIONS
+    .filter((item) => item.value !== "local" && item.value !== "unbind")
+    .map((item) => item.value === "connect"
+      ? { ...item, label: "连接本地服务", hint: "在本机运行 Runner" }
+      : item);
+}
 
 export interface TuiOptions {
   fixedServerUrl?: string;
@@ -120,14 +116,12 @@ export async function runTui(configPath: string, options: TuiOptions = {}): Prom
     for (;;) {
       fullscreen.clear();
       const config = loadConfig(configPath);
-      const menuOptions = options.standalone
-        ? MAIN_MENU_OPTIONS.filter((item) => item.value !== "unbind")
-        : MAIN_MENU_OPTIONS;
+      const menuOptions = mainMenuOptionsFor(options);
       const choice = await selectMainMenu(ctx, mainMenuTitle(config), menuOptions, "connect");
       if (choice === null || choice === "exit") return;
       try {
         if (choice === "connect") await connectWizard(ctx, cap, configPath, options);
-        else if (choice === "projects") await projectsScreen(ctx, configPath);
+        else if (choice === "local") await startLocalService(ctx);
         else if (choice === "unbind") await unbindScreen(ctx, configPath);
         else if (choice === "status") await statusScreen(ctx, cap, configPath);
         else if (choice === "help") await pause(ctx, helpText().trim().split("\n"));
@@ -200,55 +194,28 @@ async function connectWizard(
   });
 }
 
-async function projectsScreen(ctx: WidgetContext, configPath: string): Promise<void> {
-  for (;;) {
-    const config = loadConfig(configPath);
-    const options: SelectOption[] = config.projects.map((project) => ({
-      value: project.localId,
-      label: project.name,
-      hint: `${project.workerKind} · ${project.projectId ? "已同步" : "仅本地"}`,
-      icon: "📦"
-    }));
-    options.push({ value: "__add", label: "添加项目…", icon: "📥" }, { value: "__back", label: "返回", icon: "🔙" });
-    const choice = await selectOne(ctx, `项目管理（${config.projects.length}）`, options, "__back");
-    if (choice === null || choice === "__back") return;
-    if (choice === "__add") {
-      await addProjectFlow(ctx, configPath);
-      continue;
-    }
-    const project = config.projects.find((item) => item.localId === choice);
-    if (!project) continue;
-    const approved = await confirm(ctx, `移除 ${project.name}（${project.path}）的绑定？`, false);
-    if (approved !== true) continue;
-    const removed = await removeProjectBinding(configPath, project.localId);
-    await pause(ctx, ctx.style.success(`已解除项目绑定：${removed}`));
-  }
+/** 本机一体版入口：合并安装脚本会把本地服务装到 ~/.maple/local-app。 */
+function localServiceEntry(env: NodeJS.ProcessEnv = process.env): string {
+  const root = env.MAPLE_CLI_HOME?.trim() ? resolve(env.MAPLE_CLI_HOME.trim()) : join(homedir(), ".maple");
+  return join(root, "local-app", "maple-local.js");
 }
 
-async function addProjectFlow(ctx: WidgetContext, configPath: string): Promise<void> {
-  const config = loadConfig(configPath);
-  if (!config.runner || !config.serverUrl) throw new Error("尚未授权执行端，请先连接 Server 并在浏览器确认。");
-  const path = await selectProjectDirectory(undefined, {
-    terminalSession: (interaction) => runTerminalInputSession(ctx, interaction)
-  });
-  if (path === null) return;
-  const name = await textInput(ctx, "项目名称", { placeholder: "留空使用目录名" });
-  if (name === null) return;
-  const worker = await selectOne(
-    ctx,
-    "默认 Worker",
-    WORKER_KINDS.map((kind) => ({ value: kind, label: kind })),
-    "codex"
-  );
-  if (worker === null) return;
-  const api = new MapleApiClient(config.serverUrl, config.runner.token);
-  const result = await registerProject(api, config, {
-    path,
-    name: name.trim() || undefined,
-    workerKind: worker as (typeof WORKER_KINDS)[number],
-    configPath
-  });
-  await pause(ctx, ctx.style.success(`项目已绑定：${result.project.name} → ${result.project.path}`));
+/**
+ * 启动本地服务：把终端交给本机一体版（启动 Server、打开看板并直接进入 dashboard、运行 Runner），
+ * 退出本地服务后回到 shell，重新运行 maple 即可返回菜单。
+ */
+async function startLocalService(ctx: WidgetContext): Promise<void> {
+  const entry = localServiceEntry();
+  if (!existsSync(entry)) {
+    await pause(ctx, ctx.style.danger("未找到本地服务（~/.maple/local-app）。请重新运行 Maple 安装脚本完成本地一体版安装。"));
+    return;
+  }
+  const result = spawnSync(process.execPath, [entry], { stdio: "inherit" });
+  if (result.error) {
+    await pause(ctx, ctx.style.danger(`启动本地服务失败：${result.error.message}`));
+    return;
+  }
+  process.exit(result.status ?? 0);
 }
 
 async function statusScreen(ctx: WidgetContext, cap: TerminalCapabilities, configPath: string): Promise<void> {

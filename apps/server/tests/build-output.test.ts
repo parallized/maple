@@ -60,9 +60,7 @@ describe("Maple Local download publication", () => {
     const scriptsRoot = resolve(import.meta.dir, "../../../scripts");
     for (const installer of [
       "maple-install.sh",
-      "maple-install.ps1",
-      "maple-local-install.sh",
-      "maple-local-install.ps1"
+      "maple-install.ps1"
     ]) {
       const content = readFileSync(join(scriptsRoot, installer), "utf8");
       expect(content.match(/__MAPLE_SERVER_URL__/g)?.length).toBe(1);
@@ -72,10 +70,8 @@ describe("Maple Local download publication", () => {
   it("shows every installation stage and identifies the stage that failed", () => {
     const scriptsRoot = resolve(import.meta.dir, "../../../scripts");
     const installers = [
-      { name: "maple-install.sh", stages: 8 },
-      { name: "maple-install.ps1", stages: 7 },
-      { name: "maple-local-install.sh", stages: 9 },
-      { name: "maple-local-install.ps1", stages: 9 }
+      { name: "maple-install.sh", stages: 13 },
+      { name: "maple-install.ps1", stages: 13 }
     ];
 
     for (const installer of installers) {
@@ -91,41 +87,41 @@ describe("Maple Local download publication", () => {
 
   it("shows download progress and validates the complete local payload", () => {
     const scriptsRoot = resolve(import.meta.dir, "../../../scripts");
-    const hostedShell = readFileSync(join(scriptsRoot, "maple-install.sh"), "utf8");
-    const hostedPowerShell = readFileSync(join(scriptsRoot, "maple-install.ps1"), "utf8");
-    const localShell = readFileSync(join(scriptsRoot, "maple-local-install.sh"), "utf8");
-    const localPowerShell = readFileSync(join(scriptsRoot, "maple-local-install.ps1"), "utf8");
+    const shellInstaller = readFileSync(join(scriptsRoot, "maple-install.sh"), "utf8");
+    const powershellInstaller = readFileSync(join(scriptsRoot, "maple-install.ps1"), "utf8");
 
-    expect(hostedShell).toContain("--progress-bar");
-    expect(hostedPowerShell).toContain("Write-Progress");
-    expect(localShell).toContain("maple_show_progress");
-    expect(localPowerShell).toContain("Write-Progress");
-    expect(localShell).toContain("MAPLE_PROGRESS_LAST_REPORTED");
-    expect(localShell).not.toContain("[ -t 1 ] || return 0");
-    expect(localPowerShell).toContain("MapleNextDownloadPercent");
-    expect(localPowerShell).toContain("[maple-local] Cause:");
+    expect(shellInstaller).toContain("--progress-bar");
+    expect(shellInstaller).toContain("maple_show_progress");
+    expect(shellInstaller).toContain("MAPLE_PROGRESS_LAST_REPORTED");
+    expect(shellInstaller).not.toContain("[ -t 1 ] || return 0");
+    expect(powershellInstaller).toContain("Write-Progress");
+    expect(powershellInstaller).toContain("MapleNextDownloadPercent");
+    expect(powershellInstaller).toContain("[maple] Cause:");
 
-    for (const installer of [localShell, localPowerShell]) {
+    for (const installer of [shellInstaller, powershellInstaller]) {
       expect(installer).toContain("manifest-v2.txt");
       expect(installer).toContain("WebUI");
       expect(installer).toContain("Downloaded payload size mismatch");
     }
-    expect(localShell).toContain("Server+CUI");
-    expect(localPowerShell).toContain("Server + CUI");
+    expect(shellInstaller).toContain("Server+CUI");
+    expect(powershellInstaller).toContain("Server + CUI");
   });
 
   it("installs a persistent Maple Local update command on both platforms", () => {
     const scriptsRoot = resolve(import.meta.dir, "../../../scripts");
-    const shellInstaller = readFileSync(join(scriptsRoot, "maple-local-install.sh"), "utf8");
-    const powershellInstaller = readFileSync(join(scriptsRoot, "maple-local-install.ps1"), "utf8");
+    const shellInstaller = readFileSync(join(scriptsRoot, "maple-install.sh"), "utf8");
+    const powershellInstaller = readFileSync(join(scriptsRoot, "maple-install.ps1"), "utf8");
 
     for (const installer of [shellInstaller, powershellInstaller]) {
       expect(installer).toContain(".update-source");
       expect(installer).toContain("MAPLE_LAUNCHED_BY_UPDATER");
       expect(installer).toContain("maple-local update");
+      expect(installer).not.toContain("install-local");
     }
     expect(shellInstaller).toContain("maple-local-update");
     expect(powershellInstaller).toContain("maple-local-update.ps1");
+    expect(shellInstaller).toContain("${MAPLE_UPDATE_SOURCE}/install.sh");
+    expect(powershellInstaller).toContain("$serverUrl/install.ps1");
   });
 
   it("reports a successful install.sh download with an idempotent event ID", () => {

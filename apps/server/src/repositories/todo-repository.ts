@@ -12,10 +12,12 @@ import type {
   WorkerKind
 } from "@maple/protocol";
 import { ACTIVE_TODO_STATUSES } from "@maple/protocol";
+import { MAX_TODO_TAGS, normalizeTodoTags } from "@maple/protocol";
 import { touchRevision } from "../database/revision";
 import type { AttemptRow, LogRow, TodoRow } from "../database/rows";
 import { toAttempt, toLog, toTodo } from "../database/rows";
 import { nowIso } from "../lib/time";
+import { registerTagCatalog } from "../services/tag-catalog-service";
 
 export class TodoRepository {
   constructor(private readonly database: Database) {}
@@ -34,7 +36,22 @@ export class TodoRepository {
                     AND sibling_route.todo_id <> t.id
                     AND sibling_todo.status IN ('queued', 'running')
                     AND t.status <> 'running'
-                ) THEN 1 ELSE 0 END AS serial_blocked
+                ) THEN 1 ELSE 0 END AS serial_blocked,
+                (SELECT a.usage_input_tokens FROM todo_attempts a
+                   WHERE a.todo_id = t.id AND a.completed_at IS NOT NULL
+                   ORDER BY a.completed_at DESC LIMIT 1) AS usage_input_tokens,
+                (SELECT a.usage_cached_input_tokens FROM todo_attempts a
+                   WHERE a.todo_id = t.id AND a.completed_at IS NOT NULL
+                   ORDER BY a.completed_at DESC LIMIT 1) AS usage_cached_input_tokens,
+                (SELECT a.usage_output_tokens FROM todo_attempts a
+                   WHERE a.todo_id = t.id AND a.completed_at IS NOT NULL
+                   ORDER BY a.completed_at DESC LIMIT 1) AS usage_output_tokens,
+                (SELECT a.usage_reasoning_output_tokens FROM todo_attempts a
+                   WHERE a.todo_id = t.id AND a.completed_at IS NOT NULL
+                   ORDER BY a.completed_at DESC LIMIT 1) AS usage_reasoning_output_tokens,
+                (SELECT a.session_id FROM todo_attempts a
+                   WHERE a.todo_id = t.id AND a.session_id IS NOT NULL
+                   ORDER BY a.completed_at DESC LIMIT 1) AS session_id
          FROM todos t
          JOIN projects p ON p.id = t.project_id
          LEFT JOIN todo_routes route ON route.todo_id = t.id
@@ -61,7 +78,22 @@ export class TodoRepository {
                     AND sibling_route.todo_id <> t.id
                     AND sibling_todo.status IN ('queued', 'running')
                     AND t.status <> 'running'
-                ) THEN 1 ELSE 0 END AS serial_blocked
+                ) THEN 1 ELSE 0 END AS serial_blocked,
+                (SELECT a.usage_input_tokens FROM todo_attempts a
+                   WHERE a.todo_id = t.id AND a.completed_at IS NOT NULL
+                   ORDER BY a.completed_at DESC LIMIT 1) AS usage_input_tokens,
+                (SELECT a.usage_cached_input_tokens FROM todo_attempts a
+                   WHERE a.todo_id = t.id AND a.completed_at IS NOT NULL
+                   ORDER BY a.completed_at DESC LIMIT 1) AS usage_cached_input_tokens,
+                (SELECT a.usage_output_tokens FROM todo_attempts a
+                   WHERE a.todo_id = t.id AND a.completed_at IS NOT NULL
+                   ORDER BY a.completed_at DESC LIMIT 1) AS usage_output_tokens,
+                (SELECT a.usage_reasoning_output_tokens FROM todo_attempts a
+                   WHERE a.todo_id = t.id AND a.completed_at IS NOT NULL
+                   ORDER BY a.completed_at DESC LIMIT 1) AS usage_reasoning_output_tokens,
+                (SELECT a.session_id FROM todo_attempts a
+                   WHERE a.todo_id = t.id AND a.session_id IS NOT NULL
+                   ORDER BY a.completed_at DESC LIMIT 1) AS session_id
          FROM todos t
          JOIN projects p ON p.id = t.project_id
          LEFT JOIN todo_routes route ON route.todo_id = t.id
@@ -95,7 +127,10 @@ export class TodoRepository {
          WHERE t.id = ?${workspaceId ? " AND p.workspace_id = ?" : ""}`
       )
       .get(...(workspaceId ? [todoId, workspaceId] : [todoId])) as TodoRow | null;
-    return row ? toTodo(row) : null;
+    if (!row) return null;
+    const todo = toTodo(row);
+    this.attachReports([todo]);
+    return todo;
   }
 
   getAttempt(attemptId: string, workspaceId?: string): TodoAttempt | null {
@@ -280,8 +315,20 @@ export class TodoRepository {
         values.push(input.workerKind);
       }
       if (input.tags !== undefined) {
+        const nextTags = normalizeTodoTags(input.tags, { max: MAX_TODO_TAGS });
         fields.push("tags_json = ?");
-        values.push(JSON.stringify(input.tags));
+        values.push(JSON.stringify(nextTags));
+        // 手动创建/变更的标签同样自动注册进项目标签目录（固定莫兰迪配色 + mingcute 图标）。
+        const catalogRow = this.database
+          .query("SELECT tag_catalog_json FROM projects WHERE id = ?")
+          .get(current.projectId) as { tag_catalog_json: string | null } | null;
+        const registered = registerTagCatalog(catalogRow?.tag_catalog_json ?? null, nextTags);
+        if (registered.added.length > 0) {
+          this.database.run(
+            "UPDATE projects SET tag_catalog_json = ?, updated_at = ? WHERE id = ?",
+            [registered.json, now, current.projectId]
+          );
+        }
       }
       if (input.parentId !== undefined && (input.parentId ?? null) !== (current.parentId ?? null)) {
         fields.push("parent_id = ?");

@@ -104,6 +104,14 @@ export type TaskReport = {
   createdAt: string;
 };
 
+/** 单次任务的 token 用量（调试列展示缓存率与总价）。 */
+export type TaskTokenUsage = {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+};
+
 /** 任务附件元数据(截图等);内容由平台按需拉取,不内嵌在任务里。 */
 export type TaskArtifact = {
   id: string;
@@ -145,6 +153,10 @@ export type Task = {
   createdAt: string;
   updatedAt: string;
   reports: TaskReport[];
+  /** 最近一次执行尝试的 token 用量（调试列）。 */
+  usage?: TaskTokenUsage | null;
+  /** 最近一次执行使用的 Agent 会话 ID（调试列 SID 前缀）。 */
+  sessionId?: string | null;
 };
 
 /** 单个项目的 token 用量按 Worker 类型分桶（用于概览柱状图）。 */

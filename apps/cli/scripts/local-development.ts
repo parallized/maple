@@ -191,9 +191,10 @@ async function openDashboardWhenReady(
   signal: AbortSignal
 ): Promise<void> {
   if (!await waitForEndpoint(`${plan.serverUrl}/health`, standalone, signal, null)) return;
-  console.log(`[maple-local] 开发看板已就绪：${plan.webUrl}`);
-  if (!plan.openBrowser || !openBrowser(plan.webUrl)) {
-    console.log(`[maple-local] 请在浏览器打开：${plan.webUrl}`);
+  const dashboardUrl = `${plan.webUrl}/dashboard`;
+  console.log(`[maple-local] 开发看板已就绪：${dashboardUrl}`);
+  if (!plan.openBrowser || !openBrowser(dashboardUrl)) {
+    console.log(`[maple-local] 请在浏览器打开：${dashboardUrl}`);
   }
 }
 

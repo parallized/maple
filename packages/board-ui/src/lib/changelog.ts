@@ -8,6 +8,30 @@ export type ChangelogEntry = {
 /** 版本更新历史，新版本追加在数组最前。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.6",
+    date: "2026-08-03",
+    highlights: {
+      zh: [
+        "安装脚本合一，本地服务一键装好",
+        "安装时询问是否装 Playwright 截图",
+        "TUI 新增连接官方服务与启动本地服务",
+        "本地服务打开直接进入看板",
+        "任务详情可直接编辑标签",
+        "看板新增调试列：缓存率/总价/SID",
+        "Runner 展示平台图标",
+      ],
+      en: [
+        "One installer for CLI and local",
+        "Playwright asked during install",
+        "TUI cloud / local entry",
+        "Local service opens dashboard",
+        "Task tags editable in panel",
+        "Debug column with run metrics",
+        "Runner platform icons",
+      ],
+    },
+  },
+  {
     version: "0.2.5",
     date: "2026-08-02",
     highlights: {

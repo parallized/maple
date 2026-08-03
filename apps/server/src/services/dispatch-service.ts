@@ -288,6 +288,7 @@ export class DispatchService {
          SET state = ?, exit_code = ?, result_summary = ?, error = ?,
              usage_input_tokens = ?, usage_cached_input_tokens = ?,
              usage_output_tokens = ?, usage_reasoning_output_tokens = ?,
+             session_id = ?,
              completed_at = ?
          WHERE id = ?`,
         [
@@ -299,6 +300,7 @@ export class DispatchService {
           input.usage?.cachedInputTokens ?? 0,
           input.usage?.outputTokens ?? 0,
           input.usage?.reasoningOutputTokens ?? 0,
+          input.sessionId?.trim() || null,
           now,
           lease.active_attempt_id
         ]

@@ -29,17 +29,17 @@ flowchart LR
 - 本地版使用 `maple_standalone_session` Cookie 与独立配置目录，不覆盖联网版状态。
 - 构建产物位于 `apps/cli/dist/standalone`，其中包含入口、WebUI 和 Sharp 原生运行库。
 
-用户一键安装：
+用户一键安装（同一脚本同时安装 CLI 与本地一体版，期间可询问是否安装 Playwright 截图功能）：
 
 ```sh
-curl -fsSL https://maple.example.com/install-local.sh | sh
+curl -fsSL https://maple.example.com/install.sh | sh
 ```
 
 ```powershell
-irm https://maple.example.com/install-local.ps1 | iex
+irm https://maple.example.com/install.ps1 | iex
 ```
 
-安装完成后直接运行 `maple-local`。安装器会把 Server、WebUI、CLI 和当前系统的 Sharp 原生库放在 `~/.maple`，不会在项目目录安装依赖。发布构建命令为：
+安装完成后运行 `maple` 可连接官方服务，或在 TUI 中选择「启动本地服务」；也可直接运行 `maple-local`。安装器会把 Server、WebUI、CLI 和当前系统的 Sharp 原生库放在 `~/.maple`，不会在项目目录安装依赖。发布构建命令为：
 
 后续更新前退出正在运行的 Maple Local，然后执行 `maple-local update`。更新器会复用首次安装时保存的可信下载地址，原子替换程序文件并保留 `~/.maple/standalone` 中的数据。
 

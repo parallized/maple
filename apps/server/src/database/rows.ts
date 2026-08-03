@@ -98,6 +98,11 @@ export interface TodoRow {
   last_error: string | null;
   tags_json: string | null;
   details_doc: string | null;
+  usage_input_tokens?: number;
+  usage_cached_input_tokens?: number;
+  usage_output_tokens?: number;
+  usage_reasoning_output_tokens?: number;
+  session_id?: string | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -121,6 +126,7 @@ export interface AttemptRow {
   usage_cached_input_tokens: number;
   usage_output_tokens: number;
   usage_reasoning_output_tokens: number;
+  session_id: string | null;
   background_playwright_screenshot: number;
   screenshot_compression_preset: string;
   retry_interval_seconds: number;
@@ -329,6 +335,16 @@ export function toTodo(row: TodoRow): Todo {
     lastError: row.last_error,
     tags: parseTags(row.tags_json),
     detailsDoc: row.details_doc ?? undefined,
+    usage:
+      row.usage_input_tokens !== undefined
+        ? {
+            inputTokens: row.usage_input_tokens,
+            cachedInputTokens: row.usage_cached_input_tokens ?? 0,
+            outputTokens: row.usage_output_tokens ?? 0,
+            reasoningOutputTokens: row.usage_reasoning_output_tokens ?? 0
+          }
+        : undefined,
+    sessionId: row.session_id ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     startedAt: row.started_at,
@@ -347,6 +363,7 @@ export function toAttempt(row: AttemptRow): TodoAttempt {
     resultSummary: row.result_summary,
     error: row.error,
     usage: toUsage(row),
+    sessionId: row.session_id ?? undefined,
     acceptanceSettings: {
       backgroundPlaywrightScreenshot: row.background_playwright_screenshot === 1,
       screenshotCompressionPreset: isScreenshotCompressionPreset(row.screenshot_compression_preset)

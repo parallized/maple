@@ -41,7 +41,7 @@ import {
   } from "./lib/utils";
 import { applyUiFont } from "./lib/ui-font";
 import { collectTokenUsage } from "./lib/token-usage";
-import { estimateTokenCostUsd } from "./lib/token-cost";
+import { estimateTokenCostUsd, USD_TO_CNY_RATE } from "./lib/token-cost";
 import { normalizeTagsForAiLanguage } from "./lib/tag-language";
 import { buildWorkerId, isWorkerKindId, parseWorkerId } from "./lib/worker-ids";
 import { buildSidebarWorkers } from "./lib/worker-sidebar";
@@ -315,6 +315,44 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
     }
     return map;
   }, [sidebarWorkers]);
+
+  // ── 调试列：设置页开关，表格标签列右侧展示缓存率 / 总价 / SID ──
+  const [debugColumnEnabled, setDebugColumnEnabled] = useState(() => {
+    try {
+      return localStorage.getItem("maple.debugColumn") === "true";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("maple.debugColumn", debugColumnEnabled ? "true" : "false");
+    } catch {
+      // 忽略存储失败。
+    }
+  }, [debugColumnEnabled]);
+
+  const taskDebugMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const project of projects) {
+      for (const task of project.tasks) {
+        if (!task.usage) continue;
+        const { inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens } = task.usage;
+        const totalInput = inputTokens + cachedInputTokens;
+        const cacheRate = totalInput > 0 ? (cachedInputTokens / totalInput) * 100 : 0;
+        const usd = estimateTokenCostUsd(
+          [{ workerKind: task.workerKind, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens }],
+          modelPricing,
+          modelIdsByKind
+        );
+        const priceYuan = usd === null ? null : usd * USD_TO_CNY_RATE;
+        const sid = task.sessionId ? task.sessionId.slice(0, 3).toUpperCase() : "—";
+        map[task.id] =
+          `缓存率 ${cacheRate.toFixed(1)}% 总价 ${priceYuan === null ? "—" : priceYuan.toFixed(3)} 元 SID ${sid}`;
+      }
+    }
+    return map;
+  }, [projects, modelPricing, modelIdsByKind]);
 
   useEffect(() => {
     setProjects((prev) => {
@@ -2039,6 +2077,8 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
                     leaderWorker={leaderWorker}
                     workers={visibleSidebarWorkers}
                     executionConcurrency={workerConcurrency}
+                    debugColumnEnabled={debugColumnEnabled}
+                    taskDebugMap={taskDebugMap}
                     onOpenLeaderSettings={() => openSettingsTab("models")}
                     onSetDisplayType={setBoardDisplayType}
                     onAddDraftTask={addDraftTask}
@@ -2103,6 +2143,8 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
                       onRemoveReminderAudio={() => void removeReminderAudio()}
                       onReminderPlayCliChange={setReminderPlayCli}
                       onReminderPlayMapleChange={setReminderPlayMaple}
+                      debugColumnEnabled={debugColumnEnabled}
+                      onDebugColumnChange={setDebugColumnEnabled}
                     onRefreshProbes={() => setInstallProbeToken((n) => n + 1)}
                     extraTabs={settingsExtraTabs}
                     tabRequest={settingsTabRequest}
@@ -2181,6 +2223,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
 	                needsConfirmation: false,
 	              }))}
 	              onUpdateTaskStatus={(status) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, status: status as TaskStatus }))}
+	              onUpdateTags={(nextTags) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, tags: nextTags }))}
 	              onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
 	            />
           </aside>
@@ -2225,6 +2268,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
 	                  status: "待办",
 	                  needsConfirmation: false,
 	                }))}
+	                onUpdateTags={(nextTags) => updateTask(boardProject.id, selectedTaskId, (t) => ({ ...t, tags: nextTags }))}
 	                onRestartExecution={() => void restartProjectExecution(boardProject.id)}
 	                onDelete={() => deleteTask(boardProject.id, selectedTaskId)}
 	              />

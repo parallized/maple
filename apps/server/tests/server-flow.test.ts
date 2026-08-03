@@ -596,7 +596,6 @@ describe("Maple Server execution flow", () => {
     writeFileSync(join(webRoot, "index.html"), "<!doctype html><title>Maple dashboard</title>", "utf8");
     writeFileSync(join(webRoot, "assets/app.js"), "console.log('maple');\n", "utf8");
     writeFileSync(join(webRoot, "install.ps1"), "$server='__MAPLE_SERVER_URL__'\n", "utf8");
-    writeFileSync(join(webRoot, "install-local.sh"), "server='__MAPLE_SERVER_URL__'\n", "utf8");
 
     const database = createDatabase(":memory:");
     databases.push(database);
@@ -625,14 +624,6 @@ describe("Maple Server execution flow", () => {
     const installerContent = await installer.text();
     expect(installerContent).toContain("http://maple.test");
     expect(installerContent).not.toContain("__MAPLE_SERVER_URL__");
-
-    const localInstaller = await request(app, "/install-local.sh");
-    expect(localInstaller.status).toBe(200);
-    expect(localInstaller.headers.get("content-type")).toContain("text/x-shellscript");
-    expect(localInstaller.headers.get("cache-control")).toBe("no-store");
-    const localInstallerContent = await localInstaller.text();
-    expect(localInstallerContent).toContain("http://maple.test");
-    expect(localInstallerContent).not.toContain("__MAPLE_SERVER_URL__");
 
     const missingApi = await request(app, "/api/missing");
     expect(missingApi.status).toBe(404);

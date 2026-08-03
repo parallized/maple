@@ -318,4 +318,35 @@ describe("Leader tag registration", () => {
     const dispatch = (await complete.json()) as CompleteProjectManagerJobResponse;
     expect(dispatch.todo.tags).toEqual(["auth"]);
   });
+
+  it("registers manually created tags when a Todo is updated like a status change", async () => {
+    const app = createTestApp();
+    const { project } = await setupManagedProject(app);
+    const todo = await createTodo(app, project.project.id, {
+      title: "Manual tag edit",
+      details: "Edit tags from the board."
+    });
+
+    // 看板保存：PATCH 标签（手动创建/变更，不去做语言过滤，只去重并截断到 3 个）。
+    const patched = (await (
+      await request(app, `/api/todos/${todo.id}`, {
+        method: "PATCH",
+        token: ADMIN_TOKEN,
+        body: { tags: ["手动", "Manual", "手动", "extra", "one-more"] }
+      })
+    ).json()) as Todo;
+    expect(patched.tags).toEqual(["手动", "Manual", "extra"]);
+
+    const dashboard = (await (
+      await request(app, "/api/dashboard", { token: ADMIN_TOKEN })
+    ).json()) as DashboardSnapshot;
+    const managedProject = dashboard.projects.find((item) => item.id === project.project.id);
+    const catalog = catalogOf(managedProject!);
+    for (const tag of ["手动", "manual", "extra"]) {
+      const definition = catalog[tag] as { color: string; icon: string } | undefined;
+      expect(definition).toBeDefined();
+      expect(MORANDI_TAG_COLORS as readonly string[]).toContain(definition!.color);
+      expect(TAG_MINGCUTE_ICONS as readonly string[]).toContain(definition!.icon);
+    }
+  });
 });

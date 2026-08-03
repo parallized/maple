@@ -245,6 +245,7 @@ CREATE TABLE IF NOT EXISTS todo_attempts (
     CHECK(screenshot_compression_preset IN ('high', 'balanced', 'compact')),
   retry_interval_seconds INTEGER NOT NULL DEFAULT 10,
   retry_max_attempts INTEGER NOT NULL DEFAULT 5,
+  session_id TEXT,
   started_at TEXT,
   completed_at TEXT,
   created_at TEXT NOT NULL
@@ -412,6 +413,7 @@ export function createDatabase(path: string): Database {
 
 function migrate(database: Database): void {
   migrateTodoWorker(database);
+  ensureColumn(database, "todo_attempts", "session_id", "TEXT");
   ensureColumn(database, "todos", "tags_json", "TEXT");
   ensureColumn(database, "todos", "details_doc", "TEXT");
   ensureColumn(database, "todos", "parent_id", "TEXT REFERENCES todos(id) ON DELETE CASCADE");

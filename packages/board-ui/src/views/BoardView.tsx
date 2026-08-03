@@ -39,6 +39,10 @@ type BoardViewProps = {
   workers: SidebarWorkerItem[];
   /** 工作区并发上限（1-16）；用于标记因并发已满而排队等待的任务。 */
   executionConcurrency: number;
+  /** 调试列开关：表格标签列右侧展示缓存率 / 总价 / SID。 */
+  debugColumnEnabled: boolean;
+  /** 调试列数据：任务 id → 调试摘要文本。 */
+  taskDebugMap: Record<string, string>;
   /** 点击 Leader 状态条:跳转设置「模型和工具」页签。 */
   onOpenLeaderSettings: () => void;
   onSetDisplayType: (type: BoardDisplayType) => void;
@@ -88,6 +92,8 @@ export function BoardView({
   leaderWorker,
   workers,
   executionConcurrency,
+  debugColumnEnabled,
+  taskDebugMap,
   onOpenLeaderSettings,
   onSetDisplayType,
   onAddDraftTask,
@@ -296,6 +302,8 @@ export function BoardView({
               colWidths={colWidths}
               tableRef={tableRef}
               executionConcurrency={executionConcurrency}
+              debugColumnEnabled={debugColumnEnabled}
+              taskDebugMap={taskDebugMap}
               onSelectTask={onSelectTask}
               onEditTask={onEditTask}
               onCommitTaskTitle={onCommitTaskTitle}
@@ -570,6 +578,8 @@ type TaskTableProps = {
   colWidths: Record<string, number>;
   tableRef: React.Ref<HTMLTableElement>;
   executionConcurrency: number;
+  debugColumnEnabled: boolean;
+  taskDebugMap: Record<string, string>;
   onSelectTask: (taskId: string) => void;
   onEditTask: (taskId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
@@ -711,6 +721,10 @@ type TaskRowProps = {
   hasChildren: boolean;
   expanded: boolean;
   waitingKind: TaskWaitingKind;
+  /** 调试列开关：展示缓存率 / 总价 / SID。 */
+  debugColumnEnabled: boolean;
+  /** 该任务的调试摘要文本（空字符串表示无数据）。 */
+  debugText: string;
   selectedTaskId: string | null;
   editingTaskId: string | null;
   projectId: string;
@@ -736,6 +750,8 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   hasChildren,
   expanded,
   waitingKind,
+  debugColumnEnabled,
+  debugText,
   selectedTaskId,
   editingTaskId,
   projectId,
@@ -778,8 +794,14 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
     if (!stripActive) return;
     const onResize = () => measureStrip();
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [stripActive, measureStrip]);
+    // hover 中手动改状态时，徽标色会变化；等背景过渡结束后重取颜色，
+    // 保证右侧条带与 badge 同步为最新状态色。
+    const settleTimer = window.setTimeout(measureStrip, 260);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.clearTimeout(settleTimer);
+    };
+  }, [stripActive, measureStrip, task.status, task.executionPhase, waitingKind]);
   return (
     <motion.tr
       ref={ref}
@@ -844,6 +866,11 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           ) : null}
         </div>
       </td>
+      {debugColumnEnabled ? (
+        <td className="col-debug">
+          <span className="task-debug-text">{debugText || "—"}</span>
+        </td>
+      ) : null}
       {/* 特殊状态图标列：暂时整列隐藏，保留实现以便恢复。
       <td className="col-taskIcon">
         {(() => {
@@ -1020,6 +1047,8 @@ function TaskTable({
   colWidths,
   tableRef,
   executionConcurrency,
+  debugColumnEnabled,
+  taskDebugMap,
   onSelectTask,
   onEditTask,
   onCommitTaskTitle,
@@ -1125,6 +1154,7 @@ function TaskTable({
         <col style={{ width: colWidths.status }} />
         <col style={{ width: colWidths.lastMention }} />
         <col style={colWidths.tags > 0 ? { width: colWidths.tags } : undefined} />
+        {debugColumnEnabled ? <col style={{ width: 230 }} /> : null}
         {/* actions 列不设宽度：吸收固定布局的多余空间，让窄列保持真实宽度 */}
         <col />
       </colgroup>
@@ -1153,6 +1183,14 @@ function TaskTable({
               ) : null}
             </th>
           ))}
+          {debugColumnEnabled ? (
+            <th className="col-debug">
+              <span className="flex items-center justify-start translate-y-[-2.5px] gap-1.5 w-full">
+                <Icon icon="mingcute:bug-line" className="text-[14px] opacity-70" />
+                调试
+              </span>
+            </th>
+          ) : null}
           <th className="col-actions"></th>
         </tr>
       </thead>
@@ -1171,6 +1209,8 @@ function TaskTable({
               hasChildren={Boolean(childrenByParent.get(task.id)?.length)}
               expanded={!collapsedIds.has(task.id)}
               waitingKind={taskWaitingKind(task, tasks, executionConcurrency)}
+              debugColumnEnabled={debugColumnEnabled}
+              debugText={taskDebugMap[task.id] ?? ""}
               selectedTaskId={selectedTaskId}
               editingTaskId={editingTaskId}
               projectId={projectId}

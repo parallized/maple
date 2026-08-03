@@ -93,6 +93,11 @@ export function App() {
     if (session.session.trust !== "trusted") return;
     const allowAuthorize = pathname === "/authorize" && session.deploymentMode === "hosted";
     const docsPath = pathname === "/docs" || pathname.startsWith("/docs/");
+    /* 本地一体版没有官网首页，打开根路径时直接进看板。 */
+    if (session.deploymentMode === "standalone" && pathname === "/") {
+      navigate("/dashboard");
+      return;
+    }
     if (pathname === "/login" || (pathname !== "/" && pathname !== "/dashboard" && !allowAuthorize && !docsPath)) {
       navigate("/dashboard");
     }
@@ -146,6 +151,7 @@ export function App() {
 
   /* 已登录也可以回官网逛逛，CTA 直接带去看板。 */
   if (pathname === "/") {
+    if (session.deploymentMode === "standalone") return null;
     return <HomePage api={api} authed onEnter={() => navigate("/dashboard")} onDocs={() => navigate("/docs")} />;
   }
 

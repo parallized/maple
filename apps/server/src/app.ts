@@ -1293,6 +1293,7 @@ export function createServerApp(options: CreateServerAppOptions) {
           summary: t.Optional(t.String({ maxLength: 100_000 })),
           error: t.Optional(t.String({ maxLength: 100_000 })),
           failureDisposition: t.Optional(t.Union([t.Literal("retry"), t.Literal("blocked")])),
+          sessionId: t.Optional(t.Union([t.String({ minLength: 1, maxLength: 200 }), t.Null()])),
           usage: optionalTokenUsageSchema,
           leaderUsage: optionalTokenUsageSchema
         })

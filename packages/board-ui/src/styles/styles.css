@@ -400,6 +400,20 @@ h3 {
 .col-tags {
   width: 120px;
 }
+
+/* ── 调试列：缓存率 / 总价 / SID，简约展示 ── */
+.col-debug {
+  white-space: nowrap;
+}
+
+.task-debug-text {
+  display: block;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 .col-date {
   width: 100px;
   text-align: right;
@@ -1204,38 +1218,30 @@ h3 {
 
 .status-strip-action {
   position: absolute;
-  left: calc(var(--badge-width, 0px) + 12px);
+  /* 贴紧左侧状态文本（badge 右缘起 2px），不再拉开距离。 */
+  left: calc(var(--badge-width, 0px) + 2px);
   top: 0;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   height: 100%;
-  padding: 0 10px;
+  padding: 0 10px 0 0;
   font-size: 12px;
-  font-weight: 600;
   white-space: nowrap;
   color: var(--color-primary);
   background: transparent;
   border: none;
-  border-radius: 6px;
   cursor: pointer;
   opacity: 0;
   transform: translateX(-6px);
   transition:
     opacity 0.18s ease 0.14s,
-    transform 0.18s ease 0.14s,
-    background 0.15s ease,
-    box-shadow 0.15s ease;
+    transform 0.18s ease 0.14s;
 }
 
 .task-row:hover .status-strip-action {
   opacity: 1;
   transform: translateX(0);
-}
-
-.status-strip-action:hover {
-  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
 
 .task-row .task-open-btn {

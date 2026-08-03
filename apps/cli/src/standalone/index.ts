@@ -14,8 +14,13 @@ import { parseStandaloneArgs, shouldOpenStandaloneBrowser } from "./startup";
 const argv = process.argv.slice(2);
 const args = parseStandaloneArgs(argv);
 
+/** 本地服务打开看板时直接进入 dashboard，不经过官网首页。 */
+function standaloneDashboardUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/dashboard`;
+}
+
 function openStandaloneDashboard(url: string): void {
-  if (shouldOpenStandaloneBrowser()) openBrowser(url);
+  if (shouldOpenStandaloneBrowser()) openBrowser(standaloneDashboardUrl(url));
 }
 
 function printStandaloneHelp(): void {
@@ -69,7 +74,7 @@ async function main(): Promise<void> {
   if (await runningStandalone(url)) {
     if (argv.length === 0 || args.command === "tui" || args.command === "connect") {
       openStandaloneDashboard(url);
-      console.log(`[maple-local] 已在运行：${url}`);
+      console.log(`[maple-local] 已在运行：${standaloneDashboardUrl(url)}`);
       return;
     }
     if (args.command === "status") statusCommand(layout.cliConfigPath);

@@ -16,8 +16,9 @@ import { registerProject, synchronizeProjects } from "./project/register";
 import { RunnerLoop } from "./runner/runner-loop";
 import { defaultRunnerName } from "./runner/runner-name";
 import { authorizeRunner } from "./auth/device-authorization";
+import { hostPlatform } from "./host-platform";
 
-export const CLI_VERSION = "0.2.5";
+export const CLI_VERSION = "0.2.6";
 
 function workerOption(args: ParsedArgs): WorkerKind {
   const value = stringOption(args, "worker") ?? "codex";
@@ -129,7 +130,7 @@ export async function prepareConnection(
     const authorized = await authorizeRunner(new MapleApiClient(serverUrl), {
       runnerName: defaultRunnerName(localHostname),
       hostname: localHostname,
-      platform: `${process.platform}/${process.arch}`,
+      platform: hostPlatform(),
       version: CLI_VERSION,
       supportedWorkers: tools.filter((tool) => tool.available).map((tool) => tool.kind),
       workerInventory: toWorkerInventory(tools),

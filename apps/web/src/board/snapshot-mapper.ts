@@ -72,7 +72,9 @@ export function mapTodoToTask(todo: Todo): Task {
     startedAt: todo.startedAt ?? null,
     createdAt: todo.createdAt,
     updatedAt: todo.updatedAt,
-    reports
+    reports,
+    usage: todo.usage ?? null,
+    sessionId: todo.sessionId ?? null
   };
 }
 

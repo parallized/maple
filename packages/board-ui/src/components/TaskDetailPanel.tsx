@@ -33,6 +33,7 @@ type TaskDetailPanelProps = {
   onSetAsRework?: () => void;
   onSetAsTodo?: () => void;
   onUpdateTaskStatus?: (status: TaskStatus) => void;
+  onUpdateTags?: (tags: string[]) => void;
   onRestartExecution?: () => void;
   onClose?: () => void;
   onDelete?: () => void;
@@ -53,6 +54,12 @@ function formatAbsoluteTime(value: string): string {
   }
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
 }
+
+/** 报告内容入场动画（模块级常量：避免每次渲染生成新对象导致 framer 重放动画）。 */
+const REPORT_ARTICLE_INITIAL = { opacity: 0, y: 10, filter: "blur(4px)" };
+const REPORT_ARTICLE_ANIMATE = { opacity: 1, y: 0, filter: "blur(0px)" };
+const REPORT_ARTICLE_EXIT = { opacity: 0, y: -10, filter: "blur(4px)" };
+const REPORT_ARTICLE_TRANSITION = { type: "spring", stiffness: 400, damping: 30 } as const;
 
 type ParsedTaskReport = { status: string; description: string };
 
@@ -104,6 +111,9 @@ function renderAuthorIcon(author: string, size = 14) {
   return <Icon icon="mingcute:paper-line" className="opacity-60" style={{ fontSize: size }} />;
 }
 
+const MAX_TAGS = 3;
+const MAX_TAG_LENGTH = 40;
+
 export function TaskDetailPanel({
   task,
   subtaskCount = 0,
@@ -117,6 +127,7 @@ export function TaskDetailPanel({
   onSetAsRework,
   onSetAsTodo,
   onUpdateTaskStatus,
+  onUpdateTags,
   onRestartExecution,
   onClose,
   onDelete,
@@ -130,6 +141,22 @@ export function TaskDetailPanel({
 
   const platform = usePlatform();
   const [artifacts, setArtifacts] = useState<TaskArtifact[]>([]);
+  const [tagEditing, setTagEditing] = useState(false);
+  const [tagDraft, setTagDraft] = useState("");
+
+  function commitTagDraft() {
+    const tag = tagDraft.trim().slice(0, MAX_TAG_LENGTH);
+    if (!tag) return;
+    const exists = task.tags.some((item) => item.toLowerCase() === tag.toLowerCase());
+    const next = exists ? task.tags : [...task.tags, tag];
+    onUpdateTags?.(next.slice(0, MAX_TAGS));
+    setTagDraft("");
+    if (next.length >= MAX_TAGS) setTagEditing(false);
+  }
+
+  function removeTag(tag: string) {
+    onUpdateTags?.(task.tags.filter((item) => item !== tag));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -459,19 +486,71 @@ export function TaskDetailPanel({
             <Icon icon="mingcute:tag-line" className="text-[15px] opacity-60" />
             标签
           </span>
-          <div className="flex flex-1 items-center gap-1.5 overflow-hidden select-none min-w-0 flex-wrap">
-            {task.tags.length === 0 ? <span className="text-muted text-[14px] opacity-40">无标签</span> : null}
+          <div className={`flex flex-1 items-center gap-1.5 overflow-hidden min-w-0 flex-wrap ${tagEditing ? "" : "select-none"}`}>
+            {task.tags.length === 0 && !tagEditing ? (
+              <span className="text-muted text-[14px] opacity-40">无标签</span>
+            ) : null}
             {task.tags.map((tag) => (
               <span
                 key={tag}
-                className="ui-badge ui-badge--sm ui-badge--tag inline-flex items-center gap-1"
+                className={`ui-badge ui-badge--sm ui-badge--tag inline-flex items-center gap-1 ${tagEditing ? "pr-0.5" : ""}`}
                 style={buildTagBadgeStyle(tag, tagCatalog) as CSSProperties}
                 title={tag}
               >
                 <Icon icon={resolveTagIconMeta(tag, tagCatalog).icon} className="text-[12px] opacity-80" />
                 <span>{formatTagLabel(tag, tagLanguage, tagCatalog)}</span>
+                {tagEditing ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center w-4 h-4 rounded-[4px] opacity-55 hover:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 transition-opacity"
+                    title="删除标签"
+                    aria-label={`删除标签 ${tag}`}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => removeTag(tag)}
+                  >
+                    <Icon icon="mingcute:close-line" className="text-[11px]" />
+                  </button>
+                ) : null}
               </span>
             ))}
+            {tagEditing ? (
+              <input
+                autoFocus
+                value={tagDraft}
+                onChange={(event) => setTagDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitTagDraft();
+                  } else if (event.key === "Escape") {
+                    setTagDraft("");
+                    setTagEditing(false);
+                  }
+                }}
+                onBlur={() => {
+                  setTagDraft("");
+                  setTagEditing(false);
+                }}
+                placeholder={task.tags.length >= MAX_TAGS ? "最多 3 个标签" : "输入标签，回车添加"}
+                disabled={task.tags.length >= MAX_TAGS}
+                maxLength={MAX_TAG_LENGTH}
+                className="w-28 min-w-0 bg-(--color-base-200)/70 border border-(--color-base-300)/60 rounded-[6px] px-1.5 py-0.5 text-[13px] outline-none placeholder:text-muted/50 focus:border-(--color-primary)/50 focus:bg-(--color-base-200)"
+                aria-label="添加标签"
+              />
+            ) : (
+              <button
+                type="button"
+                className="inline-flex items-center justify-center w-5 h-5 rounded-[6px] text-muted opacity-55 hover:opacity-100 hover:bg-(--color-base-300)/40 transition-colors"
+                title={task.tags.length >= MAX_TAGS ? "最多 3 个标签" : "添加标签"}
+                disabled={task.tags.length >= MAX_TAGS}
+                onClick={() => {
+                  setTagDraft("");
+                  setTagEditing(true);
+                }}
+              >
+                <Icon icon="mingcute:add-line" className="text-[13px]" />
+              </button>
+            )}
           </div>
         </motion.div>
 
@@ -545,10 +624,10 @@ export function TaskDetailPanel({
                     return (
                       <motion.article 
                         key={report.id}
-                        initial={{ opacity: 0, y: 10, filter: "blur(4px)" }}
-                        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                        exit={{ opacity: 0, y: -10, filter: "blur(4px)" }}
-                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                        initial={REPORT_ARTICLE_INITIAL}
+                        animate={REPORT_ARTICLE_ANIMATE}
+                        exit={REPORT_ARTICLE_EXIT}
+                        transition={REPORT_ARTICLE_TRANSITION}
                         className="flex flex-col"
                       >
                         <div className="report-content text-[13px] leading-[1.55] text-secondary/85">

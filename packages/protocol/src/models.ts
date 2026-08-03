@@ -268,6 +268,10 @@ export interface Todo {
   lastError: string | null;
   tags: string[];
   detailsDoc?: string;
+  /** 最近一次成功执行尝试的 token 用量（供看板调试列展示）。 */
+  usage?: TokenUsage | null;
+  /** 最近一次执行使用的 Agent 会话 ID（供看板调试列展示 SID 前缀）。 */
+  sessionId?: string | null;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
@@ -294,6 +298,8 @@ export interface TodoAttempt {
   resultSummary: string | null;
   error: string | null;
   usage: TokenUsage | null;
+  /** 该次执行使用的 Agent 会话 ID。 */
+  sessionId?: string | null;
   acceptanceSettings?: AcceptanceSettings;
   retryIntervalSeconds?: number;
   retryMaxAttempts?: number;

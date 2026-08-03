@@ -65,8 +65,6 @@ try {
   writeStandaloneDownloadManifest(standaloneDownloadRoot);
   cpSync(join(workspaceRoot, "scripts", "maple-install.ps1"), join(webOutputRoot, "install.ps1"));
   cpSync(join(workspaceRoot, "scripts", "maple-install.sh"), join(webOutputRoot, "install.sh"));
-  cpSync(join(workspaceRoot, "scripts", "maple-local-install.ps1"), join(webOutputRoot, "install-local.ps1"));
-  cpSync(join(workspaceRoot, "scripts", "maple-local-install.sh"), join(webOutputRoot, "install-local.sh"));
 
   if (!existsSync(sharpNativeRoot)) {
     throw new Error(`Sharp native dependencies are missing: ${sharpNativeRoot}`);

@@ -63,6 +63,9 @@ type SettingsViewProps = {
   onRemoveReminderAudio: () => void;
   onReminderPlayCliChange: (enabled: boolean) => void;
   onReminderPlayMapleChange: (enabled: boolean) => void;
+  /** 调试列开关：表格标签列右侧展示缓存率 / 总价 / SID。 */
+  debugColumnEnabled: boolean;
+  onDebugColumnChange: (enabled: boolean) => void;
   onRefreshProbes: () => void;
   extraTabs?: SettingsExtraTab[];
   /** 外部请求切换到指定页签(如点看板 Leader 状态条跳「模型和工具」);nonce 变化即生效。 */
@@ -105,6 +108,8 @@ export function SettingsView({
   onRemoveReminderAudio,
   onReminderPlayCliChange,
   onReminderPlayMapleChange,
+  debugColumnEnabled,
+  onDebugColumnChange,
   onRefreshProbes,
   extraTabs,
   tabRequest
@@ -307,6 +312,7 @@ export function SettingsView({
     { id: "constitution", label: t("宪法", "Constitution"), icon: "mingcute:book-2-line" },
     { id: "retry", label: t("执行策略", "Execution"), icon: "mingcute:refresh-2-line" },
     { id: "reminder", label: t("提醒", "Reminder"), icon: "mingcute:notification-line" },
+    { id: "debug", label: t("调试", "Debug"), icon: "mingcute:bug-line" },
     ...(canEditAcceptance
       ? [{ id: "acceptance", label: t("验收", "Acceptance"), icon: "mingcute:camera-line" }]
       : []),
@@ -1010,6 +1016,46 @@ export function SettingsView({
                           </span>
                         </label>
                       </div>
+                    </div>
+                  </section>
+                )}
+
+                {activeTab === "debug" && (
+                  <section>
+                    <div className="flex flex-col gap-1 mb-8 px-1">
+                      <h3 className="text-[12px] font-bold text-muted/60 uppercase tracking-[0.15em] m-0 flex items-center gap-2">
+                        <Icon icon="mingcute:bug-line" className="text-sm" />
+                        {t("调试", "Debug")}
+                      </h3>
+                      <p className="text-xs text-muted/60 leading-relaxed mt-1">
+                        {t(
+                          "在任务表格标签列右侧显示每次执行的调试信息：Token 缓存率、总价与 Session ID 前缀。",
+                          "Show per-run debug info next to the tags column: token cache rate, total price and Session ID prefix."
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-3 px-1">
+                      <button
+                        type="button"
+                        className={`ui-btn ui-btn--sm justify-start w-full sm:w-auto ${
+                          debugColumnEnabled ? "ui-btn--accent" : "ui-btn--ghost"
+                        }`}
+                        onClick={() => onDebugColumnChange(!debugColumnEnabled)}
+                      >
+                        <Icon
+                          icon={debugColumnEnabled ? "mingcute:eye-close-line" : "mingcute:eye-2-line"}
+                          className="text-[15px]"
+                        />
+                        {debugColumnEnabled
+                          ? t("关闭调试列", "Hide debug column")
+                          : t("显示调试列", "Show debug column")}
+                      </button>
+                      <span className="text-[12px] text-muted leading-relaxed">
+                        {debugColumnEnabled
+                          ? t("调试列已显示在任务表格中。", "The debug column is now visible in the task table.")
+                          : t("调试列当前隐藏。", "The debug column is currently hidden.")}
+                      </span>
                     </div>
                   </section>
                 )}

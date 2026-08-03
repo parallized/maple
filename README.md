@@ -11,15 +11,21 @@ Maple 依赖于你本机的各种 AI 服务包括 Codex, Claude 等等，建议�
 
 ### 本地运行
 
-1. 安装 Maple Standalone 版本
+1. 安装 Maple（同一安装脚本会同时安装 CLI 与本地一体版，期间可询问是否安装 Playwright 截图功能）
+
+Windows：
 
 ```powershell
-irm https://maplecode.art/install-local.ps1 | iex
-
-curl -fsSL https://maplecode.art/install-local.sh | sh
+irm https://maplecode.art/install.ps1 | iex
 ```
 
-2. 在弹出的浏览器页面开始工作
+macOS / Linux：
+
+```sh
+curl -fsSL https://maplecode.art/install.sh | sh
+```
+
+2. 运行 `maple-local` 启动本地服务，在弹出的浏览器页面直接进入看板开始工作
 
 ### 客户端 + 服务端
 
