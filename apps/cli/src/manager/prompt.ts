@@ -1,6 +1,9 @@
 import type { ProjectManagerJob } from "@maple/protocol";
 import type { ProjectManagerSnapshot } from "./project-snapshot";
 
+/** 全项目标签总量控制：聚焦大模块分类，避免无限新增。 */
+const PROJECT_TAG_LIMIT = 30;
+
 export interface ProjectManagerPromptOptions {
   resuming?: boolean;
   includeStableContext?: boolean;
@@ -28,6 +31,19 @@ function compactWorkflows(job: ProjectManagerJob): string {
       summary: workflow.summary.slice(0, 240)
     }))
   );
+}
+
+/** 项目已有标签目录（去重、截断到全项目上限），供 Leader 优先复用。 */
+function compactTagCatalog(job: ProjectManagerJob): string {
+  if (!job.project.tagCatalog) return "（暂无）";
+  try {
+    const parsed: unknown = JSON.parse(job.project.tagCatalog);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "（暂无）";
+    const tags = Object.keys(parsed).slice(0, PROJECT_TAG_LIMIT);
+    return tags.length > 0 ? tags.join("、") : "（暂无）";
+  } catch {
+    return "（暂无）";
+  }
 }
 
 function outputLanguageInstruction(job: ProjectManagerJob): string {
@@ -66,6 +82,7 @@ export function buildProjectManagerPrompt(
     snapshot.workingState,
     `Workflow：${compactWorkflows(job)}`,
     `历史：${compactHistory(job)}`,
+    `已有标签（全项目保持 ${PROJECT_TAG_LIMIT} 个以内）：${compactTagCatalog(job)}`,
     `新 Todo：${JSON.stringify({
       id: job.todo.id,
       title: job.todo.title.slice(0, 240),
@@ -73,7 +90,7 @@ export function buildProjectManagerPrompt(
       requestedWorkerKind: job.todo.workerKind,
       tags: job.todo.tags
     })}`,
-    "自行判断，给 Todo 打 1-3 个最贴切的标签（tags，语言跟随用户）。",
+    "给 Todo 打 1-3 个标签（tags）：聚焦项目大模块，优先复用已有标签，全项目不超过 30 个，语言跟随用户。",
     "立即返回派单 JSON。"
   ].join("\n");
 }

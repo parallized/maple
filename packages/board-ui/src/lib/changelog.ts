@@ -8,6 +8,28 @@ export type ChangelogEntry = {
 /** 版本更新历史，新版本追加在数组最前。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.7",
+    date: "2026-08-05",
+    highlights: {
+      zh: [
+        "Windows 沙箱权限自动修复",
+        "连接官方服务一键直达，不再选地址",
+        "TUI 可直接更新到新版",
+        "Leader 标签总量控制并优先复用",
+        "看板标签列自适应宽度",
+        "安装命令去掉 local 脚本",
+      ],
+      en: [
+        "Windows sandbox ACL self-heal",
+        "Connect cloud with one click",
+        "Update right from the TUI",
+        "Leader reuses existing tags",
+        "Tag column auto-width",
+        "Install command drops local",
+      ],
+    },
+  },
+  {
     version: "0.2.6",
     date: "2026-08-03",
     highlights: {

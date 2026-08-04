@@ -1,7 +1,7 @@
 {
   "name": "@maple/web",
   "private": true,
-  "version": "0.2.6",
+  "version": "0.2.7",
   "type": "module",
   "scripts": {
     "icons": "bun scripts/generate-icon-subset.ts",

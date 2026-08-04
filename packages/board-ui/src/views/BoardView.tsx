@@ -1,6 +1,6 @@
 import { Icon } from "@iconify/react";
 import { AnimatePresence, motion } from "framer-motion";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { InlineTaskInput } from "../components/InlineTaskInput";
 import { PopoverMenu, type PopoverMenuItem } from "../components/PopoverMenu";
@@ -112,6 +112,24 @@ export function BoardView({
   const cardRef = useRef<HTMLDivElement>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>(DEFAULT_COL_WIDTHS);
   const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null);
+
+  // 标签列自适应：按当前可见行最宽的标签内容自动加宽，避免标签被固定宽度/渐变遮罩噶断。
+  useLayoutEffect(() => {
+    if (!tableRef.current) return;
+    let maxContent = 0;
+    const tagCells = Array.from(tableRef.current.querySelectorAll("td.col-tags .tags-inline"));
+    for (const cell of tagCells) {
+      // 只统计实际溢出（被裁切）的行，内容放得下时不再加宽，避免循环重排。
+      if (cell.scrollWidth > cell.clientWidth) {
+        maxContent = Math.max(maxContent, cell.scrollWidth);
+      }
+    }
+    if (maxContent <= 0) return;
+    const target = Math.min(Math.max(Math.round(maxContent) + 10, 120), 420);
+    if (Math.abs(target - colWidths.tags) > 1) {
+      setColWidths((prev) => ({ ...prev, tags: target }));
+    }
+  }, [boardProject, colWidths.tags]);
 
   function handleResizeStart(col: string, e: React.MouseEvent) {
     e.preventDefault();
@@ -866,11 +884,6 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           ) : null}
         </div>
       </td>
-      {debugColumnEnabled ? (
-        <td className="col-debug">
-          <span className="task-debug-text">{debugText || "—"}</span>
-        </td>
-      ) : null}
       {/* 特殊状态图标列：暂时整列隐藏，保留实现以便恢复。
       <td className="col-taskIcon">
         {(() => {
@@ -1018,6 +1031,11 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           })}
         </div>
       </td>
+      {debugColumnEnabled ? (
+        <td className="col-debug">
+          <span className="task-debug-text">{debugText || "—"}</span>
+        </td>
+      ) : null}
       <td className="col-actions">
         <motion.button
           whileTap={{ scale: 0.85 }}

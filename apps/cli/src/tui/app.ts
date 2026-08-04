@@ -4,9 +4,10 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { ParsedArgs } from "../args";
 import { unbindRunner } from "../auth/unbind";
-import { helpText, prepareConnection, resolveRunnerConcurrency } from "../commands";
+import { CLI_VERSION, helpText, prepareConnection, resolveRunnerConcurrency } from "../commands";
 import { loadConfig, normalizeServerUrl } from "../config/store";
 import type { CliConfig } from "../config/types";
+import { applyCliUpdate, fetchLatestCliVersion, isNewerVersion } from "../update/updater";
 import { displayDashboardUrl } from "../standalone/layout";
 import { detectTerminalCapabilities, isMsysPtySession, shellLabel, type TerminalCapabilities } from "../terminal/capabilities";
 import { FullscreenSession } from "../terminal/fullscreen";
@@ -16,8 +17,6 @@ import {
   confirm,
   createWidgetContext,
   pause,
-  selectOne,
-  textInput,
   type SelectOption,
   type WidgetContext
 } from "../terminal/widgets";
@@ -42,10 +41,8 @@ function mainMenuTitle(config: CliConfig): string {
   return `${server} · 执行端 ${runner} · 项目 ${config.projects.length}`;
 }
 
-const SERVER_PRESETS: SelectOption[] = [
-  { value: "https://maplecode.art", label: "官方服务", hint: "maplecode.art", icon: "🌐" },
-  { value: "http://127.0.0.1:45820", label: "本地开发", hint: "127.0.0.1:45820", icon: "🏠" }
-];
+/** 「连接官方服务」直接使用的官方云端地址，不再弹出地址选择。 */
+const OFFICIAL_SERVER_URL = "https://maplecode.art";
 
 export const MAIN_MENU_OPTIONS: SelectOption[] = [
   { value: "connect", label: "连接官方服务", hint: "连接 Maple 云端并领取 Todo 执行", icon: "🚀" },
@@ -56,14 +53,30 @@ export const MAIN_MENU_OPTIONS: SelectOption[] = [
   { value: "exit", label: "退出", icon: "🚪" }
 ];
 
-/** 菜单选项：本地一体版不提供「启动本地服务」，连接项指向本机服务。 */
-function mainMenuOptionsFor(options: TuiOptions): SelectOption[] {
-  if (!options.standalone) return MAIN_MENU_OPTIONS;
-  return MAIN_MENU_OPTIONS
-    .filter((item) => item.value !== "local" && item.value !== "unbind")
-    .map((item) => item.value === "connect"
-      ? { ...item, label: "连接本地服务", hint: "在本机运行 Runner" }
-      : item);
+/** 菜单选项：本地一体版不提供「启动本地服务」，连接项指向本机服务；
+ *  有可用新版本时在退出前插入「更新」项。 */
+export function mainMenuOptionsFor(
+  options: TuiOptions,
+  updateVersion: string | null = null
+): SelectOption[] {
+  const base = !options.standalone
+    ? MAIN_MENU_OPTIONS
+    : MAIN_MENU_OPTIONS
+      .filter((item) => item.value !== "local" && item.value !== "unbind")
+      .map((item) => item.value === "connect"
+        ? { ...item, label: "连接本地服务", hint: "在本机运行 Runner" }
+        : item);
+  if (!updateVersion) return base;
+  return [
+    ...base.slice(0, -1),
+    {
+      value: "update",
+      label: `更新到 v${updateVersion}`,
+      hint: "下载最新 CLI",
+      icon: "⬆️"
+    },
+    base[base.length - 1]!
+  ];
 }
 
 export interface TuiOptions {
@@ -71,26 +84,6 @@ export interface TuiOptions {
   standalone?: boolean;
   /** 本机一体版启动后直接进入 Runner，不停留在命令菜单。 */
   autoConnect?: boolean;
-}
-
-/** Server 地址：预设直选，或进入手动输入。返回 null 表示取消。 */
-async function askServerUrl(ctx: WidgetContext, config: CliConfig): Promise<string | null> {
-  const current = (process.env.MAPLE_SERVER_URL ?? config.serverUrl ?? "").trim();
-  const options: SelectOption[] = [...SERVER_PRESETS, { value: "__custom", label: "手动输入…", icon: "📝" }];
-  const initial = SERVER_PRESETS.some((preset) => preset.value === current)
-    ? current
-    : current
-      ? "__custom"
-      : SERVER_PRESETS[0]!.value;
-  const picked = await selectOne(ctx, "Server 地址", options, initial);
-  if (picked === null) return null;
-  if (picked !== "__custom") return picked;
-  const input = await textInput(ctx, "Server 地址", {
-    defaultValue: current,
-    placeholder: "http://127.0.0.1:45820",
-    validate: (value) => (value.trim() ? null : "请输入 Server 地址。")
-  });
-  return input === null ? null : input.trim();
 }
 
 export async function runTui(configPath: string, options: TuiOptions = {}): Promise<void> {
@@ -113,10 +106,20 @@ export async function runTui(configPath: string, options: TuiOptions = {}): Prom
       await connectWizard(ctx, cap, configPath, options);
       return;
     }
+    // 会话内只检查一次可用更新；无 Server 或读取失败时静默返回 null。
+    let cachedUpdateVersion: string | null | undefined;
+    const availableUpdateVersion = async (serverUrl: string): Promise<string | null> => {
+      if (cachedUpdateVersion !== undefined) return cachedUpdateVersion;
+      const latest = await fetchLatestCliVersion(serverUrl);
+      cachedUpdateVersion = latest && isNewerVersion(CLI_VERSION, latest) ? latest : null;
+      return cachedUpdateVersion;
+    };
     for (;;) {
       fullscreen.clear();
       const config = loadConfig(configPath);
-      const menuOptions = mainMenuOptionsFor(options);
+      const serverUrl = (options.fixedServerUrl ?? config.serverUrl ?? "").trim();
+      const updateVersion = serverUrl ? await availableUpdateVersion(serverUrl) : null;
+      const menuOptions = mainMenuOptionsFor(options, updateVersion);
       const choice = await selectMainMenu(ctx, mainMenuTitle(config), menuOptions, "connect");
       if (choice === null || choice === "exit") return;
       try {
@@ -125,6 +128,7 @@ export async function runTui(configPath: string, options: TuiOptions = {}): Prom
         else if (choice === "unbind") await unbindScreen(ctx, configPath);
         else if (choice === "status") await statusScreen(ctx, cap, configPath);
         else if (choice === "help") await pause(ctx, helpText().trim().split("\n"));
+        else if (choice === "update") await updateScreen(ctx, configPath, serverUrl);
       } catch (error) {
         await pause(ctx, ctx.style.danger(`操作失败：${errorMessage(error)}`));
       }
@@ -154,16 +158,22 @@ async function unbindScreen(ctx: WidgetContext, configPath: string): Promise<voi
   await pause(ctx, ctx.style.success("已解除绑定。再次连接时需要重新在浏览器授权。"));
 }
 
+async function updateScreen(ctx: WidgetContext, _configPath: string, serverUrl: string): Promise<void> {
+  const result = await applyCliUpdate(serverUrl);
+  await pause(
+    ctx,
+    result.ok ? ctx.style.success(result.message) : ctx.style.danger(result.message)
+  );
+}
+
 async function connectWizard(
   ctx: WidgetContext,
   cap: TerminalCapabilities,
   configPath: string,
   options: TuiOptions
 ): Promise<void> {
-  const config = loadConfig(configPath);
-
-  const serverInput = options.fixedServerUrl ?? await askServerUrl(ctx, config);
-  if (serverInput === null) return;
+  // 直接连接：本地一体版用固定本地地址；官方路径按环境变量覆盖，否则直连云端，不再弹出地址选项。
+  const serverInput = options.fixedServerUrl ?? (process.env.MAPLE_SERVER_URL?.trim() || OFFICIAL_SERVER_URL);
   const serverUrl = normalizeServerUrl(serverInput);
 
   const args: ParsedArgs = {

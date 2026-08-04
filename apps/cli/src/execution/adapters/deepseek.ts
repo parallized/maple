@@ -1,5 +1,6 @@
 import type { CodingAgentAdapter } from "./types";
 import { CODEX_AUTOMATION_PREFIX, createCodexOutputParser } from "./codex";
+import { prepareCodexWindowsSandbox } from "../windows-sandbox";
 
 const DEFAULT_MODEL = "deepseek-v4-flash";
 const PROVIDER_ID = "maple_deepseek";
@@ -64,6 +65,9 @@ export const deepSeekAdapter: CodingAgentAdapter = {
       ...(Object.keys(commandEnv).length > 0 ? { env: commandEnv } : {}),
       stdin: prompt
     };
+  },
+  async prepareRun({ cwd, readOnly, additionalWritableDirectories }) {
+    return prepareCodexWindowsSandbox(cwd, { readOnly, additionalWritableDirectories });
   },
   createOutputParser: () => createCodexOutputParser("DeepSeek")
 };

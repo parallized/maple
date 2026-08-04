@@ -11,6 +11,7 @@ import {
 import { ExecutionReportCollector } from "./report";
 import { createSecretRedactor } from "./secret-redaction";
 import type { WorkerShell } from "./shells";
+import { describeWindowsSandboxFailure } from "./windows-sandbox";
 import { buildResolvedWorkerCommand } from "./worker-command";
 
 const MAX_CAPTURE_CHARS = 200_000;
@@ -43,6 +44,8 @@ export interface ProcessExecutionOptions {
   additionalWritableDirectories?: string[];
   /** Server 下发的单次运行凭据；只保留在当前任务内存中。 */
   deepSeekApiKey?: string;
+  /** 跳过启动前宿主预检（测试或调用方已自行处理宿主环境时使用）。 */
+  skipPreparation?: boolean;
   /** Session 一经 Provider 确认就立即持久化，避免长任务中途退出后丢失续接点。 */
   onSession?: (sessionId: string) => void;
   onLog: (entry: RunLogEntry) => Promise<void>;
@@ -299,6 +302,30 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
     };
   }
 
+  /** Windows 沙箱启动前自愈 / 预检：尽力补齐工作区写权限，或提示用户处理宿主环境问题。 */
+  if (adapter.prepareRun && !options.skipPreparation) {
+    try {
+      const preparation = await adapter.prepareRun({
+        cwd: options.cwd,
+        readOnly: options.readOnly,
+        additionalWritableDirectories: options.additionalWritableDirectories
+      });
+      const note = preparation?.note?.trim();
+      if (note && preparation) {
+        await emit([{
+          stream: "system",
+          kind: preparation.warning ? "warning" : "lifecycle",
+          level: preparation.warning ? "warning" : "info",
+          status: "progress",
+          title: preparation.warning ? "Windows 沙箱权限不足" : "Windows 沙箱准备",
+          content: note
+        }]);
+      }
+    } catch {
+      // 预检是尽力而为；异常不阻断启动，进程失败时由运行时诊断兜底。
+    }
+  }
+
   let subprocess: PipedSubprocess | null = null;
   let forceTermination: Promise<void> | null = null;
   let gracefulTermination: Promise<void> | null = null;
@@ -371,6 +398,9 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
       ? detectPermissionBlocker({ operationalOutput, assistantOutput })
       : null;
     const success = exitCode === 0 && !stopped() && !permissionBlocker;
+    const sandboxFailure = success || permissionBlocker
+      ? null
+      : describeWindowsSandboxFailure(rawOutput);
     const report = reportCollector.value();
     await emit([
       {
@@ -385,7 +415,7 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
             ? permissionBlocker
             : success
               ? `${adapter.label} 已完成任务。`
-              : `${adapter.label} 退出，代码 ${exitCode}。`
+              : sandboxFailure ?? `${adapter.label} 退出，代码 ${exitCode}。`
       }
     ]);
     return {
@@ -400,7 +430,7 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
         ? null
         : stopped()
           ? interruptionMessage()
-          : permissionBlocker ?? redact(tail(rawOutput, 4_000)),
+          : permissionBlocker ?? sandboxFailure ?? redact(tail(rawOutput, 4_000)),
       usage: resolveFinalUsage(),
       sessionId: observedSessionId ?? options.resumeSessionId ?? null,
       sessionUnavailable: Boolean(options.resumeSessionId) && !success && sessionUnavailable(rawOutput)

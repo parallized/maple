@@ -293,7 +293,8 @@ describe("Project manager dispatch", () => {
     expect(prompt).toContain("不要 Markdown、解释或实施步骤");
     expect(prompt).toContain("只返回 JSON");
     expect(prompt).toContain("立即返回派单 JSON");
-    expect(prompt).toContain("自行判断，给 Todo 打 1-3 个最贴切的标签（tags，语言跟随用户）。");
+    expect(prompt).toContain("给 Todo 打 1-3 个标签（tags）：聚焦项目大模块，优先复用已有标签，全项目不超过 30 个，语言跟随用户。");
+    expect(prompt).toContain("已有标签（全项目保持 30 个以内）：（暂无）");
     expect(prompt).toContain('"tags":["标签1","标签2"]');
     expect(prompt).toContain("不改派用户指定的 Worker");
     expect(prompt).toContain("只有任务彼此独立且可安全并发时才新建 Workflow");
@@ -301,6 +302,20 @@ describe("Project manager dispatch", () => {
     expect(prompt).toContain('"workerKind":"codex"');
     expect(prompt).not.toContain("executionMode");
     expect(prompt.indexOf("AGENTS.md")).toBeLessThan(prompt.indexOf("新 Todo"));
+  });
+
+  it("feeds the registered tag catalog to the Leader so it reuses module-level tags", () => {
+    const job = managerJob();
+    job.project.tagCatalog = JSON.stringify({
+      "前端": { color: "#9aa7a0", icon: "mingcute:code-line" },
+      "后端": { color: "#a3a0ab", icon: "mingcute:server-line" },
+      "数据库": { color: "#97a4b3", icon: "mingcute:database-line" }
+    });
+    const prompt = buildProjectManagerPrompt(job, {
+      stableContext: "AGENTS.md",
+      workingState: "Working tree clean."
+    });
+    expect(prompt).toContain("已有标签（全项目保持 30 个以内）：前端、后端、数据库");
   });
 
   it("uses one configured available Agent as the persistent project manager", () => {

@@ -42,9 +42,9 @@ const COPY = {
     copyLabel: "复制安装命令",
     copiedLabel: "已复制",
     commands: {
-      windows: "irm https://maplecode.art/install-local.ps1 | iex",
-      mac: "curl -fsSL https://maplecode.art/install-local.sh | sh",
-      linux: "curl -fsSL https://maplecode.art/install-local.sh | sh"
+      windows: "irm https://maplecode.art/install.ps1 | iex",
+      mac: "curl -fsSL https://maplecode.art/install.sh | sh",
+      linux: "curl -fsSL https://maplecode.art/install.sh | sh"
     }
   },
   footer: {

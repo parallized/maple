@@ -21,6 +21,14 @@ export interface AgentCommandOptions {
   additionalWritableDirectories?: string[];
 }
 
+/** Agent 启动前的宿主级预检结果；note 存在时才需要展示。 */
+export interface AgentRunPreparation {
+  /** 面向用户的简短说明（已修复 / 需用户处理），为空表示无需提示。 */
+  note?: string;
+  /** note 属于需要用户介入的警告，而非已完成的自愈。 */
+  warning?: boolean;
+}
+
 export type AgentRunEventDraft = Omit<RunLogEntry, "sequence" | "occurredAt">;
 
 export interface AgentOutputParser {
@@ -44,5 +52,14 @@ export interface CodingAgentAdapter {
     env: Record<string, string | undefined>,
     options?: AgentCommandOptions
   ): WorkerCommand;
+  /**
+   * 启动前的宿主级预检（如 Windows 沙箱 ACL 自愈）。返回 note 时由执行器写入日志；
+   * 抛错不阻断启动，运行时诊断兜底。
+   */
+  prepareRun?(context: {
+    cwd: string;
+    readOnly?: boolean;
+    additionalWritableDirectories?: string[];
+  }): Promise<AgentRunPreparation | void>;
   createOutputParser(): AgentOutputParser;
 }

@@ -13,6 +13,7 @@ import {
   numberValue,
   stringValue
 } from "./output-parser";
+import { prepareCodexWindowsSandbox } from "../windows-sandbox";
 
 function itemEvents(value: Record<string, unknown>) {
   const item = nestedRecord(value, "item");
@@ -137,6 +138,9 @@ export const codexAdapter: CodingAgentAdapter = {
       ...(options?.isolatedHome ? { env: { CODEX_HOME: options.isolatedHome } } : {}),
       stdin: prompt
     };
+  },
+  async prepareRun({ cwd, readOnly, additionalWritableDirectories }) {
+    return prepareCodexWindowsSandbox(cwd, { readOnly, additionalWritableDirectories });
   },
   createOutputParser: () => createCodexOutputParser()
 };

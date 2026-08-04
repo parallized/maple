@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { TerminalCapabilities } from "../src/terminal/capabilities";
 import { FullscreenSession } from "../src/terminal/fullscreen";
 import { createStyle, createSymbols, displayWidth, stripAnsi } from "../src/terminal/style";
+import { mainMenuOptionsFor, MAIN_MENU_OPTIONS } from "../src/tui/app";
 import { buildMainMenuFrame } from "../src/tui/main-menu";
 import type { SelectOption } from "../src/terminal/widgets";
 
@@ -28,6 +29,29 @@ function frame(columns: number, rows: number) {
 }
 
 describe("TUI main menu", () => {
+  it("shows the update option only when a newer version is available", () => {
+    const plain = mainMenuOptionsFor({});
+    expect(plain.some((option) => option.value === "update")).toBe(false);
+
+    const withUpdate = mainMenuOptionsFor({}, "0.2.7");
+    const updateIndex = withUpdate.findIndex((option) => option.value === "update");
+    expect(updateIndex).toBeGreaterThanOrEqual(0);
+    expect(withUpdate[updateIndex]!.label).toContain("0.2.7");
+    // 更新项插在退出项之前
+    expect(withUpdate[withUpdate.length - 1]!.value).toBe("exit");
+  });
+
+  it("keeps the standalone update option before exit", () => {
+    const standalone = mainMenuOptionsFor({ standalone: true }, "0.2.7");
+    const updateIndex = standalone.findIndex((option) => option.value === "update");
+    expect(updateIndex).toBeGreaterThanOrEqual(0);
+    expect(standalone[standalone.length - 1]!.value).toBe("exit");
+    // 本地一体版不提供「启动本地服务 / 解除绑定」
+    expect(standalone.some((option) => option.value === "local")).toBe(false);
+    expect(standalone.some((option) => option.value === "unbind")).toBe(false);
+    expect(MAIN_MENU_OPTIONS.some((option) => option.value === "exit")).toBe(true);
+  });
+
   it("centers the vertical action group below the compact brand line", () => {
     const lines = frame(80, 24).map(stripAnsi);
     const brandRow = lines.findIndex((line) => line.includes("Maple CLI"));

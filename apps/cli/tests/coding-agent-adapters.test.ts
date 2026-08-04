@@ -575,6 +575,7 @@ describe("process execution lifecycle", () => {
       prompt: "run through cloud provider",
       signal: new AbortController().signal,
       deepSeekApiKey: apiKey,
+      skipPreparation: true,
       spawnProcess: (command, options) => {
         launchedCommand = command;
         childEnvironment = options.env;
@@ -597,6 +598,33 @@ describe("process execution lifecycle", () => {
     expect(launchedCommand.join(" ")).not.toContain(apiKey);
     expect(JSON.stringify(entries)).not.toContain(apiKey);
     expect(JSON.stringify(entries)).toContain("[REDACTED]");
+  });
+
+  it("translates a Windows sandbox setup refresh failure into actionable guidance", async () => {
+    const output = "helper_unknown_error: setup refresh had errors\n";
+    const entries: RunLogEntry[] = [];
+    const result = await executeWorker({
+      workerKind: "claude",
+      cwd: import.meta.dir,
+      prompt: "run",
+      signal: new AbortController().signal,
+      spawnProcess: (command, options) => Bun.spawn([
+        process.execPath,
+        "-e",
+        `process.stderr.write(${JSON.stringify(output)}); process.exit(1);`
+      ], {
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        detached: process.platform !== "win32"
+      }),
+      onLog: async (entry) => { entries.push(entry); }
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Codex Windows 沙箱");
+    expect(result.error).toContain("icacls");
+    expect(entries.some((entry) => entry.content.includes("Codex Windows 沙箱"))).toBe(true);
   });
 
   it("returns on the Leader terminal event without waiting for process exit", async () => {

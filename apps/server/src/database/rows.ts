@@ -336,7 +336,7 @@ export function toTodo(row: TodoRow): Todo {
     tags: parseTags(row.tags_json),
     detailsDoc: row.details_doc ?? undefined,
     usage:
-      row.usage_input_tokens !== undefined
+      row.usage_input_tokens != null
         ? {
             inputTokens: row.usage_input_tokens,
             cachedInputTokens: row.usage_cached_input_tokens ?? 0,

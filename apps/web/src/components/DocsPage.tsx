@@ -29,14 +29,10 @@ const DOC_GROUPS: DocGroup[] = [
         id: "install",
         title: "安装",
         blocks: [
-          { type: "p", text: "Maple 有两种用法，看你要不要多人协作、随时随地用。只想在自己电脑上跑就装本地版：数据完全自持，端口都不对外开放。要多平台、多人，就装 CLI 连服务器。" },
-          { type: "p", text: "本地运行（Standalone），二选一：" },
-          { type: "code", lang: "macOS / Linux", text: "curl -fsSL https://maplecode.art/install-local.sh | sh" },
-          { type: "code", lang: "Windows (PowerShell)", text: "irm https://maplecode.art/install-local.ps1 | iex" },
-          { type: "p", text: "装完会自动弹出浏览器页面，直接开始工作，不用登录也不用配对。" },
-          { type: "p", text: "要接服务器的话，改装这个：" },
+          { type: "p", text: "Maple 用一个安装脚本装齐 CLI 与本地一体版，安装时会询问是否安装 Playwright 截图功能。" },
           { type: "code", lang: "macOS / Linux", text: "curl -fsSL https://maplecode.art/install.sh | sh" },
           { type: "code", lang: "Windows (PowerShell)", text: "irm https://maplecode.art/install.ps1 | iex" },
+          { type: "p", text: "装完运行 maple 可连接官方服务，或在 TUI 中选择「启动本地服务」；也可以直接 maple-local 在本机单机运行，无需登录。" },
           { type: "tip", text: "建议在装 Maple 的时候顺手把本机的 Codex、Claude 这些 AI 服务调通——任务最后是靠它们干的。" }
         ]
       },

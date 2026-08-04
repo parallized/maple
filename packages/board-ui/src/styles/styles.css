@@ -248,7 +248,6 @@ h3 {
   background: color-mix(in srgb, var(--tag-color) 12%, transparent);
   border: none;
   color: color-mix(in srgb, var(--tag-color) 85%, var(--color-base-content));
-  font-weight: 600;
   font-size: 12px;
   padding: 0 6px;
   height: 18px;
