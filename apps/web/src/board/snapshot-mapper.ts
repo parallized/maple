@@ -74,7 +74,8 @@ export function mapTodoToTask(todo: Todo): Task {
     updatedAt: todo.updatedAt,
     reports,
     usage: todo.usage ?? null,
-    sessionId: todo.sessionId ?? null
+    sessionId: todo.sessionId ?? null,
+    dispatchBrief: todo.dispatchBrief ?? null
   };
 }
 
@@ -150,6 +151,7 @@ export function mapSnapshotToRunners(snapshot: DashboardSnapshot): RunnerSummary
     platform: runner.platform,
     state: runner.state,
     lastSeenAt: runner.lastSeenAt,
+    projectIds: runner.projectIds,
     supportedWorkers: runner.supportedWorkers?.filter((kind) => BOARD_WORKER_KINDS.has(kind)) as BoardWorkerKind[] | undefined,
     workerInventory: runner.workerInventory?.flatMap((item) => (
       BOARD_WORKER_KINDS.has(item.kind)

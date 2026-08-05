@@ -165,9 +165,11 @@ export class RunnerRepository {
                 (SELECT group_concat(project_id) FROM project_bindings WHERE runner_id = runners.id) AS project_ids
          FROM runners
          WHERE revoked_at IS NULL${workspaceId ? " AND workspace_id = ?" : ""}
-         ORDER BY last_seen_at DESC, name COLLATE NOCASE`
+         ORDER BY CASE WHEN last_seen_at IS NOT NULL AND last_seen_at >= ? THEN 0 ELSE 1 END,
+                  created_at ASC,
+                  name COLLATE NOCASE`
       )
-      .all(...(workspaceId ? [workspaceId] : [])) as RunnerRow[];
+      .all(...(workspaceId ? [workspaceId, offlineBefore] : [offlineBefore])) as RunnerRow[];
     return rows.map((row) => toRunner(row, offlineBefore));
   }
 

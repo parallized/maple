@@ -58,6 +58,21 @@ function parseJsonObject(output: string): Record<string, unknown> | null {
   return null;
 }
 
+function parseSelectedWorkerKind(
+  parsed: Record<string, unknown> | null,
+  job: ProjectManagerJob
+): WorkerKind {
+  const candidate = parsed?.selectedWorkerKind;
+  if (
+    typeof candidate === "string"
+    && (WORKER_KINDS as readonly string[]).includes(candidate)
+    && job.availableWorkers.includes(candidate as WorkerKind)
+  ) {
+    return candidate as WorkerKind;
+  }
+  return job.todo.workerKind;
+}
+
 function boundedString(value: unknown, fallback: string, max: number): string {
   const candidate = typeof value === "string" && value.trim() ? value.trim() : fallback;
   return candidate.trim().slice(0, max);
@@ -65,7 +80,7 @@ function boundedString(value: unknown, fallback: string, max: number): string {
 
 export function parseProjectManagerDecision(output: string, job: ProjectManagerJob): ProjectManagerDecision {
   const parsed = parseJsonObject(output);
-  const selectedWorkerKind = job.todo.workerKind;
+  const selectedWorkerKind = parseSelectedWorkerKind(parsed, job);
   const requestedWorkflowId = parsed?.workflowId;
   const existingWorkflow = typeof requestedWorkflowId === "string" && requestedWorkflowId !== "NEW"
     ? job.workflows.find(

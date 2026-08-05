@@ -5,6 +5,7 @@ import type { TagCatalog, Task, TaskArtifact, TaskStatus } from "../domain";
 import type { TaskWaitingKind } from "../lib/utils";
 import { WORKER_KINDS, type UiLanguage } from "../lib/constants";
 import { formatTagLabel } from "../lib/tag-label";
+import { sortTagsForDisplay } from "../lib/tag-sort";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { resolveTagIconMeta } from "../lib/task-icons";
 import { renderTaskMarkdown } from "../lib/task-markdown";
@@ -490,7 +491,7 @@ export function TaskDetailPanel({
             {task.tags.length === 0 && !tagEditing ? (
               <span className="text-muted text-[14px] opacity-40">无标签</span>
             ) : null}
-            {task.tags.map((tag) => (
+            {sortTagsForDisplay(task.tags, tagLanguage).map((tag) => (
               <span
                 key={tag}
                 className={`ui-badge ui-badge--sm ui-badge--tag inline-flex items-center gap-1 ${tagEditing ? "pr-0.5" : ""}`}

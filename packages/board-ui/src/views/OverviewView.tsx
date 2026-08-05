@@ -7,11 +7,13 @@ import { ProjectTokenChart, type ProjectTokenChartEntry } from "../components/Pr
 import type { RunnerSummary, WorkerKind } from "../domain";
 import type { UiLanguage } from "../lib/constants";
 import type { InstallTargetId } from "../lib/install-targets";
-import { runnerPlatformIcon } from "../lib/runner-icon";
 import { statusColorVar, statusDotClass } from "../lib/status-colors";
 import { Group } from "@visx/group";
 import { Pie } from "@visx/shape";
 import { motion } from "framer-motion";
+import { useState } from "react";
+import { RunnerPlatformIcon } from "../components/RunnerPlatformIcon";
+import { loadRunnerRemarks, saveRunnerRemark } from "../lib/runner-remarks";
 
 type OverviewViewProps = {
   uiLanguage: UiLanguage;
@@ -79,6 +81,22 @@ export function OverviewView({ uiLanguage, metrics, runners, workerAvailability,
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const now = Date.now();
   const onlineCount = runners.filter((r) => r.state === "online").length;
+  // Runner 备注名：本地存储的简短显示名，避免展示过长的机器名。
+  const [runnerRemarks, setRunnerRemarks] = useState<Record<string, string>>(() => loadRunnerRemarks());
+  const [editingRunnerId, setEditingRunnerId] = useState<string | null>(null);
+  const [remarkDraft, setRemarkDraft] = useState("");
+
+  function commitRunnerRemark(runnerId: string) {
+    saveRunnerRemark(runnerId, remarkDraft);
+    setRunnerRemarks((prev) => {
+      const next = { ...prev };
+      const trimmed = remarkDraft.trim();
+      if (trimmed) next[runnerId] = trimmed;
+      else delete next[runnerId];
+      return next;
+    });
+    setEditingRunnerId(null);
+  }
 
   // Show all workers on overview (install buttons available per-card)
   const allWorkers = workerAvailability;
@@ -222,7 +240,7 @@ export function OverviewView({ uiLanguage, metrics, runners, workerAvailability,
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 text-[12px] lg:text-[14px] font-medium text-muted font-sans">
                   <Icon icon="mingcute:link-line" className="text-[16px] lg:text-lg opacity-60 group-hover:opacity-100 transition-opacity" />
-                  <span>{t("已连接 Worker", "Connected Workers")}</span>
+                  <span>{t("已连接 Runner", "Connected Runners")}</span>
                 </div>
                 <span className="text-[12px] lg:text-[12px] text-muted font-mono tabular-nums">
                   {onlineCount}/{runners.length}
@@ -244,22 +262,70 @@ export function OverviewView({ uiLanguage, metrics, runners, workerAvailability,
                           className={`relative inline-flex rounded-full h-2 w-2 flex-none ${online ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.35)]" : "bg-zinc-400"}`}
                           title={online ? t("在线", "Online") : t("离线", "Offline")}
                         />
-                        <Icon icon={runnerPlatformIcon(runner.platform)} className="text-[14px] lg:text-sm flex-none" />
-                        <span className="text-[12px] lg:text-[14px] font-medium font-sans text-(--color-base-content) truncate flex-1 min-w-0">
-                          {runner.name || runner.hostname || runner.id.slice(0, 8)}
-                        </span>
-                        {runner.supportedWorkers && runner.supportedWorkers.length > 0 ? (
-                          <span
-                            className="flex items-center gap-1 flex-none"
-                            title={t("该执行端支持的 Worker", "Workers available on this runner")}
-                          >
-                            {runner.supportedWorkers.map((kind) => (
-                              <WorkerLogo key={kind} kind={kind} size={13} className="opacity-70" />
-                            ))}
+                        <RunnerPlatformIcon platform={runner.platform} className="text-[14px] lg:text-sm" />
+                        {editingRunnerId === runner.id ? (
+                          <>
+                            <input
+                              autoFocus
+                              value={remarkDraft}
+                              placeholder={runner.name || runner.hostname}
+                              onChange={(event) => setRemarkDraft(event.currentTarget.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  commitRunnerRemark(runner.id);
+                                } else if (event.key === "Escape") {
+                                  setEditingRunnerId(null);
+                                }
+                              }}
+                              onBlur={() => commitRunnerRemark(runner.id)}
+                              className="min-w-0 flex-1 ui-input h-7 px-2 text-[12px]"
+                            />
+                            <button
+                              type="button"
+                              className="flex-none text-(--color-primary) opacity-80 hover:opacity-100 transition-opacity"
+                              title={t("保存", "Save")}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => commitRunnerRemark(runner.id)}
+                            >
+                              <Icon icon="mingcute:check-line" className="text-[14px]" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span
+                              className="text-[12px] lg:text-[14px] font-medium font-sans text-(--color-base-content) truncate min-w-0"
+                              title={runner.name || runner.hostname}
+                            >
+                              {runnerRemarks[runner.id] || runner.name || runner.hostname || runner.id.slice(0, 8)}
+                            </span>
+                            <button
+                              type="button"
+                              className="flex-none opacity-50 hover:opacity-100 transition-opacity"
+                              title={t("编辑备注名", "Edit remark name")}
+                              onClick={() => {
+                                setEditingRunnerId(runner.id);
+                                setRemarkDraft(runnerRemarks[runner.id] ?? "");
+                              }}
+                            >
+                              <Icon icon="mingcute:edit-2-line" className="text-[13px]" />
+                            </button>
+                          </>
+                        )}
+                        <span className="ml-auto flex items-center gap-2.5 flex-none min-w-0">
+                          {runner.supportedWorkers && runner.supportedWorkers.length > 0 ? (
+                            <span
+                              className="flex items-center gap-1 flex-none"
+                              title={t("该执行端支持的 Worker", "Workers available on this runner")}
+                            >
+                              {runner.supportedWorkers.map((kind) => (
+                                <WorkerLogo key={kind} kind={kind} size={13} className="opacity-70" />
+                              ))}
+                            </span>
+                          ) : null}
+                          <span className="text-[10px] lg:text-[12px] text-muted opacity-70 font-mono whitespace-nowrap flex-none">
+                            {formatRelativeTime(runner.lastSeenAt, now)}
                           </span>
-                        ) : null}
-                        <span className="text-[10px] lg:text-[12px] text-muted opacity-70 font-mono whitespace-nowrap flex-none">
-                          {formatRelativeTime(runner.lastSeenAt, now)}
                         </span>
                       </div>
                     );

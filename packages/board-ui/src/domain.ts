@@ -91,6 +91,8 @@ export type RunnerSummary = {
   platform: string;
   state: RunnerState;
   lastSeenAt: string;
+  /** 该 Runner 绑定的项目 id（Server 快照提供；本地/旧平台缺失时按 undefined 处理）。*/
+  projectIds?: string[];
   /** CLI 上报的本机可用 Worker 工具;旧版 CLI 未上报时为 undefined。 */
   supportedWorkers?: WorkerKind[];
   /** CLI 解析出的 Worker 默认模型；不包含任何凭据或本机配置路径。 */
@@ -155,8 +157,10 @@ export type Task = {
   reports: TaskReport[];
   /** 最近一次执行尝试的 token 用量（调试列）。 */
   usage?: TaskTokenUsage | null;
-  /** 最近一次执行使用的 Agent 会话 ID（调试列 SID 前缀）。 */
+  /** 最近一次执行使用的 Agent 会话 ID（调试列据此派生短 SID）。 */
   sessionId?: string | null;
+  /** Leader 发起说明（todo_routes.dispatch_brief）。 */
+  dispatchBrief?: string | null;
 };
 
 /** 单个项目的 token 用量按 Worker 类型分桶（用于概览柱状图）。 */

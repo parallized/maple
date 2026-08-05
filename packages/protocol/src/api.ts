@@ -349,7 +349,7 @@ export interface CompleteJobRequest {
   summary?: string;
   error?: string;
   usage?: TokenUsage | null;
-  /** 该次执行使用的 Agent 会话 ID（调试列展示 SID 前缀）。 */
+  /** 该次执行使用的 Agent 会话 ID（调试列据此派生短 SID）。 */
   sessionId?: string | null;
   /** Token usage of the Leader PM failure report generated after this Worker failed. */
   leaderUsage?: TokenUsage | null;

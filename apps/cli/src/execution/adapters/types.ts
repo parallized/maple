@@ -19,6 +19,8 @@ export interface AgentCommandOptions {
   resumeSessionId?: string;
   /** Maple 管理的任务级目录；Agent 只能在有明确用途时额外写入这些目录。 */
   additionalWritableDirectories?: string[];
+  /** 当前进程本身已运行在 Codex Windows 沙箱会话内时，跳过内层 Codex 沙箱（避免 setup refresh 无 WRITE_DAC 失败）。 */
+  windowsSandboxBypass?: boolean;
 }
 
 /** Agent 启动前的宿主级预检结果；note 存在时才需要展示。 */
@@ -60,6 +62,7 @@ export interface CodingAgentAdapter {
     cwd: string;
     readOnly?: boolean;
     additionalWritableDirectories?: string[];
+    windowsSandboxBypass?: boolean;
   }): Promise<AgentRunPreparation | void>;
   createOutputParser(): AgentOutputParser;
 }

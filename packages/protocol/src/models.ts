@@ -270,8 +270,10 @@ export interface Todo {
   detailsDoc?: string;
   /** 最近一次成功执行尝试的 token 用量（供看板调试列展示）。 */
   usage?: TokenUsage | null;
-  /** 最近一次执行使用的 Agent 会话 ID（供看板调试列展示 SID 前缀）。 */
+  /** 最近一次执行使用的 Agent 会话 ID（供看板调试列派生短 SID）。 */
   sessionId?: string | null;
+  /** Leader 发起说明（todo_routes.dispatch_brief）。 */
+  dispatchBrief?: string | null;
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;

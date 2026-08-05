@@ -18,7 +18,7 @@ import { defaultRunnerName } from "./runner/runner-name";
 import { authorizeRunner } from "./auth/device-authorization";
 import { hostPlatform } from "./host-platform";
 
-export const CLI_VERSION = "0.2.7";
+export const CLI_VERSION = "0.2.8";
 
 function workerOption(args: ParsedArgs): WorkerKind {
   const value = stringOption(args, "worker") ?? "codex";

@@ -201,7 +201,6 @@ describe("Project manager dispatch", () => {
       workflowId: "workflow-auth",
       workflowTitle: "Token refresh",
       workflowSummary: "Finish refresh handling and its tests.",
-      workerKind: "kimi",
       dispatchBrief: "Continue the existing authentication context.",
       tags: ["auth", "backend"]
     }), managerJob());
@@ -214,6 +213,34 @@ describe("Project manager dispatch", () => {
       dispatchBrief: "Continue the existing authentication context.",
       tags: ["auth", "backend"]
     });
+  });
+
+  it("honors a Leader-selected Worker that is available", () => {
+    const decision = parseProjectManagerDecision(JSON.stringify({
+      workflowId: "workflow-auth",
+      workflowTitle: "Token refresh",
+      workflowSummary: "Finish refresh handling and its tests.",
+      selectedWorkerKind: "kimi",
+      dispatchBrief: "UI/UX 按宪法交给 Kimi。",
+      tags: ["ui"]
+    }), managerJob());
+    // workflow-auth 固定为 codex，与选中的 kimi 不匹配，因此必须新建 Workflow。
+    expect(decision.selectedWorkerKind).toBe("kimi");
+    expect(decision.workflowId).toBeNull();
+  });
+
+  it("falls back to the Todo Worker when the Leader picks an unavailable Worker", () => {
+    const job = managerJob();
+    job.availableWorkers = ["codex"];
+    const decision = parseProjectManagerDecision(JSON.stringify({
+      workflowId: "workflow-auth",
+      workflowTitle: "Token refresh",
+      workflowSummary: "Finish refresh handling and its tests.",
+      selectedWorkerKind: "kimi",
+      dispatchBrief: "Continue the existing authentication context."
+    }), job);
+    expect(decision.selectedWorkerKind).toBe("codex");
+    expect(decision.workflowId).toBe("workflow-auth");
   });
 
   it("caps Leader tags at three and filters them to the Todo language", () => {
@@ -288,7 +315,7 @@ describe("Project manager dispatch", () => {
       workingState: "Working tree clean."
     });
 
-    expect(prompt).toContain("只读，不修改项目，也不改派用户指定的 Worker");
+    expect(prompt).toContain("默认沿用用户指定 Worker（requestedWorkerKind）");
     expect(prompt).toContain("不要深度分析、搜索仓库或执行任务");
     expect(prompt).toContain("不要 Markdown、解释或实施步骤");
     expect(prompt).toContain("只返回 JSON");
@@ -296,12 +323,28 @@ describe("Project manager dispatch", () => {
     expect(prompt).toContain("给 Todo 打 1-3 个标签（tags）：聚焦项目大模块，优先复用已有标签，全项目不超过 30 个，语言跟随用户。");
     expect(prompt).toContain("已有标签（全项目保持 30 个以内）：（暂无）");
     expect(prompt).toContain('"tags":["标签1","标签2"]');
-    expect(prompt).toContain("不改派用户指定的 Worker");
-    expect(prompt).toContain("只有任务彼此独立且可安全并发时才新建 Workflow");
+    expect(prompt).toContain("仅当宪法明确要求把此类任务交给其他 Worker 时，返回 selectedWorkerKind");
+    expect(prompt).toContain("不同模块/主题必须 NEW");
     expect(prompt).toContain("Workflow 的 Worker 固定");
     expect(prompt).toContain('"workerKind":"codex"');
     expect(prompt).not.toContain("executionMode");
     expect(prompt.indexOf("AGENTS.md")).toBeLessThan(prompt.indexOf("新 Todo"));
+  });
+
+  it("includes both the Leader and project constitution in the Leader prompt", () => {
+    const job = managerJob();
+    job.executionSettings = {
+      ...DEFAULT_WORKSPACE_EXECUTION_SETTINGS,
+      leaderConstitution: "若 Kimi 可用，所有 UI/UX 界面任务必须交由 Kimi 完成。",
+      constitution: "所有 Worker 执行前阅读并遵守项目宪法。"
+    };
+    const prompt = buildProjectManagerPrompt(job, {
+      stableContext: "AGENTS.md",
+      workingState: "Working tree clean."
+    });
+    expect(prompt).toContain("Leader 宪法：若 Kimi 可用，所有 UI/UX 界面任务必须交由 Kimi 完成。");
+    expect(prompt).toContain("项目宪法：所有 Worker 执行前阅读并遵守项目宪法。");
+    expect(prompt).toContain('"selectedWorkerKind"');
   });
 
   it("feeds the registered tag catalog to the Leader so it reuses module-level tags", () => {

@@ -264,11 +264,19 @@ export class ProjectManagerService {
           todo_details: string;
         } | null;
       if (!route) return null;
-      if (
-        input.selectedWorkerKind !== route.worker_kind
-        || !availableWorkers.includes(route.worker_kind as WorkerKind)
-      ) {
+      const execution = this.settings.getExecution(workspaceId);
+      const hasConstitution =
+        execution.leaderConstitution.trim().length > 0 || execution.constitution.trim().length > 0;
+      const workerOverridden = input.selectedWorkerKind !== route.worker_kind;
+      if (workerOverridden && !hasConstitution) return null;
+      if (!availableWorkers.includes(input.selectedWorkerKind as WorkerKind)) {
         return null;
+      }
+      if (workerOverridden) {
+        this.database.run(
+          "UPDATE todos SET worker_kind = ?, updated_at = ? WHERE id = ?",
+          [input.selectedWorkerKind, now, todoId]
+        );
       }
 
       let workflowId = input.workflowId;
@@ -276,7 +284,7 @@ export class ProjectManagerService {
         const workflow = this.database
           .query("SELECT id, worker_kind FROM project_workflows WHERE id = ? AND project_id = ?")
           .get(workflowId, route.project_id) as Pick<WorkflowRow, "id" | "worker_kind"> | null;
-        if (!workflow || workflow.worker_kind !== route.worker_kind) return null;
+        if (!workflow || workflow.worker_kind !== input.selectedWorkerKind) return null;
         this.database.run(
           `UPDATE project_workflows SET title = ?, summary = ?, updated_at = ? WHERE id = ?`,
           [input.workflowTitle.trim(), input.workflowSummary.trim(), now, workflowId]
@@ -286,7 +294,7 @@ export class ProjectManagerService {
         this.database.run(
           `INSERT INTO project_workflows(id, project_id, worker_kind, title, summary, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [workflowId, route.project_id, route.worker_kind, input.workflowTitle.trim(), input.workflowSummary.trim(), now, now]
+          [workflowId, route.project_id, input.selectedWorkerKind, input.workflowTitle.trim(), input.workflowSummary.trim(), now, now]
         );
       }
 
@@ -295,7 +303,6 @@ export class ProjectManagerService {
         const tagRow = this.database
           .query("SELECT tags_json FROM todos WHERE id = ?")
           .get(todoId) as { tags_json: string | null } | null;
-        const execution = this.settings.getExecution(workspaceId);
         const language = resolveTagLanguage(
           execution.aiOutputLanguage,
           `${route.todo_title} ${route.todo_details}`

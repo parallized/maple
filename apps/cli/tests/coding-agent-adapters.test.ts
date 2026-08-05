@@ -91,6 +91,16 @@ describe("Coding Agent commands", () => {
     expect(deepseek.args).toContain('model_reasoning_effort="low"');
   });
 
+  it.each(["codex", "deepseek"] as const)(
+    "bypasses the inner Codex sandbox when Maple itself runs inside a Codex sandbox (%s)",
+    (kind) => {
+      const command = buildWorkerCommand(kind, PROMPT, "direct", {}, { windowsSandboxBypass: true });
+      expect(command.args).toContain("--dangerously-bypass-approvals-and-sandbox");
+      expect(command.args).not.toContain("--sandbox");
+      expect(command.args).not.toContain("workspace-write");
+    }
+  );
+
   it("isolates a DeepSeek Leader from user-global and Maple MCP configuration", () => {
     const isolatedHome = "C:\\maple\\managers\\project-1\\deepseek-codex-home";
     const command = buildWorkerCommand("deepseek", PROMPT, "direct", {

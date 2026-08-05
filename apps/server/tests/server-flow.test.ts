@@ -1829,6 +1829,91 @@ describe("Maple Server execution flow", () => {
     expect("workflowExecutionMode" in secondClaim.job!).toBe(false);
   });
 
+  it("lets the Leader re-route an available Worker when a constitution mandates it", async () => {
+    const app = createTestApp();
+    const settingsUpdate = await request(app, "/api/settings/execution", {
+      method: "PATCH",
+      token: ADMIN_TOKEN,
+      body: { leaderConstitution: "若 Kimi 可用，所有 UI/UX 界面任务必须交由 Kimi 完成。" }
+    });
+    expect(settingsUpdate.status).toBe(200);
+
+    const pairing = (await (
+      await request(app, "/api/pairings", { method: "POST", token: ADMIN_TOKEN })
+    ).json()) as CreatePairingResponse;
+    const exchange = (await (
+      await request(app, "/api/pairings/exchange", {
+        method: "POST",
+        body: {
+          code: pairing.code,
+          runnerName: "Constitution runner",
+          hostname: "constitution-host",
+          platform: "test/x64",
+          version: "0.1.7",
+          supportedWorkers: ["codex", "kimi"],
+          capabilities: ["project_manager_v1"]
+        }
+      })
+    ).json()) as ExchangePairingResponse;
+    const registration = (await (
+      await request(app, "/api/runner/projects", {
+        method: "POST",
+        token: exchange.runnerToken,
+        body: {
+          externalKey: "local:constitution-flow",
+          name: "Constitution Project",
+          workspaceLabel: "constitution-flow"
+        }
+      })
+    ).json()) as RegisterProjectResponse;
+
+    const uiTodo = (await (
+      await request(app, `/api/projects/${registration.project.id}/todos`, {
+        method: "POST",
+        token: ADMIN_TOKEN,
+        body: {
+          title: "Redesign the settings page",
+          details: "UI/UX 界面任务，按宪法交给 Kimi。",
+          workerKind: "codex"
+        }
+      })
+    ).json()) as Todo;
+    const managerClaim = (await (
+      await request(app, "/api/runner/project-manager/claim", {
+        method: "POST",
+        token: exchange.runnerToken
+      })
+    ).json()) as ClaimProjectManagerJobResponse;
+    expect(managerClaim.job?.todo.id).toBe(uiTodo.id);
+    expect(managerClaim.job?.availableWorkers).toEqual(["codex", "kimi"]);
+
+    const dispatch = (await (
+      await request(app, `/api/runner/project-manager/${uiTodo.id}/complete`, {
+        method: "POST",
+        token: exchange.runnerToken,
+        body: {
+          leaseToken: managerClaim.job!.leaseToken,
+          managerWorkerKind: "codex",
+          selectedWorkerKind: "kimi",
+          workflowId: null,
+          workflowTitle: "UI/UX 交给 Kimi",
+          workflowSummary: "按宪法把所有 UI/UX 界面任务交给 Kimi。",
+          dispatchBrief: "按 Leader 宪法使用 Kimi 完成界面任务。"
+        }
+      })
+    ).json()) as CompleteProjectManagerJobResponse;
+    expect(dispatch.selectedWorkerKind).toBe("kimi");
+    expect(dispatch.workflow.workerKind).toBe("kimi");
+    expect(dispatch.todo.workerKind).toBe("kimi");
+
+    const executionClaim = (await (
+      await request(app, "/api/runner/jobs/claim", { method: "POST", token: exchange.runnerToken })
+    ).json()) as ClaimJobResponse;
+    expect(executionClaim.job?.todo.id).toBe(uiTodo.id);
+    expect(executionClaim.job?.attempt.workerKind).toBe("kimi");
+    expect(executionClaim.job?.workflow?.workerKind).toBe("kimi");
+  });
+
   it("persists todo tags, details doc and project tag catalog", async () => {
     const app = createTestApp();
 

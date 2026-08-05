@@ -3,6 +3,7 @@ import { getCodingAgentAdapter } from "../src/execution/adapters/registry";
 import {
   CODEX_SANDBOX_GROUP,
   describeWindowsSandboxFailure,
+  detectCodexSandboxSession,
   hasExplicitInheritableModifyAce,
   prepareCodexWindowsSandbox,
   type IcaclsResult,
@@ -80,7 +81,39 @@ describe("Windows sandbox failure diagnosis", () => {
   });
 });
 
+describe("Codex sandbox session detection", () => {
+  it("detects a session inside the Codex sandbox group", () => {
+    const output = [
+      "GROUP INFORMATION",
+      "-----------------",
+      "Everyone                               Well-known group S-1-1-0",
+      "holybread\\CodexSandboxUsers            Alias            S-1-5-21-1-2-1002",
+      "NT AUTHORITY\\Authenticated Users       Well-known group S-1-5-11"
+    ].join("\n");
+    expect(detectCodexSandboxSession(output)).toBe(true);
+  });
+
+  it("treats a normal user session as outside the Codex sandbox", () => {
+    const output = [
+      "GROUP INFORMATION",
+      "-----------------",
+      "Everyone                               Well-known group S-1-1-0",
+      "BUILTIN\\Administrators                 Alias            S-1-5-32-544",
+      "NT AUTHORITY\\Authenticated Users       Well-known group S-1-5-11"
+    ].join("\n");
+    expect(detectCodexSandboxSession(output)).toBe(false);
+  });
+});
+
 describe("Codex Windows sandbox pre-flight", () => {
+  it("skips ACL work and explains the bypass inside a Codex sandbox session", async () => {
+    const { tools, grants } = fakeTools({ rootAcl: "" });
+    const result = await prepareCodexWindowsSandbox("E:\\repo", { bypass: true }, tools);
+    expect(result.warning).toBeUndefined();
+    expect(result.note).toContain("跳过内层沙箱");
+    expect(grants).toEqual([]);
+  });
+
   it("is a no-op off Windows", async () => {
     const { tools } = fakeTools({ isWindows: false });
     expect(await prepareCodexWindowsSandbox("E:\\repo", {}, tools)).toEqual({});

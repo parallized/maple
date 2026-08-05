@@ -26,4 +26,12 @@ export { buildSidebarWorkers, formatReasoningEffort } from "./lib/worker-sidebar
 export type { SidebarWorkerItem, SidebarWorkerState } from "./lib/worker-sidebar";
 export { STORAGE_PROJECTS, WORKER_KINDS, DEFAULT_WORKER_CONFIGS } from "./lib/constants";
 export { loadProjects, loadTheme, loadUiLanguage, loadAiLanguage, loadConstitution, loadLeaderConstitution } from "./lib/storage";
-export { normalizeProjects, sortTasksByCompletion } from "./lib/utils";
+export {
+  normalizeProjects,
+  sortTasksByCompletion,
+  applyManualRowOrder,
+  reorderForDrop
+} from "./lib/utils";
+export { sortTagsForDisplay } from "./lib/tag-sort";
+export { groupProjectsByRunner } from "./lib/sidebar-groups";
+export type { RunnerProjectGroup } from "./lib/sidebar-groups";

@@ -8,6 +8,36 @@ export type ChangelogEntry = {
 /** 版本更新历史，新版本追加在数组最前。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.8",
+    date: "2026-08-05",
+    highlights: {
+      zh: [
+        "看板表格行拖拽排序",
+        "状态徽标与 hover 条带修复",
+        "概览环形图与 token 用量表格",
+        "Runner 备注与稳定排序",
+        "调试列新增一键导出",
+        "树形连线与待确认图标优化",
+        "设置页并发滑块与提醒音频",
+        "返工任务自动上浮",
+        "CLI 沙箱自适应与派单约束",
+        "Runner 平台图标识别",
+      ],
+      en: [
+        "Drag rows to reorder the board",
+        "Status badge and hover strip fixes",
+        "Overview ring chart and token table",
+        "Runner remarks and stable sorting",
+        "One-click debug export",
+        "Tree guides and confirm icon polish",
+        "Concurrency slider and reminder audio",
+        "Reworked tasks float back up",
+        "CLI sandbox adaptivity and dispatch rules",
+        "Runner platform icon detection",
+      ],
+    },
+  },
+  {
     version: "0.2.7",
     date: "2026-08-05",
     highlights: {

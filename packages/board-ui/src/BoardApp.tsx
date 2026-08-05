@@ -37,6 +37,7 @@ import {
     createTaskReport,
     isTaskInFlight,
     normalizeProjects,
+    sessionSid,
     taskWaitingKind
   } from "./lib/utils";
 import { applyUiFont } from "./lib/ui-font";
@@ -182,7 +183,13 @@ function mergeExternalProjects(prev: Project[], incoming: Project[], preserveTas
       ...preservedLocalTasks,
       ...incomingProject.tasks.map((incomingTask) => {
         const localTask = localTaskById.get(incomingTask.id);
-        return localTask && preserveTaskIds.has(incomingTask.id) ? localTask : incomingTask;
+        if (localTask && preserveTaskIds.has(incomingTask.id)) return localTask;
+        if (!localTask) return incomingTask;
+        // 任务刚变成「已完成」（且本地未确认过）→ 标记待确认，用于显示黄色感叹号；
+        // 已确认过的保持已读状态，不被远端快照重置。
+        const becameDone = localTask.status !== "已完成" && incomingTask.status === "已完成";
+        const confirm = becameDone ? true : (localTask.needsConfirmation ?? false);
+        return confirm ? { ...incomingTask, needsConfirmation: true } : incomingTask;
       })
     ];
 
@@ -311,7 +318,9 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
     for (const worker of sidebarWorkers) {
       if (worker.state !== "online" && worker.state !== "offline") continue;
       const ids = worker.title.split(" / ").map((id) => id.trim()).filter(Boolean);
-      if (ids.length > 0) map[worker.kind] = ids;
+      if (ids.length === 0) continue;
+      const existing = map[worker.kind] ?? [];
+      map[worker.kind] = [...new Set([...existing, ...ids])];
     }
     return map;
   }, [sidebarWorkers]);
@@ -346,13 +355,73 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
           modelIdsByKind
         );
         const priceYuan = usd === null ? null : usd * USD_TO_CNY_RATE;
-        const sid = task.sessionId ? task.sessionId.slice(0, 3).toUpperCase() : "—";
+        const sid = task.sessionId ? sessionSid(task.sessionId) : "—";
         map[task.id] =
           `缓存率 ${cacheRate.toFixed(1)}% 总价 ${priceYuan === null ? "—" : priceYuan.toFixed(3)} 元 SID ${sid}`;
       }
     }
     return map;
   }, [projects, modelPricing, modelIdsByKind]);
+
+  /** 调试导出：逐个任务导出 title / 报告 / Token 消耗 / Leader 发起说明。 */
+  function exportProjectDebug(projectId: string) {
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) return;
+    const lines: string[] = [];
+    lines.push(`# 调试导出 · ${project.name}`);
+    lines.push(`导出时间：${new Date().toLocaleString()}`);
+    lines.push("");
+    const taskLines = project.tasks.flatMap((task, index) => {
+      const block: string[] = [];
+      block.push(`## ${index + 1}. ${task.title}（${task.status}）`);
+      block.push(`- Worker：${task.workerKind}`);
+      const brief = task.dispatchBrief?.trim();
+      block.push(`- Leader 发起说明：${brief || "无"}`);
+      if (task.usage) {
+        const { inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens } = task.usage;
+        const totalInput = inputTokens + cachedInputTokens;
+        const cacheRate = totalInput > 0 ? (cachedInputTokens / totalInput) * 100 : 0;
+        const usd = estimateTokenCostUsd(
+          [{ workerKind: task.workerKind, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens }],
+          modelPricing,
+          modelIdsByKind
+        );
+        const priceYuan = usd === null ? null : usd * USD_TO_CNY_RATE;
+        const total = inputTokens + cachedInputTokens + outputTokens + reasoningOutputTokens;
+        block.push("- Token 消耗：");
+        block.push(`  - 输入 ${inputTokens}（缓存命中 ${cachedInputTokens}，缓存率 ${cacheRate.toFixed(1)}%）`);
+        block.push(`  - 输出 ${outputTokens}，推理输出 ${reasoningOutputTokens}，合计 ${total} token`);
+        block.push(`  - 总价 ${priceYuan === null ? "—" : `${priceYuan.toFixed(4)} 元`}` +
+          (task.sessionId ? `，SID ${sessionSid(task.sessionId)}` : ""));
+      } else {
+        block.push("- Token 消耗：无");
+      }
+      const reports = (task.reports ?? []).filter((report) => report.content.trim().length > 0);
+      if (reports.length > 0) {
+        block.push("- 报告：");
+        for (const report of reports) {
+          block.push(`  - [${report.author} · ${report.createdAt}]`);
+          for (const line of report.content.split(/\r?\n/)) {
+            block.push(`    ${line}`);
+          }
+        }
+      } else {
+        block.push("- 报告：无");
+      }
+      block.push("");
+      return block;
+    });
+    lines.push(...taskLines);
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `调试导出-${project.name}.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
 
   useEffect(() => {
     setProjects((prev) => {
@@ -2094,6 +2163,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
                       openWorkerConsole(undefined, { requireActive: true, projectId });
                     }}
                     onRemoveProject={removeProject}
+                    onExportTasks={exportProjectDebug}
                   />
                 </motion.div>
               ) : null}

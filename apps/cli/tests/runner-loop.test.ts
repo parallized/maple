@@ -960,6 +960,213 @@ describe("Runner structured run events", () => {
       .toBe("workflow-session-2");
   });
 
+  it("rotates a Workflow session at the task boundary when it has run too long", async () => {
+    const root = mkdtempSync(join(tmpdir(), "maple-workflow-rotate-"));
+    temporaryDirectories.push(root);
+    const projectPath = join(root, "project");
+    mkdirSync(projectPath, { recursive: true });
+    const configPath = join(root, "cli.json");
+    const base = executionJob();
+    base.todo.workerKind = "codex";
+    base.attempt.workerKind = "codex";
+    base.workflow = {
+      id: "workflow-rotate-1",
+      projectId: base.project.id,
+      workerKind: "codex",
+      title: "Long workflow",
+      summary: "Keep finishing long-running work.",
+      createdAt: base.todo.createdAt,
+      updatedAt: base.todo.updatedAt
+    };
+    // 旧会话已连续执行 20 个任务，达到轮换上限
+    new AgentSessionStore(configPath).save({
+      scope: "workflow",
+      scopeId: base.workflow.id,
+      workerKind: "codex",
+      sessionId: "stale-session",
+      runCount: 20
+    });
+
+    const config: CliConfig = {
+      version: 1,
+      serverUrl: "http://maple.test",
+      runner: { id: "runner-1", token: "runner-token", name: "Test runner" },
+      projects: [{
+        localId: "local-project-1",
+        projectId: base.project.id,
+        bindingId: base.binding.id,
+        externalKey: base.project.externalKey,
+        name: base.project.name,
+        path: projectPath,
+        repositoryUrl: null,
+        defaultBranch: null,
+        gitBranch: null,
+        gitHead: null,
+        workerKind: "codex",
+        registeredAt: base.todo.createdAt
+      }]
+    };
+    const resumeIds: Array<string | undefined> = [];
+    const executor: WorkerExecutor = async (options) => {
+      resumeIds.push(options.resumeSessionId);
+      options.onSession?.("fresh-session");
+      return {
+        success: true,
+        exitCode: 0,
+        summary: "done",
+        error: null,
+        usage: null,
+        sessionId: options.resumeSessionId ?? "fresh-session",
+        sessionUnavailable: false
+      };
+    };
+    const controller = new AbortController();
+    let claimed = false;
+    const api = {
+      serverUrl: config.serverUrl,
+      heartbeat: async () => ({ id: "runner-1" }),
+      claimRunnerCommand: async () => ({ command: null, leaseToken: null, retryAfterMs: 1_500 }),
+      claimProjectManagerJob: async () => ({ job: null, retryAfterMs: 1_500 }),
+      claim: async () => {
+        if (claimed) return { job: null, retryAfterMs: 10 };
+        claimed = true;
+        return { job: base, retryAfterMs: 0 };
+      },
+      startJob: async () => ({ todo: base.todo, attempt: base.attempt }),
+      heartbeatJob: async () => ({ ok: true as const }),
+      appendLogs: async () => ({ ok: true as const, accepted: 1 }),
+      completeJob: async () => {
+        controller.abort();
+        return { todo: base.todo, attempt: base.attempt };
+      }
+    };
+    const records: RunnerRunEvent[] = [];
+    const runner = new RunnerLoop(api as unknown as MapleApiClient, config, 1, {
+      configPath,
+      workerExecutor: executor,
+      output: {
+        info: () => undefined,
+        warn: () => undefined,
+        worker: () => undefined,
+        record: (event) => records.push(event)
+      }
+    });
+    await runner.run(controller.signal);
+
+    expect(resumeIds).toEqual([undefined]);
+    expect(records.some((event) => event.title === "Workflow 会话已轮换")).toBe(true);
+    const stored = new AgentSessionStore(configPath).read("workflow", base.workflow!.id, "codex");
+    expect(stored?.sessionId).toBe("fresh-session");
+    expect(stored?.runCount).toBe(1);
+  });
+
+  it("rotates a Workflow session whose cumulative cached reads exceed the limit", async () => {
+    const root = mkdtempSync(join(tmpdir(), "maple-workflow-rotate-cached-"));
+    temporaryDirectories.push(root);
+    const projectPath = join(root, "project");
+    mkdirSync(projectPath, { recursive: true });
+    const configPath = join(root, "cli.json");
+    const base = executionJob();
+    base.todo.workerKind = "codex";
+    base.attempt.workerKind = "codex";
+    base.workflow = {
+      id: "workflow-rotate-2",
+      projectId: base.project.id,
+      workerKind: "codex",
+      title: "Cache-heavy workflow",
+      summary: "Keep finishing work.",
+      createdAt: base.todo.createdAt,
+      updatedAt: base.todo.updatedAt
+    };
+    // 旧会话累计缓存读取已超阈值（150M），即使任务数少也必须轮换
+    const store = new AgentSessionStore(configPath);
+    store.save({
+      scope: "workflow",
+      scopeId: base.workflow.id,
+      workerKind: "codex",
+      sessionId: "stale-cache-session",
+      runCount: 3
+    });
+    store.saveUsageBaseline("workflow", base.workflow.id, "codex", {
+      inputTokens: 180_000_000,
+      cachedInputTokens: 160_000_000,
+      outputTokens: 5_000_000,
+      reasoningOutputTokens: 3_000_000
+    });
+
+    const config: CliConfig = {
+      version: 1,
+      serverUrl: "http://maple.test",
+      runner: { id: "runner-1", token: "runner-token", name: "Test runner" },
+      projects: [{
+        localId: "local-project-1",
+        projectId: base.project.id,
+        bindingId: base.binding.id,
+        externalKey: base.project.externalKey,
+        name: base.project.name,
+        path: projectPath,
+        repositoryUrl: null,
+        defaultBranch: null,
+        gitBranch: null,
+        gitHead: null,
+        workerKind: "codex",
+        registeredAt: base.todo.createdAt
+      }]
+    };
+    const resumeIds: Array<string | undefined> = [];
+    const executor: WorkerExecutor = async (options) => {
+      resumeIds.push(options.resumeSessionId);
+      options.onSession?.("fresh-cache-session");
+      return {
+        success: true,
+        exitCode: 0,
+        summary: "done",
+        error: null,
+        usage: null,
+        sessionId: options.resumeSessionId ?? "fresh-cache-session",
+        sessionUnavailable: false
+      };
+    };
+    const controller = new AbortController();
+    let claimed = false;
+    const api = {
+      serverUrl: config.serverUrl,
+      heartbeat: async () => ({ id: "runner-1" }),
+      claimRunnerCommand: async () => ({ command: null, leaseToken: null, retryAfterMs: 1_500 }),
+      claimProjectManagerJob: async () => ({ job: null, retryAfterMs: 1_500 }),
+      claim: async () => {
+        if (claimed) return { job: null, retryAfterMs: 10 };
+        claimed = true;
+        return { job: base, retryAfterMs: 0 };
+      },
+      startJob: async () => ({ todo: base.todo, attempt: base.attempt }),
+      heartbeatJob: async () => ({ ok: true as const }),
+      appendLogs: async () => ({ ok: true as const, accepted: 1 }),
+      completeJob: async () => {
+        controller.abort();
+        return { todo: base.todo, attempt: base.attempt };
+      }
+    };
+    const records: RunnerRunEvent[] = [];
+    const runner = new RunnerLoop(api as unknown as MapleApiClient, config, 1, {
+      configPath,
+      workerExecutor: executor,
+      output: {
+        info: () => undefined,
+        warn: () => undefined,
+        worker: () => undefined,
+        record: (event) => records.push(event)
+      }
+    });
+    await runner.run(controller.signal);
+
+    expect(resumeIds).toEqual([undefined]);
+    expect(records.some((event) => event.title === "Workflow 会话已轮换")).toBe(true);
+    const stored = new AgentSessionStore(configPath).read("workflow", base.workflow!.id, "codex");
+    expect(stored?.sessionId).toBe("fresh-cache-session");
+    expect(stored?.runCount).toBe(1);
+  });
+
   it("reports per-run usage increments when reusing a Codex Workflow session", async () => {
     const root = mkdtempSync(join(tmpdir(), "maple-workflow-usage-"));
     temporaryDirectories.push(root);

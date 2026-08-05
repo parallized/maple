@@ -55,8 +55,9 @@ export const deepSeekAdapter: CodingAgentAdapter = {
         `model_providers.${PROVIDER_ID}.supports_websockets=false`,
         ...(mcpCommand ? ["--config", `mcp_servers.maple.command=${tomlString(mcpCommand)}`] : []),
         ...(mcpCommand && mcpArgs ? ["--config", `mcp_servers.maple.args=${mcpArgs}`] : []),
-        "--sandbox",
-        options?.readOnly ? "read-only" : "workspace-write",
+        ...(options?.windowsSandboxBypass
+          ? ["--dangerously-bypass-approvals-and-sandbox"]
+          : ["--sandbox", options?.readOnly ? "read-only" : "workspace-write"]),
         ...(options?.additionalWritableDirectories ?? []).flatMap((directory) => ["--add-dir", directory]),
         "--skip-git-repo-check",
         "--json",
@@ -66,8 +67,12 @@ export const deepSeekAdapter: CodingAgentAdapter = {
       stdin: prompt
     };
   },
-  async prepareRun({ cwd, readOnly, additionalWritableDirectories }) {
-    return prepareCodexWindowsSandbox(cwd, { readOnly, additionalWritableDirectories });
+  async prepareRun({ cwd, readOnly, additionalWritableDirectories, windowsSandboxBypass }) {
+    return prepareCodexWindowsSandbox(cwd, {
+      readOnly,
+      additionalWritableDirectories,
+      bypass: windowsSandboxBypass
+    });
   },
   createOutputParser: () => createCodexOutputParser("DeepSeek")
 };

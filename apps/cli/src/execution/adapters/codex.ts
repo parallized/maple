@@ -128,8 +128,9 @@ export const codexAdapter: CodingAgentAdapter = {
         ...(reasoningEffort ? ["--config", `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`] : []),
         ...(mcpCommand ? ["--config", `mcp_servers.maple.command=${JSON.stringify(mcpCommand)}`] : []),
         ...(mcpCommand && mcpArgs ? ["--config", `mcp_servers.maple.args=${mcpArgs}`] : []),
-        "--sandbox",
-        options?.readOnly ? "read-only" : "workspace-write",
+        ...(options?.windowsSandboxBypass
+          ? ["--dangerously-bypass-approvals-and-sandbox"]
+          : ["--sandbox", options?.readOnly ? "read-only" : "workspace-write"]),
         ...(options?.additionalWritableDirectories ?? []).flatMap((directory) => ["--add-dir", directory]),
         "--skip-git-repo-check",
         "--json",
@@ -139,8 +140,12 @@ export const codexAdapter: CodingAgentAdapter = {
       stdin: prompt
     };
   },
-  async prepareRun({ cwd, readOnly, additionalWritableDirectories }) {
-    return prepareCodexWindowsSandbox(cwd, { readOnly, additionalWritableDirectories });
+  async prepareRun({ cwd, readOnly, additionalWritableDirectories, windowsSandboxBypass }) {
+    return prepareCodexWindowsSandbox(cwd, {
+      readOnly,
+      additionalWritableDirectories,
+      bypass: windowsSandboxBypass
+    });
   },
   createOutputParser: () => createCodexOutputParser()
 };

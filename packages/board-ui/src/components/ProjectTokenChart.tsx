@@ -225,10 +225,16 @@ export function ProjectTokenChart({ data, uiLanguage }: ProjectTokenChartProps) 
                     const isWhite = WORKER_COLOR[kind].toLowerCase() === "#ffffff";
                     const color = isWhite ? "var(--color-base-content)" : barPart.color;
                     const value = leader ? datum.byLeader[kind] ?? 0 : datum.byWorker[kind] ?? 0;
-                    // Leader 段用量小时会缩成一条线，抬高到最小高度（向上扩展，柱顶有 12px 上边距余量）。
-                    const minHeightAdjust = leader && value > 0 && barPart.height < LEADER_MIN_HEIGHT;
-                    const barHeight = minHeightAdjust ? LEADER_MIN_HEIGHT : Math.max(0, barPart.height);
-                    const barY = minHeightAdjust ? barPart.y - (LEADER_MIN_HEIGHT - barPart.height) : barPart.y;
+                    const workerValue = datum.byWorker[kind] ?? 0;
+                    const workerHeight = Math.max(0, yScale(0) - yScale(workerValue));
+                    // Leader 段用量小时会缩成一条线，抬高到最小高度（向上扩展，柱顶有 12px 上边距余量）；
+                    // 但若 Leader 消耗的 token 少于 Worker，其高度不能超过 Worker，避免小的 Worker 被大的 Leader 反超。
+                    const leaderMinHeight = leader && value < workerValue
+                      ? Math.min(LEADER_MIN_HEIGHT, workerHeight)
+                      : LEADER_MIN_HEIGHT;
+                    const minHeightAdjust = leader && value > 0 && barPart.height < leaderMinHeight;
+                    const barHeight = minHeightAdjust ? leaderMinHeight : Math.max(0, barPart.height);
+                    const barY = minHeightAdjust ? barPart.y - (leaderMinHeight - barPart.height) : barPart.y;
                     // 同一柱子上的两种设计：Worker 段实心品牌色；Leader 段半透明 + 同色虚线描边。
                     return (
                       <motion.rect

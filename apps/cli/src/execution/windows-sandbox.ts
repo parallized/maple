@@ -48,6 +48,31 @@ export interface WindowsSandboxPreparation {
   warning?: boolean;
 }
 
+let codexSandboxSession: boolean | null = null;
+
+/** 解析 `whoami /groups` 输出，判断当前进程是否运行在 Codex Windows 沙箱会话内。 */
+export function detectCodexSandboxSession(whoamiGroupsOutput: string): boolean {
+  return /CodexSandboxUser/i.test(whoamiGroupsOutput);
+}
+
+/**
+ * 当前进程是否运行在 Codex Windows 沙箱会话内（结果按进程缓存）。
+ *
+ * 判断依据：进程令牌属于 Codex 创建的沙箱本地组 CodexSandboxUsers。
+ * 该场景下内层 Codex 的 setup refresh 必然因缺少 WRITE_DAC 失败
+ * （SetNamedSecurityInfoW failed: 5），需要跳过内层沙箱、交由外层沙箱隔离。
+ */
+export function isCodexSandboxSession(): boolean {
+  if (codexSandboxSession !== null) return codexSandboxSession;
+  if (process.platform !== "win32") {
+    codexSandboxSession = false;
+    return false;
+  }
+  const result = Bun.spawnSync(["whoami", "/groups"], { stdout: "pipe", stderr: "pipe" });
+  codexSandboxSession = result.exitCode === 0 && detectCodexSandboxSession(result.stdout.toString());
+  return codexSandboxSession;
+}
+
 function defaultIcacls(...args: string[]): IcaclsResult {
   const result = Bun.spawnSync(["icacls", ...args], { stdout: "pipe", stderr: "pipe" });
   return {
@@ -137,9 +162,19 @@ function uniquePaths(paths: string[]): string[] {
  */
 export async function prepareCodexWindowsSandbox(
   cwd: string,
-  options: { readOnly?: boolean; additionalWritableDirectories?: string[] } = {},
+  options: {
+    readOnly?: boolean;
+    additionalWritableDirectories?: string[];
+    /** 当前进程本身已运行在 Codex Windows 沙箱会话内，内层沙箱将跳过。 */
+    bypass?: boolean;
+  } = {},
   tools: WindowsSandboxTools = defaultWindowsSandboxTools()
 ): Promise<WindowsSandboxPreparation> {
+  if (options.bypass) {
+    return {
+      note: "已检测到当前运行在 Codex Windows 沙箱会话内，本次 Codex 将跳过内层沙箱（外层沙箱已提供隔离），工作区无需额外授权。"
+    };
+  }
   if (!tools.isWindows) return {};
   if (options.readOnly) return {};
 

@@ -12,15 +12,17 @@ import { type BoardDisplayType, type DetailMode, type Project, type TagCatalog, 
 import { EXTERNAL_EDITOR_META, WORKER_KINDS, type ExternalEditorApp, type UiLanguage } from "../lib/constants";
 import { usePlatform } from "../platform/context";
 import { formatTagLabel } from "../lib/tag-label";
+import { sortTagsForDisplay } from "../lib/tag-sort";
 import { buildTagBadgeStyle } from "../lib/tag-style";
 import { resolveTagIconMeta, resolveTaskIcon } from "../lib/task-icons";
 import { statusBadgeClass, statusDotClass } from "../lib/status-colors";
 import { useMediaQuery } from "../lib/use-media-query";
 import {
+  applyManualRowOrder,
   getLastMentionTime,
   getTimeLevel,
   relativeTimeZh,
-  sortTasksByCompletion,
+  reorderForDrop,
   taskWaitingKind,
   type TaskWaitingKind
 } from "../lib/utils";
@@ -57,6 +59,8 @@ type BoardViewProps = {
   onSetDetailMode: (mode: DetailMode) => void;
   onOpenProjectConsole: (projectId: string) => void;
   onRemoveProject: (projectId: string) => void;
+  /** 调试表头「导出」：导出当前项目全部任务的 title / 报告 / Token 消耗 / Leader 发起说明。 */
+  onExportTasks: (projectId: string) => void;
 };
 
 const TASK_TITLE_MAX_WIDTH = 340;const DEFAULT_COL_WIDTHS: Record<string, number> = {
@@ -106,7 +110,8 @@ export function BoardView({
   onUpdateTaskWorker,
   onSetDetailMode,
   onOpenProjectConsole,
-  onRemoveProject
+  onRemoveProject,
+  onExportTasks
 }: BoardViewProps) {
   const tableRef = useRef<HTMLTableElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -164,10 +169,47 @@ export function BoardView({
 
   const selectedTask = boardProject && selectedTaskId ? boardProject.tasks.find((task) => task.id === selectedTaskId) ?? null : null;
   const isMobile = useMediaQuery("(max-width: 980px)");
-  // 已完成沉底：返工任务自动浮到未完成区（本地状态变更立即生效，轮询保持与 Server 一致）。
+  // 行手动排序（仅顶层任务，已完成仍沉底）：存本地，轮询不覆盖。
+  const [manualRowOrder, setManualRowOrder] = useState<string[]>(() => {
+    const key = boardProject ? `maple.rowOrder.${boardProject.id}` : "";
+    if (!key) return [];
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const manualOrderKey = boardProject ? `maple.rowOrder.${boardProject.id}` : null;
+  useEffect(() => {
+    if (!manualOrderKey) return;
+    try {
+      if (manualRowOrder.length === 0) localStorage.removeItem(manualOrderKey);
+      else localStorage.setItem(manualOrderKey, JSON.stringify(manualRowOrder));
+    } catch {
+      // 忽略存储失败。
+    }
+  }, [manualOrderKey, manualRowOrder]);
+
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+
+  /** 拖拽落点：把被拖的顶层任务插到目标位置（非完成区内部），已完成仍沉底。 */
+  function handleRowDrop(draggedId: string, targetId: string) {
+    setDraggingTaskId(null);
+    setDragOverTaskId(null);
+    if (draggedId === targetId || !boardProject) return;
+    const next = reorderForDrop(boardProject.tasks, draggedId, targetId, manualRowOrder);
+    if (next) setManualRowOrder(next);
+  }
+
+  // 已完成沉底：先按状态排序，再对未完成区应用手动顺序（稳定排序保留未拖动项的相对顺序）。
   const orderedTasks = useMemo(
-    () => (boardProject ? sortTasksByCompletion(boardProject.tasks) : []),
-    [boardProject]
+    () => {
+      if (!boardProject) return [];
+      return applyManualRowOrder(boardProject.tasks, manualRowOrder);
+    },
+    [boardProject, manualRowOrder]
   );
 
   if (!boardProject) {
@@ -322,6 +364,16 @@ export function BoardView({
               executionConcurrency={executionConcurrency}
               debugColumnEnabled={debugColumnEnabled}
               taskDebugMap={taskDebugMap}
+              draggingTaskId={draggingTaskId}
+              dragOverTaskId={dragOverTaskId}
+              onRowDragStart={setDraggingTaskId}
+              onRowDrop={handleRowDrop}
+              onRowDragOver={setDragOverTaskId}
+              onRowDragLeave={() => setDragOverTaskId(null)}
+              onRowDragEnd={() => {
+                setDraggingTaskId(null);
+                setDragOverTaskId(null);
+              }}
               onSelectTask={onSelectTask}
               onEditTask={onEditTask}
               onCommitTaskTitle={onCommitTaskTitle}
@@ -331,6 +383,7 @@ export function BoardView({
               onAddSubtask={onAddSubtask}
               onResizeStart={handleResizeStart}
               onResizeDblClick={handleResizeDblClick}
+              onExportTasks={onExportTasks}
             />
           )}
 
@@ -598,6 +651,13 @@ type TaskTableProps = {
   executionConcurrency: number;
   debugColumnEnabled: boolean;
   taskDebugMap: Record<string, string>;
+  draggingTaskId: string | null;
+  dragOverTaskId: string | null;
+  onRowDragStart: (taskId: string) => void;
+  onRowDrop: (draggedId: string, targetId: string) => void;
+  onRowDragOver: (taskId: string) => void;
+  onRowDragLeave: () => void;
+  onRowDragEnd: () => void;
   onSelectTask: (taskId: string) => void;
   onEditTask: (taskId: string) => void;
   onCommitTaskTitle: (projectId: string, taskId: string, title: string) => void;
@@ -607,6 +667,7 @@ type TaskTableProps = {
   onResizeStart: (col: string, e: React.MouseEvent) => void;
   onResizeDblClick: (col: string) => void;
   onAddSubtask: (projectId: string, parentTaskId: string) => void;
+  onExportTasks: (projectId: string) => void;
 };
 
 /** 任务 Worker 指定菜单（表格行 / 画廊卡片共用）。 */
@@ -678,7 +739,7 @@ function TaskStatusMenu({ task, projectId, subtaskCount, waitingKind, onUpdateTa
       label="Status Selector"
       triggerNode={
         <div
-          className={`ui-badge cursor-pointer transition-all ${badgeClass}`}
+          className={`ui-badge cursor-pointer ${badgeClass}`}
         >
           {waitingStatus ? (
             <span className="shimmer-metal" title={waitingTitle}>
@@ -743,6 +804,13 @@ type TaskRowProps = {
   debugColumnEnabled: boolean;
   /** 该任务的调试摘要文本（空字符串表示无数据）。 */
   debugText: string;
+  draggingTaskId: string | null;
+  dragOverTaskId: string | null;
+  onRowDragStart: (taskId: string) => void;
+  onRowDrop: (draggedId: string, targetId: string) => void;
+  onRowDragOver: (taskId: string) => void;
+  onRowDragLeave: () => void;
+  onRowDragEnd: () => void;
   selectedTaskId: string | null;
   editingTaskId: string | null;
   projectId: string;
@@ -770,6 +838,13 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   waitingKind,
   debugColumnEnabled,
   debugText,
+  draggingTaskId,
+  dragOverTaskId,
+  onRowDragStart,
+  onRowDrop,
+  onRowDragOver,
+  onRowDragLeave,
+  onRowDragEnd,
   selectedTaskId,
   editingTaskId,
   projectId,
@@ -804,8 +879,11 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
     setBadgeWidth(anchorRect.width);
     const badge = anchor.querySelector<HTMLElement>(".ui-badge");
     if (badge) {
-      // 取徽标实际背景色（含透明度），让延伸条左端与徽标完全同色，接缝无落差。
-      setStripColor(getComputedStyle(badge).backgroundColor);
+      // 取徽标「静止背景色」：hover 时徽标背景为透明，直接读 computed backgroundColor
+      // 会拿到透明值；改用 CSS 变量 --badge-bg（始终是未 hover 时的实色）取色。
+      const computed = getComputedStyle(badge);
+      const restingBackground = computed.getPropertyValue("--badge-bg").trim();
+      setStripColor(restingBackground || computed.backgroundColor);
     }
   }, []);
   useEffect(() => {
@@ -830,10 +908,25 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       className={[
         "task-row",
         task.id === selectedTaskId ? "selected" : "",
-        editingTaskId === task.id ? "editing" : ""
+        editingTaskId === task.id ? "editing" : "",
+        draggingTaskId === task.id ? "row-dragging" : "",
+        dragOverTaskId === task.id ? "row-drag-over" : ""
       ]
         .filter(Boolean)
         .join(" ")}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("text/plain")) {
+          event.preventDefault();
+          onRowDragOver(task.id);
+        }
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const draggedId = event.dataTransfer.getData("text/plain");
+        if (draggedId) onRowDrop(draggedId, task.id);
+      }}
+      onDragLeave={() => onRowDragLeave()}
+      onDragEnd={() => onRowDragEnd()}
       onClick={() => {
         if (editingTaskId !== task.id) {
           onSelectTask(task.id);
@@ -861,27 +954,28 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
               <Icon icon={expanded ? "mingcute:down-line" : "mingcute:right-line"} className="text-[13px]" />
             </button>
           ) : null}
-          <button
-            type="button"
-            className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn row-add-subtask opacity-0 transition-opacity"
-            onClick={(e) => {
-              e.stopPropagation();
-              onAddSubtask(projectId, task.id);
-            }}
-            aria-label="添加子任务"
-            title="添加子任务"
-          >
-            <Icon icon="mingcute:add-line" className="text-[13px]" />
-          </button>
           {task.status === "已完成" && task.needsConfirmation ? (
             <span className="task-confirm-text" title="待确认">
-              <Icon icon="mingcute:question-2-fill" />
+              <span className="task-confirm-exclaim">!</span>
             </span>
           ) : task.status === "需要更多信息" ? (
             <span className="task-question-text" title="需要更多信息">
               <Icon icon="mingcute:question-2-fill" />
             </span>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn row-add-subtask opacity-0 transition-opacity"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddSubtask(projectId, task.id);
+              }}
+              aria-label="添加子任务"
+              title="添加子任务"
+            >
+              <Icon icon="mingcute:add-line" className="text-[13px]" />
+            </button>
+          )}
         </div>
       </td>
       {/* 特殊状态图标列：暂时整列隐藏，保留实现以便恢复。
@@ -1014,7 +1108,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
       <td className="col-tags">
         <div className="tags-inline">
           {task.tags.length === 0 ? <span className="text-xs text-muted">—</span> : null}
-          {task.tags.map((tag, index) => {
+          {sortTagsForDisplay(task.tags, tagLanguage).map((tag, index) => {
             const { icon, isDefault } = resolveTagIconMeta(tag, tagCatalog);
             const label = formatTagLabel(tag, tagLanguage, tagCatalog);
             return (
@@ -1037,6 +1131,22 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
         </td>
       ) : null}
       <td className="col-actions">
+        {depth === 0 ? (
+          <button
+            type="button"
+            className="row-drag-handle"
+            draggable
+            title={uiLanguage === "en" ? "Drag to reorder" : "拖动排序"}
+            aria-label={uiLanguage === "en" ? "Drag to reorder" : "拖动排序"}
+            onDragStart={(event) => {
+              event.dataTransfer.setData("text/plain", task.id);
+              event.dataTransfer.effectAllowed = "move";
+              onRowDragStart(task.id);
+            }}
+            onDragEnd={() => onRowDragEnd()}
+            onClick={(event) => event.stopPropagation()}
+          />
+        ) : null}
         <motion.button
           whileTap={{ scale: 0.85 }}
           type="button"
@@ -1067,6 +1177,13 @@ function TaskTable({
   executionConcurrency,
   debugColumnEnabled,
   taskDebugMap,
+  draggingTaskId,
+  dragOverTaskId,
+  onRowDragStart,
+  onRowDrop,
+  onRowDragOver,
+  onRowDragLeave,
+  onRowDragEnd,
   onSelectTask,
   onEditTask,
   onCommitTaskTitle,
@@ -1075,7 +1192,8 @@ function TaskTable({
   onDeleteTask,
   onResizeStart,
   onResizeDblClick,
-  onAddSubtask
+  onAddSubtask,
+  onExportTasks
 }: TaskTableProps) {
   const INITIAL_ROWS = 80;
   const PAGE_ROWS = 80;
@@ -1206,6 +1324,14 @@ function TaskTable({
               <span className="flex items-center justify-start translate-y-[-2.5px] gap-1.5 w-full">
                 <Icon icon="mingcute:bug-line" className="text-[14px] opacity-70" />
                 调试
+                <button
+                  type="button"
+                  className="debug-export-link"
+                  title="导出全部任务的 title、报告、Token 消耗与 Leader 发起说明"
+                  onClick={() => onExportTasks(projectId)}
+                >
+                  导出
+                </button>
               </span>
             </th>
           ) : null}
@@ -1229,6 +1355,13 @@ function TaskTable({
               waitingKind={taskWaitingKind(task, tasks, executionConcurrency)}
               debugColumnEnabled={debugColumnEnabled}
               debugText={taskDebugMap[task.id] ?? ""}
+              draggingTaskId={draggingTaskId}
+              dragOverTaskId={dragOverTaskId}
+              onRowDragStart={onRowDragStart}
+              onRowDrop={onRowDrop}
+              onRowDragOver={onRowDragOver}
+              onRowDragLeave={onRowDragLeave}
+              onRowDragEnd={onRowDragEnd}
               selectedTaskId={selectedTaskId}
               editingTaskId={editingTaskId}
               projectId={projectId}
@@ -1411,7 +1544,7 @@ function TaskGallery({
             {/* 标签 */}
             {task.tags.length > 0 ? (
               <div className="flex flex-wrap gap-1">
-                {task.tags.map((tag, tagIndex) => {
+                {sortTagsForDisplay(task.tags, tagLanguage).map((tag, tagIndex) => {
                   const { icon, isDefault } = resolveTagIconMeta(tag, tagCatalog);
                   const label = formatTagLabel(tag, tagLanguage, tagCatalog);
                   return (

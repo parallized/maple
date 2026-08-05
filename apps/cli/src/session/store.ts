@@ -17,6 +17,8 @@ export interface AgentSessionRecord {
    * 用于把「整个 session 的累计值」换算成「单次 run 的增量」；旧记录缺失时视为 null。
    */
   usageBaseline?: TokenUsage | null;
+  /** 该会话已连续执行的任务数，供长 Workflow 会话在任务边界轮换时参考。 */
+  runCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -45,6 +47,8 @@ function isRecord(
       && Number.isFinite(baseline.outputTokens)
       && Number.isFinite(baseline.reasoningOutputTokens)
     );
+  const validRunCount = item.runCount === undefined
+    || (Number.isSafeInteger(item.runCount) && item.runCount >= 0);
   return item.version === 1
     && item.scope === scope
     && item.scopeId === scopeId
@@ -55,6 +59,7 @@ function isRecord(
     && item.sessionId.length <= 500
     && (item.contextFingerprint === null || typeof item.contextFingerprint === "string")
     && validBaseline
+    && validRunCount
     && typeof item.createdAt === "string"
     && typeof item.updatedAt === "string";
 }
@@ -92,6 +97,7 @@ export class AgentSessionStore {
     workerKind: WorkerKind;
     sessionId: string;
     contextFingerprint?: string | null;
+    runCount?: number;
   }): AgentSessionRecord {
     const sessionId = input.sessionId.trim();
     if (!sessionId || sessionId.length > 500) throw new Error("Coding Agent 返回的 session ID 无效。");
@@ -105,11 +111,23 @@ export class AgentSessionStore {
       sessionId,
       contextFingerprint: input.contextFingerprint ?? previous?.contextFingerprint ?? null,
       usageBaseline: previous?.usageBaseline ?? null,
+      runCount: input.runCount ?? previous?.runCount ?? 0,
       createdAt: previous?.createdAt ?? now,
       updatedAt: now
     };
     this.writeRecord(record);
     return record;
+  }
+
+  /** 会话每成功执行完一个任务累加一次，供长 Workflow 会话轮换策略使用。 */
+  incrementRunCount(scope: AgentSessionScope, scopeId: string, workerKind: WorkerKind): void {
+    const record = this.read(scope, scopeId, workerKind);
+    if (!record) return;
+    this.writeRecord({
+      ...record,
+      runCount: (record.runCount ?? 0) + 1,
+      updatedAt: new Date().toISOString()
+    });
   }
 
   /** 更新既有会话记录的累计用量基线；会话不存在时忽略（基线必须与会话同生共死）。 */

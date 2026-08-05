@@ -11,6 +11,22 @@ export function parseArgs(value: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * 由 Agent 会话 ID 派生稳定的短标识（调试列 SID）。
+ *
+ * 同一会话（同一 workflow 续接）必然得到相同结果；不同会话高概率不同。
+ * 不能直接取会话 ID 前缀：Codex / DeepSeek 的会话 ID 是带时间戳的 UUIDv7，
+ * 同一时期创建的会话前几位完全相同，导致调试列 SID 全部一致、无法区分。
+ */
+export function sessionSid(sessionId: string): string {
+  let hash = 0x811c9dc5; // FNV-1a 32-bit offset basis
+  for (let index = 0; index < sessionId.length; index += 1) {
+    hash ^= sessionId.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).toUpperCase().padStart(8, "0").slice(0, 6);
+}
+
 export function deriveProjectName(path: string): string {
   const segments = path.split(/[\\/]/).filter(Boolean);
   return segments[segments.length - 1] ?? "新项目";
@@ -52,6 +68,74 @@ export function sortTasksByCompletion(tasks: Task[]): Task[] {
       return leftDone - rightDone || left.index - right.index;
     })
     .map(({ task }) => task);
+}
+
+/**
+ * 行拖拽排序：已完成沉底（保持原相对顺序），未完成区应用手动顺序。
+ * 未在手动顺序里的任务（如新建/轮询新出现）维持原顺序插在手动排序项之后。
+ */
+export function applyManualRowOrder(tasks: Task[], manualRowOrder: string[]): Task[] {
+  const sorted = sortTasksByCompletion(tasks);
+  if (manualRowOrder.length === 0) return sorted;
+  const manualIndex = new Map(manualRowOrder.map((id, index) => [id, index]));
+  const active: Task[] = [];
+  const done: Task[] = [];
+  for (const task of sorted) {
+    if (task.status === "已完成") done.push(task);
+    else active.push(task);
+  }
+  active.sort((left, right) => {
+    const li = manualIndex.get(left.id);
+    const ri = manualIndex.get(right.id);
+    if (li !== undefined && ri !== undefined) return li - ri;
+    if (li !== undefined) return -1;
+    if (ri !== undefined) return 1;
+    return 0;
+  });
+  return [...active, ...done];
+}
+
+/**
+ * 拖拽落点：把被拖的顶层未完成任务插到目标位置，返回新的手动顺序。
+ * 以当前显示顺序为基准（已含历史手动顺序），新出现的任务追加到末尾；
+ * 只允许顶层任务参与拖动，已完成任务仍沉底不参与。
+ * 无效（拖拽/目标不存在、是子任务或已完成）时返回 null。
+ */
+export function reorderForDrop(
+  tasks: Task[],
+  draggedId: string,
+  targetId: string,
+  currentManualOrder: string[]
+): string[] | null {
+  const dragged = tasks.find((task) => task.id === draggedId);
+  const target = tasks.find((task) => task.id === targetId);
+  if (!dragged || !target || dragged.parentId || target.parentId) return null;
+  if (dragged.status === "已完成" || target.status === "已完成") return null;
+
+  const activeIds = new Set(
+    tasks
+      .filter((task) => task.status !== "已完成" && !task.parentId)
+      .map((task) => task.id)
+  );
+  const seen = new Set<string>();
+  const current: string[] = [];
+  for (const id of currentManualOrder) {
+    if (activeIds.has(id) && !seen.has(id)) {
+      current.push(id);
+      seen.add(id);
+    }
+  }
+  for (const id of activeIds) {
+    if (!seen.has(id)) {
+      current.push(id);
+      seen.add(id);
+    }
+  }
+
+  const next = current.filter((id) => id !== draggedId);
+  const targetIndex = next.indexOf(targetId);
+  next.splice(targetIndex < 0 ? next.length : targetIndex, 0, draggedId);
+  return next;
 }
 
 export function createTask(

@@ -13,18 +13,21 @@
 }
 
 .ui-badge.ui-badge--info {
+  --badge-bg: color-mix(in srgb, var(--color-info) 18%, transparent);
   background: color-mix(in srgb, var(--color-info) 18%, transparent);
   color: var(--color-info);
   font-weight: 500;
 }
 
 .ui-badge.ui-badge--planning {
+  --badge-bg: color-mix(in srgb, var(--color-planning) 16%, transparent);
   background: color-mix(in srgb, var(--color-planning) 16%, transparent);
   color: color-mix(in srgb, var(--color-planning) 85%, var(--color-base-content));
   font-weight: 500;
 }
 
 .ui-badge.ui-badge--draft {
+  --badge-bg: color-mix(in srgb, var(--color-warning) 12%, transparent);
   background: color-mix(in srgb, var(--color-warning) 12%, transparent);
   color: color-mix(in srgb, var(--color-warning) 85%, var(--color-base-content));
   font-weight: 500;

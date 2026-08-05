@@ -11,7 +11,7 @@ import {
 import { ExecutionReportCollector } from "./report";
 import { createSecretRedactor } from "./secret-redaction";
 import type { WorkerShell } from "./shells";
-import { describeWindowsSandboxFailure } from "./windows-sandbox";
+import { describeWindowsSandboxFailure, isCodexSandboxSession } from "./windows-sandbox";
 import { buildResolvedWorkerCommand } from "./worker-command";
 
 const MAX_CAPTURE_CHARS = 200_000;
@@ -179,6 +179,7 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
   const adapter = getCodingAgentAdapter(options.workerKind);
   const parser = adapter.createOutputParser();
   const workerEnv = executionEnvironment(options.workerKind, options.deepSeekApiKey);
+  const windowsSandboxBypass = isCodexSandboxSession();
   const command = buildResolvedWorkerCommand(
     options.workerKind,
     options.prompt,
@@ -191,7 +192,8 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
       disableMcp: options.disableMcp,
       isolatedHome: options.isolatedHome,
       resumeSessionId: options.resumeSessionId,
-      additionalWritableDirectories: options.additionalWritableDirectories
+      additionalWritableDirectories: options.additionalWritableDirectories,
+      windowsSandboxBypass
     }
   );
   const redact = createSecretRedactor([
@@ -308,7 +310,8 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
       const preparation = await adapter.prepareRun({
         cwd: options.cwd,
         readOnly: options.readOnly,
-        additionalWritableDirectories: options.additionalWritableDirectories
+        additionalWritableDirectories: options.additionalWritableDirectories,
+        windowsSandboxBypass
       });
       const note = preparation?.note?.trim();
       if (note && preparation) {

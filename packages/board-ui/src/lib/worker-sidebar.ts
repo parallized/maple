@@ -4,6 +4,8 @@ import { WORKER_KINDS } from "./constants";
 export type SidebarWorkerState = "online" | "offline" | "missing" | "unknown" | "no_runner";
 
 export interface SidebarWorkerItem {
+  /** 行内稳定 key：同一 Worker 类型可能因多台 Runner 连接不同模型而拆成多行。 */
+  uid: string;
   kind: WorkerKind;
   label: string;
   state: SidebarWorkerState;
@@ -40,30 +42,46 @@ export function buildSidebarWorkers(runners: readonly RunnerSummary[]): SidebarW
   const relevantRunners = onlineRunners.length > 0 ? onlineRunners : [...runners];
   const anyInventory = relevantRunners.some((runner) => runner.workerInventory !== undefined);
 
-  return WORKER_KINDS.map(({ kind, label }): SidebarWorkerItem => {
+  const items: SidebarWorkerItem[] = [];
+
+  for (const { kind, label } of WORKER_KINDS) {
     const reports = relevantRunners.flatMap(
       (runner) => runner.workerInventory?.filter((item) => item.kind === kind) ?? []
     );
     const available = reports.filter((item) => item.available);
+
     if (available.length > 0) {
-      const models = unique(available.map(modelLabel));
-      const modelIds = unique(available.map((item) => item.modelId));
-      const model = models.length > 0 ? models.join(" / ") : "模型未解析";
-      return {
-        kind,
-        label,
-        state: onlineRunners.length > 0 ? "online" : "offline",
-        model,
-        title: modelIds.length > 0 ? modelIds.join(" / ") : model
-      };
+      // 多台 Runner 连不同模型时各占一行，不再用斜杠拼接。
+      const byModel = new Map<string, string[]>();
+      for (const item of available) {
+        const model = modelLabel(item) ?? "模型未解析";
+        const ids = byModel.get(model) ?? [];
+        ids.push(item.modelId?.trim() || model);
+        byModel.set(model, ids);
+      }
+      for (const [model, ids] of byModel) {
+        items.push({
+          uid: `${kind}:${model}`,
+          kind,
+          label,
+          state: onlineRunners.length > 0 ? "online" : "offline",
+          model,
+          title: unique(ids).join(" / ") || model
+        });
+      }
+      continue;
     }
 
     if (anyInventory) {
-      return { kind, label, state: "missing", model: "未安装", title: `${label} 未安装` };
+      items.push({ uid: `${kind}:missing`, kind, label, state: "missing", model: "未安装", title: `${label} 未安装` });
+      continue;
     }
     if (relevantRunners.length > 0) {
-      return { kind, label, state: "unknown", model: "等待 CLI 上报", title: "当前 CLI 版本尚未上报模型" };
+      items.push({ uid: `${kind}:unknown`, kind, label, state: "unknown", model: "等待 CLI 上报", title: "当前 CLI 版本尚未上报模型" });
+      continue;
     }
-    return { kind, label, state: "no_runner", model: "暂无执行端", title: "连接 CLI 后显示精确模型" };
-  });
+    items.push({ uid: `${kind}:no_runner`, kind, label, state: "no_runner", model: "暂无执行端", title: "连接 CLI 后显示精确模型" });
+  }
+
+  return items;
 }

@@ -34,13 +34,46 @@ import { selectProjectManagerWorkerForJob } from "../manager/decision";
 import { runProjectManagerFailureReport } from "../manager/failure-report";
 import type { DirectoryPicker } from "../project/directory-picker";
 import { playReminderAudio } from "../reminder/play-audio";
-import { AgentSessionStore } from "../session/store";
+import { AgentSessionStore, type AgentSessionRecord } from "../session/store";
 import { displayDashboardUrl } from "../standalone/layout";
 import { handleRunnerCommand } from "./runner-command-handler";
 
 const RUNNER_COMMAND_POLL_MS = 1_500;
+/** Workflow 会话轮换：单个会话最多连续执行的任务数（环境变量可覆盖）。 */
+const WORKFLOW_SESSION_TASK_LIMIT_DEFAULT = 20;
+/** Workflow 会话轮换：会话累计缓存读取 token 上限，超过后下一次任务自动新建会话。 */
+const WORKFLOW_SESSION_CACHED_LIMIT_DEFAULT = 150_000_000;
 /** Server 连接失败后的固定重试间隔（用户要求每秒重试，不做指数退避）。 */
 const CONNECTION_RETRY_MS = 1_000;
+
+function workflowSessionTaskLimit(env: Record<string, string | undefined> = process.env): number {
+  const parsed = Number.parseInt(env.MAPLE_WORKFLOW_SESSION_TASK_LIMIT?.trim() ?? "", 10);
+  return Number.isSafeInteger(parsed) && parsed >= 1
+    ? parsed
+    : WORKFLOW_SESSION_TASK_LIMIT_DEFAULT;
+}
+
+function workflowSessionCachedLimit(env: Record<string, string | undefined> = process.env): number {
+  const parsed = Number.parseInt(env.MAPLE_WORKFLOW_SESSION_CACHED_LIMIT?.trim() ?? "", 10);
+  return Number.isSafeInteger(parsed) && parsed >= 0
+    ? parsed
+    : WORKFLOW_SESSION_CACHED_LIMIT_DEFAULT;
+}
+
+/**
+ * 长 Workflow 会话续接会不断重读整个累计上下文（缓存按命中计费），
+ * 会话接近窗口上限后单次请求会重读近百万 token。达到阈值时在任务边界轮换会话：
+ * 丢弃旧会话记录让下一个任务从新会话开始，用 Workflow 派单上下文接续。
+ */
+function shouldRotateWorkflowSession(
+  record: AgentSessionRecord,
+  taskLimit: number,
+  cachedLimit: number
+): boolean {
+  if ((record.runCount ?? 0) >= taskLimit) return true;
+  if ((record.usageBaseline?.cachedInputTokens ?? 0) >= cachedLimit) return true;
+  return false;
+}
 
 /** Bun/undici 的网络层报错是英文（如 "Unable to connect…"），统一翻成面向用户的中文描述。 */
 function describeConnectionError(error: unknown): string {
@@ -432,13 +465,36 @@ export class RunnerLoop {
         });
       } else {
         const workflowId = job.workflow?.id;
-        const existingSession = workflowId
+        let existingSession = workflowId
           ? this.sessionStore.read("workflow", workflowId, job.attempt.workerKind)
           : null;
         // Codex / DeepSeek 上报整个 session 的累计用量，先读上次基线以便换算单次增量。
         let usageBaseline = workflowId && isCumulativeUsageWorker(job.attempt.workerKind)
           ? this.sessionStore.readUsageBaseline("workflow", workflowId, job.attempt.workerKind)
           : null;
+        if (
+          workflowId
+          && existingSession
+          && shouldRotateWorkflowSession(
+            existingSession,
+            workflowSessionTaskLimit(),
+            workflowSessionCachedLimit()
+          )
+        ) {
+          this.sessionStore.remove("workflow", workflowId, job.attempt.workerKind);
+          existingSession = null;
+          usageBaseline = null;
+          await queueLog({
+            sequence: 0,
+            occurredAt: new Date().toISOString(),
+            stream: "system",
+            kind: "warning",
+            level: "warning",
+            status: "progress",
+            title: "Workflow 会话已轮换",
+            content: "当前会话已累计较多任务或上下文，为避免上下文重读膨胀已自动新建会话；本任务从新会话开始。"
+          });
+        }
         const run = (resumeSessionId?: string) => this.workerExecutor({
           workerKind: job.attempt.workerKind,
           cwd: project.path,
@@ -499,6 +555,9 @@ export class RunnerLoop {
             workerKind: job.attempt.workerKind,
             sessionId: result.sessionId
           });
+          if (result.success) {
+            this.sessionStore.incrementRunCount("workflow", workflowId, job.attempt.workerKind);
+          }
         }
         if (workflowId && result.usage && isCumulativeUsageWorker(job.attempt.workerKind)) {
           const cumulative = result.usage;

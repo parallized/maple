@@ -110,4 +110,50 @@ describe("Agent session store", () => {
     expect(restarted.read("workflow", "workflow-1", "codex")?.sessionId).toBe("codex-1");
     expect(restarted.readUsageBaseline("workflow", "workflow-1", "codex")).toBeNull();
   });
+
+  it("tracks the workflow run count and preserves it across session updates", () => {
+    const root = mkdtempSync(join(tmpdir(), "maple-agent-sessions-"));
+    temporaryDirectories.push(root);
+    const store = new AgentSessionStore(join(root, "cli.json"));
+
+    store.save({ scope: "workflow", scopeId: "workflow-1", workerKind: "codex", sessionId: "codex-1" });
+    expect(store.read("workflow", "workflow-1", "codex")?.runCount ?? 0).toBe(0);
+
+    store.incrementRunCount("workflow", "workflow-1", "codex");
+    store.incrementRunCount("workflow", "workflow-1", "codex");
+    expect(store.read("workflow", "workflow-1", "codex")?.runCount).toBe(2);
+
+    // 会话 ID 更新时 runCount 保持递增，不被重置
+    store.save({ scope: "workflow", scopeId: "workflow-1", workerKind: "codex", sessionId: "codex-2" });
+    expect(store.read("workflow", "workflow-1", "codex")?.runCount).toBe(2);
+    store.incrementRunCount("workflow", "workflow-1", "codex");
+    expect(store.read("workflow", "workflow-1", "codex")?.runCount).toBe(3);
+
+    // 删除会话后重新建立，从零开始
+    store.remove("workflow", "workflow-1", "codex");
+    store.save({ scope: "workflow", scopeId: "workflow-1", workerKind: "codex", sessionId: "codex-3" });
+    expect(store.read("workflow", "workflow-1", "codex")?.runCount).toBe(0);
+  });
+
+  it("treats legacy session records without runCount as readable and starts at zero", () => {
+    const root = mkdtempSync(join(tmpdir(), "maple-agent-sessions-"));
+    temporaryDirectories.push(root);
+    const configPath = join(root, "cli.json");
+    const store = new AgentSessionStore(configPath);
+    store.save({ scope: "workflow", scopeId: "workflow-1", workerKind: "codex", sessionId: "codex-1" });
+
+    // 模拟旧版本写入、没有 runCount 字段的记录
+    const record = store.read("workflow", "workflow-1", "codex")!;
+    const legacy: Record<string, unknown> = { ...record };
+    delete legacy.runCount;
+    expect("runCount" in legacy).toBe(false);
+    const path = join(store.workspace("workflow", "workflow-1"), "codex.session.json");
+    writeFileSync(path, `${JSON.stringify(legacy, null, 2)}\n`, "utf8");
+
+    const restarted = new AgentSessionStore(configPath);
+    expect(restarted.read("workflow", "workflow-1", "codex")?.sessionId).toBe("codex-1");
+    expect(restarted.read("workflow", "workflow-1", "codex")?.runCount ?? 0).toBe(0);
+    restarted.incrementRunCount("workflow", "workflow-1", "codex");
+    expect(restarted.read("workflow", "workflow-1", "codex")?.runCount).toBe(1);
+  });
 });

@@ -26,6 +26,7 @@ export class TodoRepository {
     const rows = this.database
       .query(
         `SELECT t.*, route.state AS route_state,
+                route.dispatch_brief AS route_dispatch_brief,
                 CASE WHEN route.state = 'claimed' THEN route.attempt_id END AS manager_attempt_id,
                 CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at,
                 CASE WHEN EXISTS (
@@ -68,6 +69,7 @@ export class TodoRepository {
     const rows = this.database
       .query(
         `SELECT t.*, route.state AS route_state,
+                route.dispatch_brief AS route_dispatch_brief,
                 CASE WHEN route.state = 'claimed' THEN route.attempt_id END AS manager_attempt_id,
                 CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at,
                 CASE WHEN EXISTS (
@@ -110,6 +112,7 @@ export class TodoRepository {
     const row = this.database
       .query(
         `SELECT t.*, route.state AS route_state,
+                route.dispatch_brief AS route_dispatch_brief,
                 CASE WHEN route.state = 'claimed' THEN route.attempt_id END AS manager_attempt_id,
                 CASE WHEN route.state = 'claimed' THEN route.lease_expires_at END AS manager_lease_expires_at,
                 CASE WHEN EXISTS (

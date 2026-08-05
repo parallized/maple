@@ -77,4 +77,29 @@ describe("Web Worker sidebar", () => {
       reasoningEffort: "ultra"
     });
   });
+
+  it("splits one Worker type into one row per distinct model across runners", () => {
+    const workers = buildSidebarWorkers([
+      runner({
+        id: "runner-a",
+        name: "主机 A",
+        workerInventory: [
+          { kind: "codex", available: true, modelId: "gpt-5.5", modelName: "GPT 5.5", reasoningEffort: "high" }
+        ]
+      }),
+      runner({
+        id: "runner-b",
+        name: "主机 B",
+        workerInventory: [
+          { kind: "codex", available: true, modelId: "gpt-5.6-luna", modelName: "GPT 5.6 Luna", reasoningEffort: "max" }
+        ]
+      })
+    ]);
+
+    const codexRows = workers.filter((worker) => worker.kind === "codex");
+    expect(codexRows).toHaveLength(2);
+    expect(codexRows.map((worker) => worker.model)).toEqual(["5.5 High", "5.6 Luna Max"]);
+    expect(codexRows.map((worker) => worker.title)).toEqual(["gpt-5.5", "gpt-5.6-luna"]);
+    expect(new Set(workers.map((worker) => worker.uid)).size).toBe(workers.length);
+  });
 });
