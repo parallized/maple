@@ -19,8 +19,10 @@ import { statusBadgeClass, statusDotClass } from "../lib/status-colors";
 import { useMediaQuery } from "../lib/use-media-query";
 import {
   applyManualRowOrder,
+  formatDurationZh,
   getLastMentionTime,
   getTimeLevel,
+  isTaskInFlight,
   relativeTimeZh,
   reorderForDrop,
   taskWaitingKind,
@@ -69,7 +71,9 @@ const TASK_TITLE_MAX_WIDTH = 340;const DEFAULT_COL_WIDTHS: Record<string, number
   task: TASK_TITLE_MAX_WIDTH,
   worker: 40,
   status: 100,
+  subtasks: 92,
   lastMention: 100,
+  duration: 76,
   tags: 168,
   actions: 40
 };
@@ -83,6 +87,28 @@ const TREE_GUIDE_START = 12;
 const TREE_GUIDE_RADIUS = 4;
 const TREE_TITLE_PAD = 4;
 const TREE_GUIDE_GAP = 4;
+
+/* ── 调试同频连接图：同 SID 的行用同色细虚线连到各自的竖线轨道 ── */
+const SID_LANE_GAP = 9;
+const SID_LANE_MAX = 8;
+const SID_TICK_LEN = 40;
+
+/** SID → 稳定轨道色：哈希取色相，同 SID 同色去重，明暗主题下都可读。 */
+function sidLaneColor(sid: string): string {
+  let hash = 0;
+  for (let i = 0; i < sid.length; i += 1) {
+    hash = (hash * 31 + sid.charCodeAt(i)) >>> 0;
+  }
+  return `hsl(${hash % 360} 65% 55%)`;
+}
+
+type SidLinkLayout = {
+  width: number;
+  height: number;
+  /** 水平短虚线的起点 x（轨道区左缘）。 */
+  segLeft: number;
+  lanes: Array<{ sid: string; color: string; x: number; ys: number[] }>;
+};
 
 export function BoardView({
   boardProject,
@@ -797,6 +823,8 @@ type TaskRowProps = {
   depth: number;
   isLastChild: boolean;
   subtaskCount: number;
+  /** 直接子任务中状态为「已完成」的数量（子任务进度列）。 */
+  completedSubtaskCount: number;
   hasChildren: boolean;
   expanded: boolean;
   waitingKind: TaskWaitingKind;
@@ -833,6 +861,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   depth,
   isLastChild,
   subtaskCount,
+  completedSubtaskCount,
   hasChildren,
   expanded,
   waitingKind,
@@ -901,6 +930,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
   return (
     <motion.tr
       ref={ref}
+      data-task-id={task.id}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
@@ -1048,6 +1078,15 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
             >
               {task.title || "(无标题)"}
             </span>
+            {task.reports.length > 0 ? (
+              <span
+                className="task-reports-chip"
+                title={`${task.reports.length} 份执行报告`}
+              >
+                <Icon icon="mingcute:file-line" className="text-[11px]" />
+                {task.reports.length}
+              </span>
+            ) : null}
             <button
               type="button"
               className="task-open-btn ui-btn ui-btn--xs ui-btn--outline shrink-0 gap-1 text-(--color-primary)"
@@ -1094,9 +1133,51 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
                 <Icon icon="mingcute:skip-forward-line" className="text-[13px]" />
                 {uiLanguage === "en" ? "Enter execution queue" : "进入执行队列"}
               </button>
+            ) : isTaskInFlight(task) ? (
+              <button
+                type="button"
+                className="status-strip-action"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // 中止 = 退出执行链路回到草稿；Server 侧会同步清掉执行租约。
+                  onUpdateTaskStatus(projectId, task.id, "草稿");
+                }}
+              >
+                <Icon icon="mingcute:stop-circle-line" className="text-[13px]" />
+                {uiLanguage === "en" ? "Abort current task" : "中止当前任务"}
+              </button>
+            ) : task.status === "已阻塞" ? (
+              <button
+                type="button"
+                className="status-strip-action"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // 重试 = 回到待办重新入队；Server 侧 PATCH status=todo 会重新派发执行。
+                  onUpdateTaskStatus(projectId, task.id, "待办");
+                }}
+              >
+                <Icon icon="mingcute:refresh-2-line" className="text-[13px]" />
+                {uiLanguage === "en" ? "Retry task" : "重试任务"}
+              </button>
             ) : null}
           </div>
         </div>
+      </td>
+      <td className="col-subtasks">
+        {subtaskCount > 0 ? (
+          <span
+            className="subtasks-meter"
+            title={`子任务完成 ${completedSubtaskCount}/${subtaskCount}`}
+          >
+            <span className="subtasks-meter-track">
+              <span
+                className={`subtasks-meter-fill${completedSubtaskCount === subtaskCount ? " complete" : ""}`}
+                style={{ width: `${Math.round((completedSubtaskCount / subtaskCount) * 100)}%` }}
+              />
+            </span>
+            <span className="subtasks-meter-count">{completedSubtaskCount}/{subtaskCount}</span>
+          </span>
+        ) : null}
       </td>
       <td className="col-lastMention text-[12px]">
         {(() => {
@@ -1104,6 +1185,16 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
           const level = getTimeLevel(timeStr);
           return <span className={`time-level-${level}`}>{relativeTimeZh(timeStr)}</span>;
         })()}
+      </td>
+      <td className="col-duration text-[12px]">
+        {task.status === "已完成" && task.startedAt && task.completedAt ? (
+          <span
+            className="text-muted"
+            title={`${new Date(task.startedAt).toLocaleString("zh-CN", { hour12: false })} → ${new Date(task.completedAt).toLocaleString("zh-CN", { hour12: false })}`}
+          >
+            {formatDurationZh(task.startedAt, task.completedAt)}
+          </span>
+        ) : null}
       </td>
       <td className="col-tags">
         <div className="tags-inline">
@@ -1134,7 +1225,7 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
         {depth === 0 ? (
           <button
             type="button"
-            className="row-drag-handle"
+            className="ui-btn ui-btn--xs ui-btn--ghost ui-icon-btn row-drag-handle"
             draggable
             title={uiLanguage === "en" ? "Drag to reorder" : "拖动排序"}
             aria-label={uiLanguage === "en" ? "Drag to reorder" : "拖动排序"}
@@ -1145,7 +1236,9 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
             }}
             onDragEnd={() => onRowDragEnd()}
             onClick={(event) => event.stopPropagation()}
-          />
+          >
+            <Icon icon="mingcute:dot-grid-line" />
+          </button>
         ) : null}
         <motion.button
           whileTap={{ scale: 0.85 }}
@@ -1231,7 +1324,7 @@ function TaskTable({
   const loadMoreRef = useRef<HTMLTableRowElement | null>(null);
   const prevProjectIdRef = useRef(projectId);
   const hasMore = visibleCount < flattened.length;
-  const visibleRows = flattened.slice(0, visibleCount);
+  const visibleRows = useMemo(() => flattened.slice(0, visibleCount), [flattened, visibleCount]);
 
   useEffect(() => {
     const projectChanged = prevProjectIdRef.current !== projectId;
@@ -1279,8 +1372,73 @@ function TaskTable({
     });
   }, [editingTaskId, tasks]);
 
+  // 调试同频连接图：测量各可见行中心与调试列右缘，生成 SID 轨道布局。
+  // 用 offsetTop/offsetLeft 而非 getBoundingClientRect——不受行入场动画 transform 影响。
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+  const measureTableRef = useRef<HTMLTableElement | null>(null);
+  // tableRef 是 React.Ref 联合类型（可能是回调 ref），本地另存一份用于测量。
+  const bindTableRef = useCallback((node: HTMLTableElement | null) => {
+    measureTableRef.current = node;
+    if (typeof tableRef === "function") tableRef(node);
+    else if (tableRef) (tableRef as React.MutableRefObject<HTMLTableElement | null>).current = node;
+  }, [tableRef]);
+  const [sidLinkLayout, setSidLinkLayout] = useState<SidLinkLayout | null>(null);
+  useLayoutEffect(() => {
+    if (!debugColumnEnabled) {
+      setSidLinkLayout(null);
+      return;
+    }
+    const compute = () => {
+      const table = measureTableRef.current;
+      const wrap = tableWrapRef.current;
+      if (!table || !wrap) return;
+      const debugCell = table.querySelector<HTMLElement>("td.col-debug");
+      if (!debugCell) {
+        setSidLinkLayout(null);
+        return;
+      }
+      const laneRight = debugCell.offsetLeft + debugCell.offsetWidth - 6;
+      const sidOrder: string[] = [];
+      const anchors = new Map<string, number[]>();
+      for (const { task } of visibleRows) {
+        const sid = task.sessionId?.trim();
+        if (!sid) continue;
+        if (!sidOrder.includes(sid)) {
+          // 轨道数超上限时多余 SID 不再铺设，避免细线侵入调试文本区。
+          if (sidOrder.length >= SID_LANE_MAX) continue;
+          sidOrder.push(sid);
+        }
+        const row = table.querySelector<HTMLElement>(`tr[data-task-id="${task.id}"]`);
+        if (!row) continue;
+        const y = row.offsetTop + row.offsetHeight / 2;
+        const list = anchors.get(sid) ?? [];
+        list.push(y);
+        anchors.set(sid, list);
+      }
+      if (sidOrder.length === 0) {
+        setSidLinkLayout(null);
+        return;
+      }
+      setSidLinkLayout({
+        width: table.offsetWidth,
+        height: table.offsetHeight,
+        segLeft: laneRight - SID_TICK_LEN,
+        lanes: sidOrder.map((sid, index) => ({
+          sid,
+          color: sidLaneColor(sid),
+          x: laneRight - index * SID_LANE_GAP,
+          ys: anchors.get(sid) ?? []
+        }))
+      });
+    };
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, [debugColumnEnabled, visibleRows, tableRef]);
+
   return (
-    <table ref={tableRef} className="task-table">
+    <div ref={tableWrapRef} className="task-table-wrap">
+    <table ref={bindTableRef} className="task-table">
       <colgroup>
         <col style={{ width: colWidths.confirm, maxWidth: colWidths.confirm }} />
         {/* taskIcon 列随单元格一并隐藏 */}
@@ -1288,7 +1446,9 @@ function TaskTable({
         <col style={colWidths.task ? { width: colWidths.task } : undefined} />
         <col style={{ width: colWidths.worker }} />
         <col style={{ width: colWidths.status }} />
+        <col style={{ width: colWidths.subtasks }} />
         <col style={{ width: colWidths.lastMention }} />
+        <col style={{ width: colWidths.duration }} />
         <col style={colWidths.tags > 0 ? { width: colWidths.tags } : undefined} />
         {debugColumnEnabled ? <col style={{ width: 230 }} /> : null}
         {/* actions 列不设宽度：吸收固定布局的多余空间，让窄列保持真实宽度 */}
@@ -1302,10 +1462,16 @@ function TaskTable({
             { key: "task", label: "任务", icon: "mingcute:task-line" },
             { key: "worker", label: "", icon: "mingcute:robot-line" },
             { key: "status", label: "状态", icon: "mingcute:signal-line" },
-            { key: "lastMention", label: "上次提及", icon: "mingcute:time-line" },
+            { key: "subtasks", label: "子任务", icon: "mingcute:tree-line" },
+            { key: "lastMention", label: "最近动态", icon: "mingcute:time-line" },
+            { key: "duration", label: "用时", icon: "mingcute:time-duration-line" },
             { key: "tags", label: "标签", icon: "mingcute:tag-line" },
           ].map((col) => (
-            <th key={col.key} className={`col-${col.key}`}>
+            <th
+              key={col.key}
+              className={`col-${col.key}`}
+              title={col.key === "worker" ? "执行 Worker" : undefined}
+            >
               <span className={`flex items-center ${col.label ? "justify-start" : "justify-center"} translate-y-[-2.5px] gap-1.5 w-full`}>
                 {col.icon ? <Icon icon={col.icon} className="text-[14px] opacity-70" /> : null}
                 {col.label ? col.label : null}
@@ -1350,6 +1516,7 @@ function TaskTable({
                 ? true
                 : (childrenByParent.get(task.parentId)?.slice(-1)[0]?.id === task.id)}
               subtaskCount={childrenByParent.get(task.id)?.length ?? 0}
+              completedSubtaskCount={(childrenByParent.get(task.id) ?? []).filter((child) => child.status === "已完成").length}
               hasChildren={Boolean(childrenByParent.get(task.id)?.length)}
               expanded={!collapsedIds.has(task.id)}
               waitingKind={taskWaitingKind(task, tasks, executionConcurrency)}
@@ -1388,7 +1555,7 @@ function TaskTable({
         </AnimatePresence>
         {hasMore ? (
           <tr ref={loadMoreRef}>
-            <td colSpan={7} className="py-3 text-center text-[12px] text-muted">
+            <td colSpan={9} className="py-3 text-center text-[12px] text-muted">
               <span className="inline-flex items-center gap-1.5">
                 <Icon icon="mingcute:loading-3-line" className="text-[14px] animate-spin opacity-70" />
                 加载更多…
@@ -1398,6 +1565,47 @@ function TaskTable({
         ) : null}
       </tbody>
     </table>
+    {sidLinkLayout ? (
+      <svg
+        className="sid-link-overlay"
+        width={sidLinkLayout.width}
+        height={sidLinkLayout.height}
+        aria-hidden="true"
+      >
+        {sidLinkLayout.lanes.map((lane) => (
+          <g key={lane.sid}>
+            {lane.ys.length > 1 ? (
+              <line
+                x1={lane.x}
+                y1={Math.min(...lane.ys)}
+                x2={lane.x}
+                y2={Math.max(...lane.ys)}
+                stroke={lane.color}
+                strokeWidth={1}
+                strokeDasharray="2 3"
+                opacity={0.5}
+              />
+            ) : null}
+            {lane.ys.map((y) => (
+              <g key={y}>
+                <line
+                  x1={sidLinkLayout.segLeft}
+                  y1={y}
+                  x2={lane.x}
+                  y2={y}
+                  stroke={lane.color}
+                  strokeWidth={1}
+                  strokeDasharray="2 3"
+                  opacity={0.5}
+                />
+                <circle cx={lane.x} cy={y} r={2} fill={lane.color} opacity={0.85} />
+              </g>
+            ))}
+          </g>
+        ))}
+      </svg>
+    ) : null}
+    </div>
   );
 }
 

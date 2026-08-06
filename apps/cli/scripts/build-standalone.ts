@@ -1,5 +1,5 @@
-import { cpSync, existsSync, mkdirSync, realpathSync, renameSync, rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 const cliRoot = resolve(import.meta.dir, "..");
 const workspaceRoot = resolve(cliRoot, "../..");
@@ -7,8 +7,6 @@ const webRoot = join(workspaceRoot, "apps", "web");
 const outputRoot = resolve(process.env.MAPLE_STANDALONE_BUILD_OUTPUT?.trim() || join(cliRoot, "dist", "standalone"));
 const stagingRoot = `${outputRoot}.building-${process.pid}`;
 const retiredRoot = `${outputRoot}.retired-${process.pid}`;
-const sharpRoot = realpathSync(join(workspaceRoot, "apps", "server", "node_modules", "sharp"));
-const sharpNativeRoot = join(dirname(sharpRoot), "@img");
 
 function assertManagedBuildPath(path: string): void {
   const relative = path.slice(cliRoot.length);
@@ -51,9 +49,6 @@ try {
     ], cliRoot),
     run(["bun", "run", "vite", "build", "--outDir", join(stagingRoot, "web"), "--emptyOutDir"], webRoot)
   ]);
-
-  if (!existsSync(sharpNativeRoot)) throw new Error(`Sharp native dependencies are missing: ${sharpNativeRoot}`);
-  cpSync(sharpNativeRoot, join(stagingRoot, "node_modules", "@img"), { recursive: true, dereference: true });
 
   if (!existsSync(join(stagingRoot, "maple-local.js")) || !existsSync(join(stagingRoot, "web", "index.html"))) {
     throw new Error("Maple Local build is incomplete.");

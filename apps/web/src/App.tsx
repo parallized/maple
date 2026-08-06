@@ -27,6 +27,8 @@ export function App() {
   }, []);
   const [session, setSession] = useState<AuthSessionResponse | null | undefined>(undefined);
   const [pathname, setPathname] = useState(() => normalizePath(window.location.pathname));
+  /* dev 模式下根路径保留官网首页，让本地开发也能直接看到主页；生产构建 standalone 仍直接进看板。 */
+  const isDev = import.meta.env.DEV;
 
   const navigate = useCallback((to: string) => {
     if (normalizePath(window.location.pathname) !== to) window.history.pushState({}, "", to);
@@ -93,8 +95,8 @@ export function App() {
     if (session.session.trust !== "trusted") return;
     const allowAuthorize = pathname === "/authorize" && session.deploymentMode === "hosted";
     const docsPath = pathname === "/docs" || pathname.startsWith("/docs/");
-    /* 本地一体版没有官网首页，打开根路径时直接进看板。 */
-    if (session.deploymentMode === "standalone" && pathname === "/") {
+    /* 本地一体版没有官网首页：生产构建打开根路径直接进看板；dev 模式下保留主页入口。 */
+    if (session.deploymentMode === "standalone" && pathname === "/" && !isDev) {
       navigate("/dashboard");
       return;
     }
@@ -151,7 +153,7 @@ export function App() {
 
   /* 已登录也可以回官网逛逛，CTA 直接带去看板。 */
   if (pathname === "/") {
-    if (session.deploymentMode === "standalone") return null;
+    if (session.deploymentMode === "standalone" && !isDev) return null;
     return <HomePage api={api} authed onEnter={() => navigate("/dashboard")} onDocs={() => navigate("/docs")} />;
   }
 

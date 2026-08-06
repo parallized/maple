@@ -7,7 +7,6 @@ import type {
 } from "@maple/protocol";
 import { mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
-import sharp from "sharp";
 import type { ServerConfig } from "../config";
 import { HttpError } from "../http/responses";
 import { nowIso } from "../lib/time";
@@ -210,15 +209,18 @@ export class AccountService {
     if (!(file instanceof File) || file.size <= 0 || file.size > 3 * 1024 * 1024) {
       throw new HttpError(422, "avatar_invalid", "头像需为不超过 3 MB 的图片。");
     }
-    const input = Buffer.from(await file.arrayBuffer());
-    const image = sharp(input, { failOn: "error", limitInputPixels: 16_000_000 });
+    const input = new Uint8Array(await file.arrayBuffer());
+    const image = new Bun.Image(input, { maxPixels: 16_000_000, autoOrient: true });
     const metadata = await image.metadata().catch(() => null);
     if (!metadata?.width || !metadata.height) throw new HttpError(422, "avatar_invalid", "无法读取这张图片。");
     mkdirSync(this.avatarDirectory, { recursive: true });
     const fileName = `${principal.user.id}.webp`;
     const target = join(this.avatarDirectory, fileName);
     const temporary = `${target}.${process.pid}.tmp`;
-    await image.rotate().resize(256, 256, { fit: "cover" }).webp({ quality: 86 }).toFile(temporary);
+    await image
+      .resize(256, 256, { fit: "inside", filter: "lanczos3" })
+      .webp({ quality: 86 })
+      .write(temporary);
     renameSync(temporary, target);
     const now = nowIso();
     this.database.run("UPDATE users SET avatar_file = ?, updated_at = ? WHERE id = ?", [fileName, now, principal.user.id]);

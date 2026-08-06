@@ -1,5 +1,5 @@
-import { cpSync, existsSync, mkdirSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import {
   cleanupRetiredBuilds,
   createBuildStagingRoot,
@@ -23,9 +23,6 @@ const downloadsRoot = join(webOutputRoot, "downloads");
 const standaloneDownloadRoot = join(downloadsRoot, "maple-local");
 const cliRoot = resolve(serverRoot, "../cli");
 const workspaceRoot = resolve(serverRoot, "../..");
-const sharpRoot = realpathSync(join(serverRoot, "node_modules", "sharp"));
-const sharpNativeRoot = join(dirname(sharpRoot), "@img");
-const sharpNativeOutputRoot = join(stagingRoot, "node_modules", "@img");
 
 async function run(command: string[], cwd: string): Promise<void> {
   const process = Bun.spawn(command, {
@@ -65,11 +62,6 @@ try {
   writeStandaloneDownloadManifest(standaloneDownloadRoot);
   cpSync(join(workspaceRoot, "scripts", "maple-install.ps1"), join(webOutputRoot, "install.ps1"));
   cpSync(join(workspaceRoot, "scripts", "maple-install.sh"), join(webOutputRoot, "install.sh"));
-
-  if (!existsSync(sharpNativeRoot)) {
-    throw new Error(`Sharp native dependencies are missing: ${sharpNativeRoot}`);
-  }
-  cpSync(sharpNativeRoot, sharpNativeOutputRoot, { recursive: true, dereference: true });
 
   const serverEntry = join(stagingRoot, "index.js");
   const dashboardEntry = join(webOutputRoot, "index.html");

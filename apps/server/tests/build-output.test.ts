@@ -70,8 +70,8 @@ describe("Maple Local download publication", () => {
   it("shows every installation stage and identifies the stage that failed", () => {
     const scriptsRoot = resolve(import.meta.dir, "../../../scripts");
     const installers = [
-      { name: "maple-install.sh", stages: 13 },
-      { name: "maple-install.ps1", stages: 13 }
+      { name: "maple-install.sh", stages: 12 },
+      { name: "maple-install.ps1", stages: 12 }
     ];
 
     for (const installer of installers) {

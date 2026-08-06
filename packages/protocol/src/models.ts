@@ -265,6 +265,8 @@ export interface Todo {
   resultSummary: string | null;
   /** 历史执行报告（按时间倒序，最新在前）；由 Server 在列表接口提供，旧版客户端可忽略。 */
   reports?: TodoReport[];
+  /** 该任务被返工（从已完成/终态退回草稿、待办或待返工后重新执行）的次数；0 表示首次执行。*/
+  reworkCount?: number;
   lastError: string | null;
   tags: string[];
   detailsDoc?: string;

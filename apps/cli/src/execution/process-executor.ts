@@ -42,6 +42,8 @@ export interface ProcessExecutionOptions {
   summaryMode?: "raw" | "report" | "strict-report";
   resumeSessionId?: string;
   additionalWritableDirectories?: string[];
+  /** 宿主侧放行：worker 会话使用 danger-full-access（需要 git 写操作等场景）。 */
+  fullAccess?: boolean;
   /** Server 下发的单次运行凭据；只保留在当前任务内存中。 */
   deepSeekApiKey?: string;
   /** 跳过启动前宿主预检（测试或调用方已自行处理宿主环境时使用）。 */
@@ -193,6 +195,7 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
       isolatedHome: options.isolatedHome,
       resumeSessionId: options.resumeSessionId,
       additionalWritableDirectories: options.additionalWritableDirectories,
+      fullAccess: options.fullAccess,
       windowsSandboxBypass
     }
   );

@@ -4,9 +4,21 @@ import { prepareCodexWindowsSandbox } from "../windows-sandbox";
 
 const DEFAULT_MODEL = "deepseek-v4-flash";
 const PROVIDER_ID = "maple_deepseek";
+/** 长 Workflow 会话在任务中途也受 codex 自动压缩封顶，避免每次请求重读近百万上下文。 */
+const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT = 300_000;
 
 function tomlString(value: string): string {
   return JSON.stringify(value);
+}
+
+function autoCompactConfig(env: Record<string, string | undefined>): string[] {
+  const raw = env.MAPLE_DEEPSEEK_AUTO_COMPACT_TOKEN_LIMIT?.trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : DEFAULT_AUTO_COMPACT_TOKEN_LIMIT;
+  // 设为 0 / 空 表示关闭自动压缩；过低的值会频繁压缩，质量风险大。
+  if (!Number.isSafeInteger(parsed) || parsed < 1_000) return [];
+  // codex 的 model_auto_compact_token_limit 是 i64，不能加引号，否则报
+  // invalid type: string "...", expected i64。
+  return ["--config", `model_auto_compact_token_limit=${parsed}`];
 }
 
 /** DeepSeek 是独立 Worker；执行与 JSONL 会话协议复用 Codex CLI。 */
@@ -41,6 +53,7 @@ export const deepSeekAdapter: CodingAgentAdapter = {
         "--config",
         `model_reasoning_effort=${tomlString(reasoningEffort)}`,
         ...(catalog ? ["--config", `model_catalog_json=${tomlString(catalog)}`] : []),
+        ...autoCompactConfig(env),
         "--config",
         `model_providers.${PROVIDER_ID}.name=${tomlString("DeepSeek")}`,
         "--config",
@@ -57,7 +70,11 @@ export const deepSeekAdapter: CodingAgentAdapter = {
         ...(mcpCommand && mcpArgs ? ["--config", `mcp_servers.maple.args=${mcpArgs}`] : []),
         ...(options?.windowsSandboxBypass
           ? ["--dangerously-bypass-approvals-and-sandbox"]
-          : ["--sandbox", options?.readOnly ? "read-only" : "workspace-write"]),
+          : options?.readOnly
+            ? ["--sandbox", "read-only"]
+            : options?.fullAccess
+              ? ["--sandbox", "danger-full-access"]
+              : ["--sandbox", "workspace-write"]),
         ...(options?.additionalWritableDirectories ?? []).flatMap((directory) => ["--add-dir", directory]),
         "--skip-git-repo-check",
         "--json",

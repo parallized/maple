@@ -21,6 +21,8 @@ export interface AgentCommandOptions {
   additionalWritableDirectories?: string[];
   /** 当前进程本身已运行在 Codex Windows 沙箱会话内时，跳过内层 Codex 沙箱（避免 setup refresh 无 WRITE_DAC 失败）。 */
   windowsSandboxBypass?: boolean;
+  /** 宿主侧放行：worker 会话使用 danger-full-access（任务需要 git 写操作等场景）。 */
+  fullAccess?: boolean;
 }
 
 /** Agent 启动前的宿主级预检结果；note 存在时才需要展示。 */

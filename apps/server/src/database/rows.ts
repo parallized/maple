@@ -96,6 +96,7 @@ export interface TodoRow {
   retry_after: string | null;
   result_summary: string | null;
   last_error: string | null;
+  rework_count?: number;
   tags_json: string | null;
   details_doc: string | null;
   usage_input_tokens?: number;
@@ -333,6 +334,7 @@ export function toTodo(row: TodoRow): Todo {
       : null,
     retryAfter: row.retry_after,
     resultSummary: row.result_summary,
+    reworkCount: row.rework_count ?? 0,
     lastError: row.last_error,
     tags: parseTags(row.tags_json),
     detailsDoc: row.details_doc ?? undefined,

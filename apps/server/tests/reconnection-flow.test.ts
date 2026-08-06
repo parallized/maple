@@ -3,7 +3,6 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import sharp from "sharp";
 import type {
   ClaimJobResponse,
   ClaimProjectManagerJobResponse,
@@ -15,6 +14,7 @@ import { createServerApp } from "../src/app";
 import type { ServerConfig } from "../src/config";
 import { createDatabase } from "../src/database/client";
 import { hashSecret } from "../src/lib/crypto";
+import { solidPngBytes } from "./image-fixture";
 
 const WORKSPACE_ID = "20000000-0000-4000-8000-000000000001";
 const USER_ID = "20000000-0000-4000-8000-000000000002";
@@ -303,9 +303,7 @@ describe("Runner reconnection", () => {
     });
     expect(settings.status).toBe(200);
     const job = await claimExecution(app);
-    const png = new Uint8Array(await sharp({
-      create: { width: 20, height: 20, channels: 3, background: { r: 50, g: 120, b: 200 } }
-    }).png().toBuffer());
+    const png = await solidPngBytes(20, 20);
     const upload = async (): Promise<UploadTodoArtifactResponse> => {
       const form = new FormData();
       form.set("leaseToken", job.leaseToken);

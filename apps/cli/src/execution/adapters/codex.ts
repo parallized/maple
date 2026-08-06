@@ -130,7 +130,11 @@ export const codexAdapter: CodingAgentAdapter = {
         ...(mcpCommand && mcpArgs ? ["--config", `mcp_servers.maple.args=${mcpArgs}`] : []),
         ...(options?.windowsSandboxBypass
           ? ["--dangerously-bypass-approvals-and-sandbox"]
-          : ["--sandbox", options?.readOnly ? "read-only" : "workspace-write"]),
+          : options?.readOnly
+            ? ["--sandbox", "read-only"]
+            : options?.fullAccess
+              ? ["--sandbox", "danger-full-access"]
+              : ["--sandbox", "workspace-write"]),
         ...(options?.additionalWritableDirectories ?? []).flatMap((directory) => ["--add-dir", directory]),
         "--skip-git-repo-check",
         "--json",

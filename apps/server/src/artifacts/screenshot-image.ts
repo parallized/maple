@@ -1,4 +1,3 @@
-import sharp from "sharp";
 import {
   DEFAULT_SCREENSHOT_COMPRESSION_PRESET,
   type ScreenshotCompressionPreset,
@@ -88,9 +87,9 @@ export async function normalizeScreenshot(
 ): Promise<NormalizedScreenshot> {
   try {
     const profile = SCREENSHOT_COMPRESSION_PROFILES[compressionPreset];
-    const image = sharp(bytes, {
-      failOn: "error",
-      limitInputPixels: SCREENSHOT_MAX_INPUT_PIXELS
+    const image = new Bun.Image(bytes, {
+      maxPixels: SCREENSHOT_MAX_INPUT_PIXELS,
+      autoOrient: true
     });
     const metadata = await image.metadata();
     if (!metadata.width || !metadata.height) {
@@ -98,30 +97,24 @@ export async function normalizeScreenshot(
     }
 
     const output = await image
-      .rotate()
-      .resize({
-        width: profile.maxEdge,
-        height: profile.maxEdge,
+      .resize(profile.maxEdge, profile.maxEdge, {
         fit: "inside",
-        withoutEnlargement: true
+        withoutEnlargement: true,
+        filter: "lanczos3"
       })
-      .webp({
-        quality: profile.quality,
-        effort: 4,
-        smartSubsample: true
-      })
-      .toBuffer({ resolveWithObject: true });
+      .webp({ quality: profile.quality })
+      .bytes();
 
-    if (!output.info.width || !output.info.height) {
+    if (image.width <= 0 || image.height <= 0) {
       throw new ScreenshotNormalizationError("截图压缩后缺少有效尺寸。");
     }
 
     return {
-      bytes: new Uint8Array(output.data),
+      bytes: output,
       fileName: webpFileName(originalFileName),
       mimeType: "image/webp",
-      width: output.info.width,
-      height: output.info.height
+      width: image.width,
+      height: image.height
     };
   } catch (error) {
     if (error instanceof ScreenshotNormalizationError) throw error;
@@ -132,21 +125,17 @@ export async function normalizeScreenshot(
 /** 由已规范化的截图生成小尺寸缩略图;失败返回 null(不阻断主流程,前端回退原图)。 */
 export async function createScreenshotThumbnail(bytes: Uint8Array): Promise<Uint8Array | null> {
   try {
-    const output = await sharp(bytes, {
-      failOn: "error",
-      limitInputPixels: SCREENSHOT_MAX_INPUT_PIXELS
+    return await new Bun.Image(bytes, {
+      maxPixels: SCREENSHOT_MAX_INPUT_PIXELS,
+      autoOrient: true
     })
-      .rotate()
-      .resize({
-        width: THUMBNAIL_MAX_EDGE,
-        height: THUMBNAIL_MAX_EDGE,
+      .resize(THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE, {
         fit: "inside",
         withoutEnlargement: true,
-        kernel: "lanczos3"
+        filter: "lanczos3"
       })
-      .webp({ quality: THUMBNAIL_QUALITY, effort: 4, smartSubsample: true })
-      .toBuffer();
-    return new Uint8Array(output);
+      .webp({ quality: THUMBNAIL_QUALITY })
+      .bytes();
   } catch {
     return null;
   }

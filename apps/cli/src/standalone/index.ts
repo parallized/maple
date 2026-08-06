@@ -14,8 +14,13 @@ import { parseStandaloneArgs, shouldOpenStandaloneBrowser } from "./startup";
 const argv = process.argv.slice(2);
 const args = parseStandaloneArgs(argv);
 
-/** 本地服务打开看板时直接进入 dashboard，不经过官网首页。 */
+/**
+ * 本地服务打开入口：生产版直接进 dashboard；dev 模式（bun local 的开发循环）
+ * 由 MAPLE_STANDALONE_DASHBOARD_URL 指向 Vite 根地址，此时打开开发主页。
+ */
 function standaloneDashboardUrl(baseUrl: string): string {
+  const devEntry = process.env.MAPLE_STANDALONE_DASHBOARD_URL?.trim();
+  if (devEntry && /^https?:\/\//i.test(devEntry)) return devEntry;
   return `${baseUrl.replace(/\/+$/, "")}/dashboard`;
 }
 

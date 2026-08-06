@@ -70,6 +70,7 @@ export function mapTodoToTask(todo: Todo): Task {
     executionPhase: todo.executionPhase ?? null,
     serialBlocked: todo.serialBlocked === true,
     startedAt: todo.startedAt ?? null,
+    completedAt: todo.completedAt ?? null,
     createdAt: todo.createdAt,
     updatedAt: todo.updatedAt,
     reports,

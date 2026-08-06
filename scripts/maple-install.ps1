@@ -127,14 +127,14 @@ foreach ($managedPath in @($stagingDir, $backupDir)) {
   }
 }
 
-$MapleInstallStage = "[1/13] preparing installation directories"
-Write-Host "[maple] [1/13] Preparing installation directories..."
+$MapleInstallStage = "[1/12] preparing installation directories"
+Write-Host "[maple] [1/12] Preparing installation directories..."
 New-Item -ItemType Directory -Force -Path $binDir, $runtimeDir, $stagingDir | Out-Null
 if (Test-Path -LiteralPath $backupDir) { Remove-Item -LiteralPath $backupDir -Recurse -Force }
 Write-Host "[maple]       Directories ready: $mapleHome"
 
-$MapleInstallStage = "[2/13] checking Bun runtime"
-Write-Host "[maple] [2/13] Checking Bun runtime..."
+$MapleInstallStage = "[2/12] checking Bun runtime"
+Write-Host "[maple] [2/12] Checking Bun runtime..."
 $bunCommand = Get-Command bun -ErrorAction SilentlyContinue
 if (-not $bunCommand) {
   Write-Host "[maple]       Bun was not found; installing it now."
@@ -146,8 +146,8 @@ if (-not $bunCommand) {
 if (-not (Test-Path -LiteralPath $bunPath -PathType Leaf)) { throw "Bun installation failed." }
 Write-Host "[maple]       Using Bun: $bunPath"
 
-$MapleInstallStage = "[3/13] asking about the Playwright screenshot runtime"
-Write-Host "[maple] [3/13] Asking about the Playwright screenshot runtime..."
+$MapleInstallStage = "[3/12] asking about the Playwright screenshot runtime"
+Write-Host "[maple] [3/12] Asking about the Playwright screenshot runtime..."
 if ($env:MAPLE_LAUNCHED_BY_UPDATER -eq "1") {
   Write-Host "[maple]       更新模式：沿用默认安装（跳过请设 MAPLE_SKIP_PLAYWRIGHT_INSTALL=1）。"
 } elseif ($env:MAPLE_SKIP_PLAYWRIGHT_INSTALL -eq "1") {
@@ -164,8 +164,8 @@ if ($env:MAPLE_LAUNCHED_BY_UPDATER -eq "1") {
   Write-Host "[maple]       非交互安装：默认安装 Playwright（跳过请设 MAPLE_SKIP_PLAYWRIGHT_INSTALL=1）。"
 }
 
-$MapleInstallStage = "[4/13] downloading the Maple CLI"
-Write-Host "[maple] [4/13] Downloading the Maple CLI..."
+$MapleInstallStage = "[4/12] downloading the Maple CLI"
+Write-Host "[maple] [4/12] Downloading the Maple CLI..."
 $temporaryCli = "$cliPath.download"
 Invoke-MapleDownload -Uri "$serverUrl/downloads/maple-cli.js" -Destination $temporaryCli `
   -Activity "Downloading Maple CLI" -Status "CLI" | Out-Null
@@ -174,8 +174,8 @@ if ((Get-Item -LiteralPath $temporaryCli).Length -lt 10000) { throw "Downloaded 
 Move-Item -Force -LiteralPath $temporaryCli -Destination $cliPath
 Write-Host "[maple]       CLI downloaded and validated."
 
-$MapleInstallStage = "[5/13] configuring the maple command and user PATH"
-Write-Host "[maple] [5/13] Configuring the maple command and user PATH..."
+$MapleInstallStage = "[5/12] configuring the maple command and user PATH"
+Write-Host "[maple] [5/12] Configuring the maple command and user PATH..."
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $wrapper = "@echo off`r`n`"$bunPath`" `"%~dp0maple-cli.js`" %*`r`n"
 [System.IO.File]::WriteAllText($wrapperPath, $wrapper, $utf8NoBom)
@@ -189,14 +189,14 @@ $env:Path = "$binDir;$env:Path"
 Write-Host "[maple]       Command ready: $wrapperPath"
 
 # Starting the CLI once creates the managed MCP config under ~/.maple/runtime.
-$MapleInstallStage = "[6/13] initializing and verifying the CLI runtime"
-Write-Host "[maple] [6/13] Initializing and verifying the CLI runtime..."
+$MapleInstallStage = "[6/12] initializing and verifying the CLI runtime"
+Write-Host "[maple] [6/12] Initializing and verifying the CLI runtime..."
 & $bunPath $cliPath status | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Maple CLI verification failed." }
 Write-Host "[maple]       CLI runtime verified."
 
-$MapleInstallStage = "[7/13] downloading the local service payload"
-Write-Host "[maple] [7/13] Downloading the local service payload (Server + WebUI + CLI)..."
+$MapleInstallStage = "[7/12] downloading the local service payload"
+Write-Host "[maple] [7/12] Downloading the local service payload (Server + WebUI + CLI)..."
 $manifestPath = Join-Path $stagingDir ".manifest"
 Invoke-MapleDownload -Uri $manifestUrl -Destination $manifestPath `
   -Activity "Preparing Maple Local download" -Status "Reading payload manifest" | Out-Null
@@ -239,7 +239,7 @@ try {
       $activeComponent = $entry.Component
       Write-Host "[maple]       Downloading $activeComponent..."
     }
-    $MapleInstallStage = "[7/13] downloading $($entry.Component) ($entryIndex/$($entries.Count)): $relativePath"
+    $MapleInstallStage = "[7/12] downloading $($entry.Component) ($entryIndex/$($entries.Count)): $relativePath"
     $targetPath = Join-Path $stagingDir $relativePath.Replace("/", [IO.Path]::DirectorySeparatorChar)
     $targetDirectory = Split-Path -Parent $targetPath
     New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
@@ -270,29 +270,18 @@ Remove-Item -LiteralPath $manifestPath -Force
 )
 Write-Host "[maple]       Server, WebUI and CLI downloaded and validated."
 
-$MapleInstallStage = "[8/13] installing the local service runtime"
-Write-Host "[maple] [8/13] Installing the local service runtime..."
-Push-Location $stagingDir
-try { & $bunPath add --exact "sharp@0.35.3" } finally { Pop-Location }
-if ($LASTEXITCODE -ne 0) { throw "Sharp runtime installation failed." }
-Write-Host "[maple]       Platform image runtime installed."
-
-$MapleInstallStage = "[9/13] verifying the downloaded local service"
-Write-Host "[maple] [9/13] Verifying the downloaded local service..."
+$MapleInstallStage = "[8/12] verifying the downloaded local service"
+Write-Host "[maple] [8/12] Verifying the downloaded local service..."
 $localEntry = Join-Path $stagingDir "maple-local.js"
 $dashboardEntry = Join-Path $stagingDir "web/index.html"
 if (-not (Test-Path -LiteralPath $localEntry -PathType Leaf)) { throw "CLI payload is incomplete." }
 if (-not (Test-Path -LiteralPath $dashboardEntry -PathType Leaf)) { throw "WebUI payload is incomplete." }
-$nativeRoot = Join-Path $stagingDir "node_modules/@img"
-if (-not (Get-ChildItem -LiteralPath $nativeRoot -Recurse -Filter "*.node" -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
-  throw "Platform image runtime is incomplete."
-}
 & $bunPath $localEntry help | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Maple Local verification failed." }
 Write-Host "[maple]       Downloaded version verified."
 
-$MapleInstallStage = "[10/13] publishing the local service"
-Write-Host "[maple] [10/13] Publishing the local service..."
+$MapleInstallStage = "[9/12] publishing the local service"
+Write-Host "[maple] [9/12] Publishing the local service..."
 if (Test-Path -LiteralPath $appDir) {
   try { Move-MapleDirectory -Source $appDir -Destination $backupDir }
   catch { throw "Close Maple Local before updating, then try again." }
@@ -306,8 +295,8 @@ try {
 if (Test-Path -LiteralPath $backupDir) { Remove-Item -LiteralPath $backupDir -Recurse -Force }
 Write-Host "[maple]       Version published to $appDir"
 
-$MapleInstallStage = "[11/13] configuring the maple-local command and user PATH"
-Write-Host "[maple] [11/13] Configuring the maple-local command and user PATH..."
+$MapleInstallStage = "[10/12] configuring the maple-local command and user PATH"
+Write-Host "[maple] [10/12] Configuring the maple-local command and user PATH..."
 $localWrapperPath = Join-Path $binDir "maple-local.cmd"
 $localUpdaterPath = Join-Path $binDir "maple-local-update.ps1"
 $writeLaunchers = $env:MAPLE_LAUNCHED_BY_UPDATER -ne "1" -or -not (Test-Path -LiteralPath $localWrapperPath -PathType Leaf) -or -not (Test-Path -LiteralPath $localUpdaterPath -PathType Leaf)
@@ -349,20 +338,20 @@ $env:Path = "$binDir;$env:Path"
 Write-Host "[maple]       Command ready: $localWrapperPath"
 Write-Host "[maple]       Update later: maple-local update"
 
-$MapleInstallStage = "[12/13] preparing the Playwright screenshot runtime"
-Write-Host "[maple] [12/13] Preparing the Playwright screenshot runtime..."
+$MapleInstallStage = "[11/12] preparing the Playwright screenshot runtime"
+Write-Host "[maple] [11/12] Preparing the Playwright screenshot runtime..."
 if ($env:MAPLE_SKIP_PLAYWRIGHT_INSTALL -ne "1") {
   $playwrightDir = Join-Path $runtimeDir "playwright"
   New-Item -ItemType Directory -Force -Path $playwrightDir | Out-Null
   if (-not (Test-Path (Join-Path $playwrightDir "package.json"))) {
     [System.IO.File]::WriteAllText((Join-Path $playwrightDir "package.json"), '{"name":"maple-playwright-runtime","private":true}' + "`n", $utf8NoBom)
   }
-  $MapleInstallStage = "[12/13] installing the Playwright package"
+  $MapleInstallStage = "[11/12] installing the Playwright package"
   Write-Host "[maple]       Installing Playwright package..."
   Push-Location $playwrightDir
   try { & $bunPath add --exact "playwright@1.61.1" } finally { Pop-Location }
   if ($LASTEXITCODE -ne 0) { throw "Playwright package installation failed." }
-  $MapleInstallStage = "[12/13] installing the Chromium browser"
+  $MapleInstallStage = "[11/12] installing the Chromium browser"
   Write-Host "[maple]       Installing Chromium browser..."
   $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $playwrightDir "browsers"
   & $bunPath (Join-Path $playwrightDir "node_modules/playwright/cli.js") install chromium --only-shell
@@ -374,8 +363,8 @@ if ($env:MAPLE_SKIP_PLAYWRIGHT_INSTALL -ne "1") {
   Write-Host "[maple]       Skipped by MAPLE_SKIP_PLAYWRIGHT_INSTALL=1."
 }
 
-$MapleInstallStage = "[13/13] completing installation"
-Write-Host "[maple] [13/13] Installation complete."
+$MapleInstallStage = "[12/12] completing installation"
+Write-Host "[maple] [12/12] Installation complete."
 Write-Host "[maple] Installed in $mapleHome"
 Write-Host "[maple] Connect with: maple connect --server $serverUrl"
 Write-Host "[maple] Run local service with: maple-local"

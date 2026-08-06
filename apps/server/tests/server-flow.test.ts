@@ -3,7 +3,6 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import sharp from "sharp";
 import { DEFAULT_SCREENSHOT_COMPRESSION_PRESET } from "@maple/protocol";
 import type {
   ClaimJobResponse,
@@ -31,6 +30,7 @@ import {
 import type { ServerConfig } from "../src/config";
 import { createDatabase } from "../src/database/client";
 import { hashSecret } from "../src/lib/crypto";
+import { solidPngBytes } from "./image-fixture";
 
 const ADMIN_TOKEN = "test-admin-token";
 const TEST_WORKSPACE_ID = "10000000-0000-4000-8000-000000000001";
@@ -1134,14 +1134,7 @@ describe("Maple Server execution flow", () => {
     ));
     expect(invalidUpload.status).toBe(422);
 
-    const pngBytes = new Uint8Array(await sharp({
-      create: {
-        width: 4_000,
-        height: 2_000,
-        channels: 3,
-        background: { r: 32, g: 96, b: 192 }
-      }
-    }).png().toBuffer());
+    const pngBytes = await solidPngBytes(4_000, 2_000);
     const validForm = new FormData();
     validForm.set("leaseToken", job.leaseToken);
     validForm.set("deliveryId", "artifact-delivery-1");
@@ -1173,7 +1166,7 @@ describe("Maple Server execution flow", () => {
     expect(stored.storage_name.endsWith(".webp")).toBe(true);
     const storedBytes = readFileSync(storedPath);
     expect(uploaded.artifact.sizeBytes).toBe(storedBytes.byteLength);
-    const storedMetadata = await sharp(storedBytes).metadata();
+    const storedMetadata = await new Bun.Image(storedBytes).metadata();
     expect(SCREENSHOT_COMPRESSION_PROFILES).toEqual({
       high: { maxEdge: 3200, quality: 95 },
       balanced: { maxEdge: 1600, quality: 80 },
@@ -1190,7 +1183,7 @@ describe("Maple Server execution flow", () => {
       ["compact", 800, 400]
     ] as const) {
       const normalized = await normalizeScreenshot(pngBytes, `${preset}.png`, preset);
-      expect(await sharp(normalized.bytes).metadata()).toMatchObject({ format: "webp", width, height });
+      expect(await new Bun.Image(normalized.bytes).metadata()).toMatchObject({ format: "webp", width, height });
     }
 
     const unauthorizedImage = await request(

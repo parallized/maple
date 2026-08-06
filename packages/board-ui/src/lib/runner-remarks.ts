@@ -16,6 +16,9 @@ export function loadRunnerRemarks(): Record<string, string> {
   }
 }
 
+/** 备注名变更事件：同页内通知侧栏等订阅方即时刷新（跨标签页走 storage 事件）。 */
+export const RUNNER_REMARKS_CHANGED_EVENT = "maple:runner-remarks-changed";
+
 export function saveRunnerRemark(runnerId: string, remark: string): void {
   try {
     const remarks = loadRunnerRemarks();
@@ -23,7 +26,21 @@ export function saveRunnerRemark(runnerId: string, remark: string): void {
     if (trimmed) remarks[runnerId] = trimmed;
     else delete remarks[runnerId];
     localStorage.setItem(RUNNER_REMARKS_KEY, JSON.stringify(remarks));
+    window.dispatchEvent(new Event(RUNNER_REMARKS_CHANGED_EVENT));
   } catch {
     // 忽略存储失败。
   }
+}
+
+/** 订阅备注名变更：同页事件 + 跨标签页 storage 事件，返回取消函数。 */
+export function subscribeRunnerRemarks(listener: () => void): () => void {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === RUNNER_REMARKS_KEY) listener();
+  };
+  window.addEventListener(RUNNER_REMARKS_CHANGED_EVENT, listener);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(RUNNER_REMARKS_CHANGED_EVENT, listener);
+    window.removeEventListener("storage", onStorage);
+  };
 }

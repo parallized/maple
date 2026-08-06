@@ -15,6 +15,9 @@ interface ScrollCurlSurfaceProps {
 
 const DISPLACEMENT_MAP_SIZE = 256;
 const FILTER_IDLE_EPSILON = 0.000002;
+// 卷曲只落在视口上下各 12% 的边缘带内,中间 76% 完全平整。
+// 带内沿用圆形剖面(1 - √(1 - t²)),起点导数为 0,与平整区无缝衔接。
+const CURL_EDGE_BAND = 0.12;
 let displacementMapUrl: string | null = null;
 
 function getDisplacementMapUrl(): string {
@@ -30,7 +33,12 @@ function getDisplacementMapUrl(): string {
   for (let y = 0; y < DISPLACEMENT_MAP_SIZE; y += 1) {
     const screenY = (y + 0.5) / DISPLACEMENT_MAP_SIZE;
     const centeredY = 2 * screenY - 1;
-    const profile = 1 - Math.sqrt(Math.max(0, 1 - centeredY * centeredY));
+    // 把 |centeredY| 从 [1-2*band, 1] 重映射到 [0, 1],带外恒为 0(不平移)
+    const edgeT = Math.max(
+      0,
+      Math.min((Math.abs(centeredY) - (1 - CURL_EDGE_BAND * 2)) / (CURL_EDGE_BAND * 2), 1)
+    );
+    const profile = 1 - Math.sqrt(Math.max(0, 1 - edgeT * edgeT));
 
     for (let x = 0; x < DISPLACEMENT_MAP_SIZE; x += 1) {
       const screenX = (x + 0.5) / DISPLACEMENT_MAP_SIZE;

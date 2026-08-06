@@ -182,6 +182,17 @@ interface AttemptController {
   forceTerminate(): void;
 }
 
+/**
+ * MAPLE_WORKER_FULL_ACCESS 默认开启（worker 需要 git 写操作等场景）；
+ * 显式设为 0 / false / no / off 时退回 workspace-write。
+ */
+export function workerFullAccessFromEnv(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  const value = env.MAPLE_WORKER_FULL_ACCESS?.trim().toLowerCase();
+  return !(value === "0" || value === "false" || value === "no" || value === "off");
+}
+
 export class RunnerLoop {
   private readonly active = new Set<Promise<void>>();
   private commandTask: Promise<void> | null = null;
@@ -198,6 +209,7 @@ export class RunnerLoop {
   private readonly outbox: DeliveryOutbox;
   private readonly ownsOutbox: boolean;
   private readonly workerShell: WorkerShell;
+  private readonly workerFullAccess: boolean;
   private readonly playwrightExecutable: string | null;
   /** 空闲 Worker 槽位序号，执行 Todo 时占用、收尾后归还。 */
   private readonly freeSlots: number[];
@@ -225,6 +237,7 @@ export class RunnerLoop {
     this.outbox = options.outbox ?? new DeliveryOutbox(resolveOutboxPath(this.configPath));
     this.ownsOutbox = options.outbox === undefined;
     this.workerShell = options.workerShell ?? "direct";
+    this.workerFullAccess = workerFullAccessFromEnv();
     this.playwrightExecutable = options.playwrightExecutable === undefined
       ? resolvePlaywrightExecutable()
       : options.playwrightExecutable;
@@ -509,6 +522,7 @@ export class RunnerLoop {
           summaryMode: "report",
           resumeSessionId,
           additionalWritableDirectories: screenshotDirectory ? [screenshotDirectory] : undefined,
+          fullAccess: this.workerFullAccess,
           deepSeekApiKey: job.attempt.workerKind === "deepseek"
             ? job.runtimeProviderCredentials?.deepseekApiKey
             : undefined,

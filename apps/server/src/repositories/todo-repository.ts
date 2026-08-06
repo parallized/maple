@@ -19,6 +19,19 @@ import { toAttempt, toLog, toTodo } from "../database/rows";
 import { nowIso } from "../lib/time";
 import { registerTagCatalog } from "../services/tag-catalog-service";
 
+/** 终态：任务已完成一轮执行，退回草稿/待办/待返工视为「返工」。*/
+const TERMINAL_TODO_STATUSES = ["review", "done", "blocked", "cancelled"] as const;
+/** 返工目标态：从终态退回这些状态时会累计 rework_count。*/
+const REWORK_TARGET_STATUSES = ["draft", "todo", "rework"] as const;
+
+function isTerminalTodoStatus(status: TodoStatus): boolean {
+  return TERMINAL_TODO_STATUSES.includes(status as (typeof TERMINAL_TODO_STATUSES)[number]);
+}
+
+function isReworkTargetStatus(status: TodoStatus): boolean {
+  return REWORK_TARGET_STATUSES.includes(status as (typeof REWORK_TARGET_STATUSES)[number]);
+}
+
 export class TodoRepository {
   constructor(private readonly database: Database) {}
 
@@ -345,8 +358,11 @@ export class TodoRepository {
         fields.push("status = ?");
         values.push(input.status);
         fields.push("claimed_by_runner_id = NULL", "active_attempt_id = NULL", "lease_token_hash = NULL", "lease_expires_at = NULL");
-        if (["todo", "rework", "draft"].includes(input.status)) {
+        if (isReworkTargetStatus(input.status)) {
           fields.push("started_at = NULL", "completed_at = NULL", "last_error = NULL");
+          if (isTerminalTodoStatus(current.status)) {
+            fields.push("rework_count = rework_count + 1");
+          }
         } else if (["review", "done", "blocked", "cancelled"].includes(input.status)) {
           fields.push("completed_at = ?");
           values.push(now);
@@ -422,13 +438,15 @@ export class TodoRepository {
             ["父任务状态调整，子任务执行租约已撤销。", now, current.activeAttemptId]
           );
         }
+        // 子任务从终态跟随父任务退回草稿/待办/待返工，同样累计一次返工。
+        const rework = !terminal && isReworkTargetStatus(status) && isTerminalTodoStatus(current.status);
         this.database.run(
           `UPDATE todos
            SET status = ?, updated_at = ?,
                claimed_by_runner_id = NULL, active_attempt_id = NULL,
                lease_token_hash = NULL, lease_expires_at = NULL,
                started_at = NULL, last_error = NULL, retry_after = NULL,
-               completed_at = ?
+               completed_at = ?${rework ? ", rework_count = rework_count + 1" : ""}
            WHERE id = ?`,
           [status, now, terminal ? now : null, descendantId]
         );

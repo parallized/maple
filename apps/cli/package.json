@@ -1,7 +1,7 @@
 {
   "name": "@maple/cli",
   "private": true,
-  "version": "0.2.8",
+  "version": "0.2.9",
   "type": "module",
   "bin": {
     "maple": "./dist/index.js",
@@ -21,7 +21,6 @@
     "@maple/protocol": "workspace:*",
     "@maple/server": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.1",
-    "sharp": "^0.35.3",
     "zod": "^3.24.0"
   },
   "devDependencies": {

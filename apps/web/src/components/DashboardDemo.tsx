@@ -650,8 +650,8 @@ function CliFloatWindow() {
 function ReportPanelOverlay() {
   return (
     <div className="absolute inset-0 z-10">
-      {/* 压暗其他区域 */}
-      <div className="dd-fade absolute inset-0 bg-black/45" />
+      {/* 压暗其他区域（日间模式减淡，避免黑块压屏） */}
+      <div className="dd-fade dd-dim absolute inset-0" />
       {/* 右侧详情栏 */}
       <aside className="dd-slide-in absolute inset-y-0 right-0 flex w-[86%] flex-col border-l border-(--color-base-300) bg-(--color-base-100) sm:w-[54%] md:w-[46%]">
         <div className="flex items-center gap-2 px-4 pt-3.5">
@@ -796,6 +796,9 @@ const DEMO_STYLES = `
 .dd-enter { animation: dd-fade-up 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
 .dd-enter-fast { animation: dd-fade-up 0.25s ease-out both; }
 .dd-fade { animation: dd-fade 0.4s ease-out both; }
+/* 场景压暗 mask：跟随 .dark class（主题切换）而非媒体查询；日间轻压，夜间保持对比 */
+.dd-dim { background: rgba(0, 0, 0, 0.18); }
+.dark .dd-dim { background: rgba(0, 0, 0, 0.45); }
 .dd-popwin { animation: dd-popwin 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
 .dd-slide-in { animation: dd-slide-in 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
 .dd-ripple { animation: dd-ripple 0.65s ease-out both; }
@@ -880,7 +883,7 @@ export function DashboardDemo() {
               </main>
             </div>
             {/* CLI 场景：窗口内压暗 */}
-            {scene === 3 && <div key={`dim-${tick}`} className="dd-fade absolute inset-0 z-10 bg-black/45" />}
+            {scene === 3 && <div key={`dim-${tick}`} className="dd-fade dd-dim absolute inset-0 z-10" />}
             {/* 回报场景：右侧详情栏 */}
             {scene === 4 && <ReportPanelOverlay key={`rp-${tick}`} />}
           </div>

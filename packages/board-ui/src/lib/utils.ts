@@ -302,6 +302,20 @@ export function relativeTimeZh(dateStr: string): string {
   return `${years} 年前`;
 }
 
+/** 任务用时：开始 → 完成的时长，紧凑中文格式（45 秒 / 3 分钟 / 1.5 小时 / 2 天）。 */
+export function formatDurationZh(startStr: string, endStr: string): string {
+  const start = new Date(startStr).getTime();
+  const end = new Date(endStr).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return "—";
+  const seconds = Math.round((end - start) / 1000);
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${Number(hours.toFixed(1))} 小时`;
+  return `${Math.floor(hours / 24)} 天`;
+}
+
 export function getLastMentionTime(task: Task): string {
   if (task.reports.length > 0) {
     const sorted = [...task.reports].sort(

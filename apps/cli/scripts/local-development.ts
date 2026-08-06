@@ -185,16 +185,17 @@ async function waitForEndpoint(
   return false;
 }
 
-async function openDashboardWhenReady(
+async function openHomepageWhenReady(
   plan: LocalDevelopmentPlan,
   standalone: ChildProcess,
   signal: AbortSignal
 ): Promise<void> {
   if (!await waitForEndpoint(`${plan.serverUrl}/health`, standalone, signal, null)) return;
-  const dashboardUrl = `${plan.webUrl}/dashboard`;
-  console.log(`[maple-local] 开发看板已就绪：${dashboardUrl}`);
-  if (!plan.openBrowser || !openBrowser(dashboardUrl)) {
-    console.log(`[maple-local] 请在浏览器打开：${dashboardUrl}`);
+  /* dev 模式从开发主页进入，而不是直接落看板；主页内提供进入看板的入口。 */
+  const homepageUrl = `${plan.webUrl}/`;
+  console.log(`[maple-local] 开发主页已就绪：${homepageUrl}`);
+  if (!plan.openBrowser || !openBrowser(homepageUrl)) {
+    console.log(`[maple-local] 请在浏览器打开：${homepageUrl}`);
   }
 }
 
@@ -205,7 +206,7 @@ export async function runLocalDevelopment(plan: LocalDevelopmentPlan): Promise<n
   let webPreparation: ChildProcess | null = null;
   let web: ChildProcess | null = null;
   let standalone: ChildProcess | null = null;
-  let dashboardTask: Promise<void> | null = null;
+  let homepageTask: Promise<void> | null = null;
 
   const requestStop = () => {
     stopping = true;
@@ -256,7 +257,7 @@ export async function runLocalDevelopment(plan: LocalDevelopmentPlan): Promise<n
 
     console.log("[maple-local] [2/2] 正在启动 Standalone 自动重载...");
     standalone = spawnProcess(plan.standalone);
-    dashboardTask = openDashboardWhenReady(plan, standalone, readiness.signal);
+    homepageTask = openHomepageWhenReady(plan, standalone, readiness.signal);
 
     const firstExit = await Promise.race([
       web.exited.then((exitCode) => ({ service: "WebUI", exitCode })),
@@ -275,6 +276,6 @@ export async function runLocalDevelopment(plan: LocalDevelopmentPlan): Promise<n
       stopProcess(web),
       stopProcess(webPreparation)
     ]);
-    if (dashboardTask) await dashboardTask;
+    if (homepageTask) await homepageTask;
   }
 }

@@ -8,6 +8,30 @@ export type ChangelogEntry = {
 /** 版本更新历史，新版本追加在数组最前。 */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.9",
+    date: "2026-08-06",
+    highlights: {
+      zh: [
+        "图片处理改用 Bun 原生管线",
+        "DeepSeek 长会话自动压缩",
+        "Windows 沙箱权限一键修复",
+        "失败报告给出下一步指引",
+        "看板可中止执行中任务",
+        "拖拽手柄改小图标按钮",
+        "安装器不再内置 sharp",
+      ],
+      en: [
+        "Images via Bun native pipeline",
+        "DeepSeek auto-compacts long sessions",
+        "One-click Windows sandbox ACL fix",
+        "Failure report shows next steps",
+        "Abort an in-flight task on board",
+        "Drag handle restyled as icon button",
+        "Installer drops the sharp step",
+      ],
+    },
+  },
+  {
     version: "0.2.8",
     date: "2026-08-05",
     highlights: {

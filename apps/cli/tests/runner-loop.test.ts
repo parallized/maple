@@ -15,6 +15,7 @@ import type { CliConfig } from "../src/config/types";
 import type { WorkerExecutor } from "../src/execution/process-executor";
 import {
   RunnerLoop,
+  workerFullAccessFromEnv,
   type ProjectManagerActivity,
   type ProjectManagerRunEvent,
   type RunnerOutput,
@@ -93,6 +94,21 @@ function executionJob(): ExecutionJob {
     leaseSeconds: 45
   };
 }
+
+describe("MAPLE_WORKER_FULL_ACCESS default", () => {
+  it("is enabled by default so workers can run git operations", () => {
+    expect(workerFullAccessFromEnv({})).toBe(true);
+    expect(workerFullAccessFromEnv({ MAPLE_WORKER_FULL_ACCESS: "1" })).toBe(true);
+    expect(workerFullAccessFromEnv({ MAPLE_WORKER_FULL_ACCESS: "true" })).toBe(true);
+  });
+
+  it("falls back to workspace-write only when explicitly disabled", () => {
+    expect(workerFullAccessFromEnv({ MAPLE_WORKER_FULL_ACCESS: "0" })).toBe(false);
+    expect(workerFullAccessFromEnv({ MAPLE_WORKER_FULL_ACCESS: "false" })).toBe(false);
+    expect(workerFullAccessFromEnv({ MAPLE_WORKER_FULL_ACCESS: "no" })).toBe(false);
+    expect(workerFullAccessFromEnv({ MAPLE_WORKER_FULL_ACCESS: "off" })).toBe(false);
+  });
+});
 
 describe("Runner structured run events", () => {
   it("attributes live TUI records and persists the same structured event", async () => {

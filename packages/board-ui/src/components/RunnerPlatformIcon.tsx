@@ -18,7 +18,7 @@ export function RunnerPlatformIcon({
   if (value.includes("darwin") || value.includes("mac")) {
     return (
       <svg
-        viewBox="0 0 256 256"
+        viewBox="0 0 256 315"
         width="1em"
         height="1em"
         className={`flex-none text-(--color-base-content) ${className}`}

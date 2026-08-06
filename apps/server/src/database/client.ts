@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS todos (
   retry_after TEXT,
   result_summary TEXT,
   last_error TEXT,
+  rework_count INTEGER NOT NULL DEFAULT 0,
   tags_json TEXT,
   details_doc TEXT,
   created_at TEXT NOT NULL,
@@ -418,6 +419,7 @@ function migrate(database: Database): void {
   ensureColumn(database, "todos", "details_doc", "TEXT");
   ensureColumn(database, "todos", "parent_id", "TEXT REFERENCES todos(id) ON DELETE CASCADE");
   ensureColumn(database, "todos", "retry_after", "TEXT");
+  ensureColumn(database, "todos", "rework_count", "INTEGER NOT NULL DEFAULT 0");
   migrateTodoWorkerConstraint(database);
   ensureTodoWorkerInvariant(database);
   migrateProjectWorkflowWorker(database);

@@ -18,7 +18,7 @@ import { defaultRunnerName } from "./runner/runner-name";
 import { authorizeRunner } from "./auth/device-authorization";
 import { hostPlatform } from "./host-platform";
 
-export const CLI_VERSION = "0.2.8";
+export const CLI_VERSION = "0.2.9";
 
 function workerOption(args: ParsedArgs): WorkerKind {
   const value = stringOption(args, "worker") ?? "codex";
@@ -290,6 +290,7 @@ Worker 启动 Shell（--shell / MAPLE_WORKER_SHELL）：
 环境变量：
   MAPLE_SERVER_URL      Server 地址
   MAPLE_WORKER_SHELL    Worker 启动 Shell
+  MAPLE_WORKER_FULL_ACCESS  Worker 沙箱放行（默认开启 danger-full-access；设 0/false/no/off 关闭）
   MAPLE_MANAGER_WORKER  项目经理使用的 Coding Agent（默认优先 Codex）
   MAPLE_CLI_CONFIG      自定义 CLI 配置文件路径
   MAPLE_CLI_HOME        自定义 CLI 数据目录

@@ -453,6 +453,10 @@ describe("Project manager dispatch", () => {
     expect(prompts[0]).toContain("不得改派、替换、调用或建议任何其他 Worker");
     expect(prompts[0]).toContain("简短标题、项目符号或有序列表");
     expect(prompts[0]).not.toContain("报告不得超过");
+    expect(prompts[0]).toContain("需运行的命令");
+    expect(prompts[0]).toContain("需检查/运行的文件");
+    expect(prompts[0]).toContain("需用户补充的信息");
+    expect(prompts[0]).toContain("操作完成后如何继续");
     expect(prompts[0]).toContain('"requiredWorkerKind":"kimi"');
     expect(prompts[0]).toContain('"availableWorkers":["codex"]');
     expect(store.read("manager", job.project.id, "codex")).toBeNull();

@@ -1,12 +1,13 @@
 import { Icon } from "@iconify/react";
 import { Reorder } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SplitText } from "./ReactBits";
 import type { Project, RunnerSummary, ViewKey } from "../domain";
 import type { UiLanguage } from "../lib/constants";
 import { useMediaQuery } from "../lib/use-media-query";
 import { isTaskInFlight } from "../lib/utils";
 import { groupProjectsByRunner } from "../lib/sidebar-groups";
+import { loadRunnerRemarks, subscribeRunnerRemarks } from "../lib/runner-remarks";
 import type { SidebarWorkerItem } from "../lib/worker-sidebar";
 import { VersionHistory } from "./VersionHistory";
 import { RunnerPlatformIcon } from "./RunnerPlatformIcon";
@@ -124,6 +125,9 @@ export function AppSidebar({
   const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
   const [seenProjects, setSeenProjects] = useState<Set<string>>(loadSeenProjects);
   const [collapsedSections, setCollapsedSections] = useState<Set<CollapsibleSection>>(loadCollapsedSections);
+  // Runner 备注名与概览页保持一致：改名后立即刷新，跨标签页走 storage 事件。
+  const [runnerRemarks, setRunnerRemarks] = useState<Record<string, string>>(loadRunnerRemarks);
+  useEffect(() => subscribeRunnerRemarks(() => setRunnerRemarks(loadRunnerRemarks())), []);
 
   function markProjectSeen(projectId: string) {
     setSeenProjects((prev) => {
@@ -270,8 +274,9 @@ export function AppSidebar({
             {runnerGroups.map(({ runner, projects: runnerProjects }) => {
               const runnerKey = `runner:${runner.id}`;
               const runnerExpanded = !collapsedSections.has(runnerKey);
+              const runnerDisplayName = runnerRemarks[runner.id] || runner.name;
               return (
-                <section key={runner.id} aria-label={runner.name} className="mt-5">
+                <section key={runner.id} aria-label={runnerDisplayName} className="mt-5">
                   <button
                     type="button"
                     id={`sidebar-runner-group-${runner.id}-title`}
@@ -285,9 +290,9 @@ export function AppSidebar({
                       icon={runnerExpanded ? "mingcute:down-line" : "mingcute:right-line"}
                       className="flex-none text-[12px] text-(--color-secondary)/50"
                     />
-                    <RunnerPlatformIcon platform={runner.platform} className="text-[15px]" />
+                    <RunnerPlatformIcon platform={runner.platform} className="text-[12px]" />
                     <span className="truncate min-w-0 text-[13px] font-medium text-(--color-secondary)/90">
-                      {runner.name}
+                      {runnerDisplayName}
                     </span>
                     <span
                       className={`ml-0.5 size-1.5 flex-none rounded-full ${

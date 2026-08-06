@@ -42,6 +42,11 @@ describe("Windows sandbox ACL detection", () => {
     expect(hasExplicitInheritableModifyAce(EXPLICIT_MODIFY_ACL, "holybread\\CodexSandboxUsers")).toBe(true);
   });
 
+  it("accepts an explicit inheritable Modify+DeleteChild ACE written by Codex itself", () => {
+    const codexStyle = "E:\\repo holybread\\CodexSandboxUsers:(OI)(CI)(M,DC)";
+    expect(hasExplicitInheritableModifyAce(codexStyle, CODEX_SANDBOX_GROUP)).toBe(true);
+  });
+
   it("rejects an inherited-only ACE", () => {
     const inherited = "E:\\repo holybread\\CodexSandboxUsers:(I)(OI)(CI)(M)";
     expect(hasExplicitInheritableModifyAce(inherited, CODEX_SANDBOX_GROUP)).toBe(false);

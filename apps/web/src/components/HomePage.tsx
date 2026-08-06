@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { DashboardApi } from "../api/client";
 import { DashboardDemo } from "./DashboardDemo";
+import { CapabilityGrid } from "./CapabilityGrid";
 import { ColorBends } from "./ColorBends";
 import { ScrollCurlSurface } from "./ScrollCurlSurface";
 import { createScrollCurlMotion, type ScrollCurlMotion } from "./scroll-curl-motion";
@@ -13,16 +14,18 @@ import Lenis from "lenis";
  * Maple 产品官网落地页（未登录）。
  * Warp 式落地结构：导航 → 大标题 Hero（左标题 / 右副文案 + 全宽 CTA 行）→ 产品演示带 → 页脚。
  * 产品演示为 `DashboardDemo`：dashboard 的场景化动态复刻，复用同一套 `--color-base-*` token。
+ * 滚动卷曲（ScrollCurlSurface）覆盖整页内容：Hero、演示带、能力网格、页脚各自为独立 surface，
+ * 共享同一 curlMotion 与视口位移图，屏幕空间里呈现为一条连续曲线，而非各卡片局部弯折。
  * 文案集中在本文件顶部 COPY 常量，改动只动这里。
  */
 
 /* ── 文案单一来源 ── */
 
 const COPY = {
-  brand: "Maple",
+  brand: "MapleCode",
   tagline: "Agentic AI 调度的崭新思路",
-  headline: ["坚守愿景，", "你的品味决定什么值得被创造，", "Maple 决定创造的秩序。"],
-  sub: "Maple 规划工作、梳理依赖，并把每项任务分配给 Codex、Claude、DeepSeek，以及你已经在使用的编码 Agent。",
+  headline: ["坚守愿景，", "你的品味决定什么值得被创造，", "MapleCode 决定创造的秩序。"],
+  sub: "MapleCode 规划工作、梳理依赖，并把每项任务分配给 Codex、Claude、DeepSeek，以及你已经在使用的编码 Agent。",
   primaryCta: "进入控制台",
   secondaryCta: "在 GitHub 查看",
   nav: {
@@ -118,7 +121,7 @@ function VersionPill({ api }: { api: DashboardApi }) {
   }, [api]);
   return (
     <div
-      className="hidden items-center gap-2 rounded-full border border-(--color-base-300) bg-(--color-btn-bg) px-3 py-1.5 text-[11.5px] text-(--color-secondary) md:flex"
+      className="hidden h-8 items-center gap-2 rounded-full bg-(--color-btn-bg) px-3 text-[11.5px] text-(--color-secondary) md:flex"
       title="版本号与 install.sh 累计下载量"
     >
       <span className="font-mono text-(--color-base-content)">{stats ? formatVersion(stats.version) : "v--"}</span>
@@ -138,7 +141,7 @@ function ThemeToggle({ theme, onToggle }: { theme: ResolvedTheme; onToggle: () =
       onClick={onToggle}
       aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
       title={theme === "dark" ? "浅色模式" : "深色模式"}
-      className="flex h-9 w-9 items-center justify-center rounded-full border border-(--color-base-300) bg-(--color-btn-bg) text-(--color-base-content) transition-colors hover:bg-(--color-btn-hover)"
+      className="flex h-8 w-8 items-center justify-center rounded-full text-(--color-base-content) transition-colors hover:bg-(--color-btn-hover)"
     >
       <Icon icon={theme === "dark" ? "mingcute:sun-line" : "mingcute:moon-line"} className="text-[16px]" />
     </button>
@@ -161,7 +164,7 @@ function HomeNav({
   const navLinkClass =
     "text-[12.5px] text-(--color-secondary) transition-colors hover:text-(--color-base-content)";
   return (
-    <header className="fixed top-0 z-40 flex w-full items-center gap-6 bg-[color-mix(in_srgb,var(--color-base-200)_85%,transparent)] px-5 py-4 backdrop-blur-md sm:px-10 sm:py-5">
+    <header className="fixed top-0 z-40 flex w-full items-center gap-6 bg-[color-mix(in_srgb,var(--color-base-200)_85%,transparent)] px-5 py-2.5 backdrop-blur-md sm:px-10 sm:py-3">
       <a href={COPY.githubUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2">
         <Icon icon="mingcute:quill-pen-ai-fill" className="text-[17px] text-(--color-primary)" />
         <span className="text-[14px] font-semibold tracking-tight text-(--color-base-content)">{COPY.brand}</span>
@@ -184,7 +187,7 @@ function HomeNav({
         <button
           type="button"
           onClick={onEnter}
-          className="rounded-full bg-(--color-base-content) px-4 py-2 text-[12px] font-medium text-(--color-base-200) transition-opacity hover:opacity-90"
+          className="inline-flex h-8 items-center rounded-full bg-(--color-base-content) px-4 text-[12px] font-medium text-(--color-base-200) transition-opacity hover:opacity-90"
         >
           {COPY.nav.enter}
         </button>
@@ -316,6 +319,8 @@ function HomeHero({
 }) {
   return (
     <section className="relative w-full flex-1">
+      {/* Hero 上半区（标语 / 大标题 / CTA 行）同样卷曲,与演示带共用同一屏幕空间位移场 */}
+      <ScrollCurlSurface motion={curlMotion} viewportRef={scrollViewportRef}>
       <div className="mx-auto grid w-full max-w-[1120px] grid-cols-1 items-end gap-8 px-5 pt-16 sm:px-10 md:grid-cols-[1.25fr_1fr] md:pt-[72px]">
         {/* 左栏：标语 + 大标题（逐行独立弯曲,纸感更软） */}
         <div className="flex flex-col items-start gap-6">
@@ -364,6 +369,7 @@ function HomeHero({
           {COPY.nav.docs}
         </button>
       </div>
+      </ScrollCurlSurface>
 
       {/* 演示带：Color Bends 流动色带底 + 场景化产品演示 */}
       <div className="relative mt-16 border-t border-(--color-base-300)">
@@ -522,7 +528,14 @@ export function HomePage({
             curlMotion={curlMotion}
             scrollViewportRef={scrollRef}
           />
-          <HomeFooter onEnter={onEnter} onDocs={onDocs} />
+          {/* 卷曲特效覆盖整页:Hero / 演示带 / 能力区块 / 页脚各为独立 surface,
+              但共享同一 motion 与视口位移图,屏幕空间里是同一条连续曲线 */}
+          <ScrollCurlSurface motion={curlMotion} viewportRef={scrollRef}>
+            <CapabilityGrid />
+          </ScrollCurlSurface>
+          <ScrollCurlSurface motion={curlMotion} viewportRef={scrollRef}>
+            <HomeFooter onEnter={onEnter} onDocs={onDocs} />
+          </ScrollCurlSurface>
         </div>
       </div>
     </div>

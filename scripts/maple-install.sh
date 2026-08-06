@@ -129,15 +129,15 @@ move_with_retry() {
   done
 }
 
-MAPLE_CURRENT_STAGE="[1/13] preparing installation directories"
-echo "[maple] [1/13] Preparing installation directories..."
+MAPLE_CURRENT_STAGE="[1/12] preparing installation directories"
+echo "[maple] [1/12] Preparing installation directories..."
 mkdir -p "$MAPLE_BIN_DIR" "$MAPLE_RUNTIME_DIR" "${HOME}/.local/bin"
 rm -rf "$MAPLE_LOCAL_STAGING_DIR" "$MAPLE_LOCAL_BACKUP_DIR"
 mkdir -p "$MAPLE_LOCAL_STAGING_DIR"
 echo "[maple]       Directories ready: $MAPLE_HOME_DIR"
 
-MAPLE_CURRENT_STAGE="[2/13] checking Bun runtime"
-echo "[maple] [2/13] Checking Bun runtime..."
+MAPLE_CURRENT_STAGE="[2/12] checking Bun runtime"
+echo "[maple] [2/12] Checking Bun runtime..."
 if command -v bun >/dev/null 2>&1; then
   MAPLE_BUN_BIN="$(command -v bun)"
 else
@@ -148,8 +148,8 @@ fi
 test -x "$MAPLE_BUN_BIN" || { echo "[maple] Bun installation failed." >&2; exit 1; }
 echo "[maple]       Using Bun: $MAPLE_BUN_BIN"
 
-MAPLE_CURRENT_STAGE="[3/13] asking about the Playwright screenshot runtime"
-echo "[maple] [3/13] Asking about the Playwright screenshot runtime..."
+MAPLE_CURRENT_STAGE="[3/12] asking about the Playwright screenshot runtime"
+echo "[maple] [3/12] Asking about the Playwright screenshot runtime..."
 if [ "${MAPLE_LAUNCHED_BY_UPDATER:-0}" = "1" ]; then
   echo "[maple]       更新模式：沿用默认安装（跳过请设 MAPLE_SKIP_PLAYWRIGHT_INSTALL=1）。"
 elif [ "${MAPLE_SKIP_PLAYWRIGHT_INSTALL:-0}" = "1" ]; then
@@ -171,15 +171,15 @@ else
   echo "[maple]       非交互安装：默认安装 Playwright（跳过请设 MAPLE_SKIP_PLAYWRIGHT_INSTALL=1）。"
 fi
 
-MAPLE_CURRENT_STAGE="[4/13] downloading the Maple CLI"
-echo "[maple] [4/13] Downloading the Maple CLI..."
+MAPLE_CURRENT_STAGE="[4/12] downloading the Maple CLI"
+echo "[maple] [4/12] Downloading the Maple CLI..."
 maple_download_with_progress "$MAPLE_SERVER_URL/downloads/maple-cli.js" "$MAPLE_BIN_DIR/maple-cli.js.download"
 test "$(wc -c < "$MAPLE_BIN_DIR/maple-cli.js.download")" -gt 10000 || { echo "[maple] Downloaded CLI is incomplete." >&2; exit 1; }
 mv "$MAPLE_BIN_DIR/maple-cli.js.download" "$MAPLE_BIN_DIR/maple-cli.js"
 echo "[maple]       CLI downloaded and validated."
 
-MAPLE_CURRENT_STAGE="[5/13] configuring the maple command and user PATH"
-echo "[maple] [5/13] Configuring the maple command and user PATH..."
+MAPLE_CURRENT_STAGE="[5/12] configuring the maple command and user PATH"
+echo "[maple] [5/12] Configuring the maple command and user PATH..."
 cat > "$MAPLE_BIN_DIR/maple" <<EOF
 #!/usr/bin/env sh
 exec "$MAPLE_BUN_BIN" "$MAPLE_BIN_DIR/maple-cli.js" "\$@"
@@ -188,13 +188,13 @@ chmod 0755 "$MAPLE_BIN_DIR/maple"
 ln -sf "$MAPLE_BIN_DIR/maple" "${HOME}/.local/bin/maple"
 echo "[maple]       Command ready: $MAPLE_BIN_DIR/maple"
 
-MAPLE_CURRENT_STAGE="[6/13] initializing and verifying the CLI runtime"
-echo "[maple] [6/13] Initializing and verifying the CLI runtime..."
+MAPLE_CURRENT_STAGE="[6/12] initializing and verifying the CLI runtime"
+echo "[maple] [6/12] Initializing and verifying the CLI runtime..."
 "$MAPLE_BIN_DIR/maple" status >/dev/null
 echo "[maple]       CLI runtime verified."
 
-MAPLE_CURRENT_STAGE="[7/13] downloading the local service payload"
-echo "[maple] [7/13] Downloading the local service payload (Server + WebUI + CLI)..."
+MAPLE_CURRENT_STAGE="[7/12] downloading the local service payload"
+echo "[maple] [7/12] Downloading the local service payload (Server + WebUI + CLI)..."
 curl -fsSL --retry 3 "$MAPLE_LOCAL_MANIFEST_URL" -o "$MAPLE_LOCAL_STAGING_DIR/.manifest"
 MAPLE_MANIFEST_TAB="$(printf '\t')"
 MAPLE_TOTAL_BYTES=0
@@ -233,7 +233,7 @@ while IFS="$MAPLE_MANIFEST_TAB" read -r MAPLE_FILE_SIZE MAPLE_RELATIVE_PATH || [
     MAPLE_ACTIVE_COMPONENT="$MAPLE_COMPONENT_LABEL"
     echo "[maple]       Downloading $MAPLE_ACTIVE_COMPONENT..."
   fi
-  MAPLE_CURRENT_STAGE="[7/13] downloading $MAPLE_COMPONENT_LABEL ($MAPLE_FILE_INDEX/$MAPLE_TOTAL_FILES): $MAPLE_RELATIVE_PATH"
+  MAPLE_CURRENT_STAGE="[7/12] downloading $MAPLE_COMPONENT_LABEL ($MAPLE_FILE_INDEX/$MAPLE_TOTAL_FILES): $MAPLE_RELATIVE_PATH"
   maple_show_progress "$MAPLE_COMPLETED_BYTES" "$MAPLE_TOTAL_BYTES" "$MAPLE_FILE_INDEX" "$MAPLE_TOTAL_FILES" "$MAPLE_COMPONENT_LABEL"
   MAPLE_TARGET_PATH="${MAPLE_LOCAL_STAGING_DIR}/${MAPLE_RELATIVE_PATH}"
   mkdir -p "$(dirname "$MAPLE_TARGET_PATH")"
@@ -253,26 +253,16 @@ printf '%s\n' '{"name":"maple-local-runtime","private":true}' > "$MAPLE_LOCAL_ST
 printf '%s\n' "$MAPLE_SERVER_URL" > "$MAPLE_LOCAL_STAGING_DIR/.update-source"
 echo "[maple]       Server, WebUI and CLI downloaded and validated."
 
-MAPLE_CURRENT_STAGE="[8/13] installing the local service runtime"
-echo "[maple] [8/13] Installing the local service runtime..."
-(
-  cd "$MAPLE_LOCAL_STAGING_DIR"
-  "$MAPLE_BUN_BIN" add --exact sharp@0.35.3
-)
-echo "[maple]       Platform image runtime installed."
-
-MAPLE_CURRENT_STAGE="[9/13] verifying the downloaded local service"
-echo "[maple] [9/13] Verifying the downloaded local service..."
+MAPLE_CURRENT_STAGE="[8/12] verifying the downloaded local service"
+echo "[maple] [8/12] Verifying the downloaded local service..."
 test -s "$MAPLE_LOCAL_STAGING_DIR/maple-local.js" || { echo "[maple] CLI payload is incomplete." >&2; exit 1; }
 test -s "$MAPLE_LOCAL_STAGING_DIR/web/index.html" || { echo "[maple] WebUI payload is incomplete." >&2; exit 1; }
-find "$MAPLE_LOCAL_STAGING_DIR/node_modules/@img" -type f -name '*.node' -print -quit | grep -q . \
-  || { echo "[maple] Platform image runtime is incomplete." >&2; exit 1; }
 chmod 0755 "$MAPLE_LOCAL_STAGING_DIR/maple-local.js"
 "$MAPLE_BUN_BIN" "$MAPLE_LOCAL_STAGING_DIR/maple-local.js" help >/dev/null
 echo "[maple]       Downloaded version verified."
 
-MAPLE_CURRENT_STAGE="[10/13] publishing the local service"
-echo "[maple] [10/13] Publishing the local service..."
+MAPLE_CURRENT_STAGE="[9/12] publishing the local service"
+echo "[maple] [9/12] Publishing the local service..."
 if [ -d "$MAPLE_LOCAL_APP_DIR" ]; then
   move_with_retry "$MAPLE_LOCAL_APP_DIR" "$MAPLE_LOCAL_BACKUP_DIR" \
     || { echo "[maple] Close Maple Local before updating." >&2; exit 1; }
@@ -287,8 +277,8 @@ fi
 if [ -d "$MAPLE_LOCAL_BACKUP_DIR" ]; then rm -rf "$MAPLE_LOCAL_BACKUP_DIR"; fi
 echo "[maple]       Version published to $MAPLE_LOCAL_APP_DIR"
 
-MAPLE_CURRENT_STAGE="[11/13] configuring the maple-local command and user PATH"
-echo "[maple] [11/13] Configuring the maple-local command and user PATH..."
+MAPLE_CURRENT_STAGE="[10/12] configuring the maple-local command and user PATH"
+echo "[maple] [10/12] Configuring the maple-local command and user PATH..."
 if [ "${MAPLE_LAUNCHED_BY_UPDATER:-0}" != "1" ] \
   || [ ! -s "$MAPLE_BIN_DIR/maple-local" ] \
   || [ ! -s "$MAPLE_BIN_DIR/maple-local-update" ]; then
@@ -327,16 +317,16 @@ ln -sf "$MAPLE_BIN_DIR/maple-local" "${HOME}/.local/bin/maple-local"
 echo "[maple]       Command ready: $MAPLE_BIN_DIR/maple-local"
 echo "[maple]       Update later: maple-local update"
 
-MAPLE_CURRENT_STAGE="[12/13] preparing the Playwright screenshot runtime"
-echo "[maple] [12/13] Preparing the Playwright screenshot runtime..."
+MAPLE_CURRENT_STAGE="[11/12] preparing the Playwright screenshot runtime"
+echo "[maple] [11/12] Preparing the Playwright screenshot runtime..."
 if [ "${MAPLE_SKIP_PLAYWRIGHT_INSTALL:-0}" != "1" ]; then
   MAPLE_PLAYWRIGHT_DIR="$MAPLE_RUNTIME_DIR/playwright"
   mkdir -p "$MAPLE_PLAYWRIGHT_DIR"
   test -f "$MAPLE_PLAYWRIGHT_DIR/package.json" || printf '%s\n' '{"name":"maple-playwright-runtime","private":true}' > "$MAPLE_PLAYWRIGHT_DIR/package.json"
-  MAPLE_CURRENT_STAGE="[12/13] installing the Playwright package"
+  MAPLE_CURRENT_STAGE="[11/12] installing the Playwright package"
   echo "[maple]       Installing Playwright package..."
   (cd "$MAPLE_PLAYWRIGHT_DIR" && "$MAPLE_BUN_BIN" add --exact playwright@1.61.1)
-  MAPLE_CURRENT_STAGE="[12/13] installing the Chromium browser"
+  MAPLE_CURRENT_STAGE="[11/12] installing the Chromium browser"
   echo "[maple]       Installing Chromium browser..."
   PLAYWRIGHT_BROWSERS_PATH="$MAPLE_PLAYWRIGHT_DIR/browsers" "$MAPLE_BUN_BIN" "$MAPLE_PLAYWRIGHT_DIR/node_modules/playwright/cli.js" install chromium --only-shell
   cat > "$MAPLE_PLAYWRIGHT_DIR/maple-playwright" <<EOF
@@ -352,8 +342,8 @@ fi
 
 # Report only after the CLI, the local service and the optional runtime have been installed successfully.
 # The event ID makes curl retries idempotent; statistics failure never breaks installation.
-MAPLE_CURRENT_STAGE="[13/13] finalizing installation"
-echo "[maple] [13/13] Finalizing installation..."
+MAPLE_CURRENT_STAGE="[12/12] finalizing installation"
+echo "[maple] [12/12] Finalizing installation..."
 if [ -r /dev/urandom ] && command -v od >/dev/null 2>&1 && command -v tr >/dev/null 2>&1; then
   MAPLE_INSTALL_EVENT_ID="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 else
@@ -363,8 +353,8 @@ curl -fsS --retry 2 -X POST \
   -H "x-maple-install-id: $MAPLE_INSTALL_EVENT_ID" \
   "$MAPLE_SERVER_URL/api/downloads/install-sh" >/dev/null 2>&1 || true
 
-MAPLE_CURRENT_STAGE="[13/13] completing installation"
-echo "[maple] [13/13] Installation complete."
+MAPLE_CURRENT_STAGE="[12/12] completing installation"
+echo "[maple] [12/12] Installation complete."
 echo "[maple] Installed in $MAPLE_HOME_DIR"
 echo "[maple] Connect with: maple connect --server $MAPLE_SERVER_URL"
 echo "[maple] Run local service with: maple-local"

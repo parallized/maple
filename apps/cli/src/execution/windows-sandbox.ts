@@ -15,6 +15,7 @@ import { join } from "node:path";
  * 1. prepareCodexWindowsSandbox：启动前自愈，若工作区缺少沙箱主体的显式 Modify ACE
  *    则尽力补齐；补不了时给出可执行提示，避免用户被"全命令报错"困住。
  * 2. describeWindowsSandboxFailure：进程失败后识别已知错误签名，给出同样的可执行提示。
+ * 通用处理：管理员 PowerShell 执行 takeown /F 与 icacls /grant 各一次即可，无需维护目录清单。
  */
 
 /** codex-windows-sandbox-setup.exe 使用的本地组名（各机器一致）。 */
@@ -113,7 +114,8 @@ export function hasExplicitInheritableModifyAce(icaclsOutput: string, principal:
   const line = icaclsOutput.match(pattern)?.[1] ?? "";
   if (!line) return false;
   if (/\(I\)/.test(line)) return false;
-  return /\(OI\)/.test(line) && /\(CI\)/.test(line) && /\(M\)|\(F\)/.test(line);
+  // Codex 自己的 setup 可能写入 (M,DC)（Modify + DeleteChild），同样满足"可写"。
+  return /\(OI\)/.test(line) && /\(CI\)/.test(line) && /\(M\)|\(M,|\(F\)/.test(line);
 }
 
 const SETUP_REFRESH_SIGNATURES = [
@@ -130,13 +132,13 @@ const ELEVATION_SIGNATURES = [
 
 const REFRESH_GUIDANCE =
   "Codex Windows 沙箱初始化失败：工作区目录 ACL 刷新被拒绝（Codex 宿主环境已知问题，非项目代码问题）。"
-  + "请依次尝试：① 完全退出并重启 Codex；② 以管理员身份运行 Codex；③ 用管理员 PowerShell 执行 "
-  + `icacls "<工作区目录>" /grant "${CODEX_SANDBOX_GROUP}:(OI)(CI)M"；④ /clear 重开会话。`;
+  + "请以管理员 PowerShell 依次执行：takeown /F \"<工作区目录>\"；"
+  + `icacls "<工作区目录>" /grant "${CODEX_SANDBOX_GROUP}:(OI)(CI)M"；然后 /clear 重开会话。`;
 
 const ELEVATION_GUIDANCE =
   "Codex Windows 沙箱需要管理员权限启动辅助进程（OS error 740）。"
-  + `请完全退出后以管理员身份运行 Codex；仍失败时可在管理员 PowerShell 执行 icacls "<工作区目录>" `
-  + `/grant "${CODEX_SANDBOX_GROUP}:(OI)(CI)M" 后重试。`;
+  + "请完全退出后以管理员身份运行 Codex；仍失败时在管理员 PowerShell 依次执行 "
+  + `takeown /F \"<工作区目录>\"；icacls "<工作区目录>" /grant "${CODEX_SANDBOX_GROUP}:(OI)(CI)M"；然后重试。`;
 
 function matchesAny(value: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(value));
@@ -215,7 +217,7 @@ export async function prepareCodexWindowsSandbox(
     warning: true,
     note:
       "Codex Windows 沙箱需要工作区写入权限，但当前用户没有目录 ACL 修改权限"
-      + `（${failed.join("、")}）。请以管理员身份运行 Maple / Codex，或用管理员 PowerShell 执行 `
-      + `icacls "<工作区目录>" /grant "${CODEX_SANDBOX_GROUP}:(OI)(CI)M" 后重试。`
+      + `（${failed.join("、")}）。请以管理员 PowerShell 依次执行：takeown /F \"<工作区目录>\"；`
+      + `icacls "<工作区目录>" /grant "${CODEX_SANDBOX_GROUP}:(OI)(CI)M"；然后重试。`
   };
 }

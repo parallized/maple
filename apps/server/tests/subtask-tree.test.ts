@@ -515,6 +515,66 @@ describe("Maple subtask tree", () => {
     expect(detail.attempts[0]?.resultSummary).toBe("第二份报告");
   });
 
+  it("counts reworks and carries the latest reports to the claimed worker job", async () => {
+    const { app, runnerToken, parent } = await setupProjectAndTodos();
+    expect(parent.reworkCount ?? 0).toBe(0);
+
+    const run = async (summary: string) => {
+      const claimResponse = await request(app, "/api/runner/jobs/claim", {
+        method: "POST",
+        token: runnerToken
+      });
+      expect(claimResponse.status).toBe(200);
+      const claim = (await claimResponse.json()) as ClaimJobResponse;
+      const job = claim.job!;
+      await request(app, `/api/runner/jobs/${job.todo.id}/start`, {
+        method: "POST",
+        token: runnerToken,
+        body: { leaseToken: job.leaseToken }
+      });
+      const completeResponse = await request(app, `/api/runner/jobs/${job.todo.id}/complete`, {
+        method: "POST",
+        token: runnerToken,
+        body: { leaseToken: job.leaseToken, success: true, exitCode: 0, summary }
+      });
+      expect(completeResponse.status).toBe(200);
+      return claim.job!;
+    };
+
+    // 首次执行：不是返工，reworkCount 保持 0。
+    const firstJob = await run("第一份报告");
+    expect(firstJob.todo.reworkCount ?? 0).toBe(0);
+
+    // 返工按钮路径：已完成 → 草稿，计入一次返工。
+    const draftResponse = await request(app, `/api/todos/${parent.id}`, {
+      method: "PATCH",
+      token: ADMIN_TOKEN,
+      body: { status: "draft" }
+    });
+    expect(draftResponse.status).toBe(200);
+    expect((await draftResponse.json()) as Todo).toMatchObject({ status: "draft", reworkCount: 1 });
+
+    // 草稿 → 待办后再领取：worker 能感知返工语义并拿到历史报告。
+    const todoResponse = await request(app, `/api/todos/${parent.id}`, {
+      method: "PATCH",
+      token: ADMIN_TOKEN,
+      body: { status: "todo" }
+    });
+    expect(todoResponse.status).toBe(200);
+    const reworkedJob = await run("第二份报告");
+    expect(reworkedJob.todo.reworkCount).toBe(1);
+    expect(reworkedJob.todo.reports?.map((report) => report.content)).toEqual(["第一份报告"]);
+
+    // 状态直接改回待返工（另一入口）：从终态退回待返工同样计入一次返工。
+    const reworkResponse = await request(app, `/api/todos/${parent.id}`, {
+      method: "PATCH",
+      token: ADMIN_TOKEN,
+      body: { status: "rework" }
+    });
+    expect(reworkResponse.status).toBe(200);
+    expect((await reworkResponse.json()) as Todo).toMatchObject({ status: "rework", reworkCount: 2 });
+  });
+
   it("deletes descendants together with the parent task", async () => {
     const { app, projectId, parent } = await setupProjectAndTodos();
     const deleteResponse = await request(app, `/api/todos/${parent.id}`, {

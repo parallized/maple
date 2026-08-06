@@ -83,6 +83,21 @@ describe("Coding Agent commands", () => {
     expect(command.args.join(" ")).not.toContain(apiKey);
   });
 
+  it("bounds long DeepSeek sessions with codex auto-compaction by default", () => {
+    const defaultCommand = buildWorkerCommand("deepseek", PROMPT, "direct", {});
+    expect(defaultCommand.args).toContain("model_auto_compact_token_limit=300000");
+
+    const tuned = buildWorkerCommand("deepseek", PROMPT, "direct", {
+      MAPLE_DEEPSEEK_AUTO_COMPACT_TOKEN_LIMIT: "120000"
+    });
+    expect(tuned.args).toContain("model_auto_compact_token_limit=120000");
+
+    const disabled = buildWorkerCommand("deepseek", PROMPT, "direct", {
+      MAPLE_DEEPSEEK_AUTO_COMPACT_TOKEN_LIMIT: "0"
+    });
+    expect(disabled.args.join(" ")).not.toContain("model_auto_compact_token_limit");
+  });
+
   it("allows Maple to lower reasoning for lightweight manager turns", () => {
     const codex = buildWorkerCommand("codex", PROMPT, "direct", {}, { reasoningEffort: "low" });
     expect(codex.args).toContain('model_reasoning_effort="low"');
@@ -100,6 +115,24 @@ describe("Coding Agent commands", () => {
       expect(command.args).not.toContain("workspace-write");
     }
   );
+
+  it.each(["codex", "deepseek"] as const)(
+    "grants host-side full access to git-capable worker sessions (%s)",
+    (kind) => {
+      const command = buildWorkerCommand(kind, PROMPT, "direct", {}, { fullAccess: true });
+      expect(command.args).toContain("--sandbox");
+      expect(command.args).toContain("danger-full-access");
+      expect(command.args).not.toContain("workspace-write");
+      expect(command.args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    }
+  );
+
+  it("keeps read-only leader runs read-only even when full access is requested", () => {
+    const command = buildWorkerCommand("codex", PROMPT, "direct", {}, { readOnly: true, fullAccess: true });
+    expect(command.args).toContain("--sandbox");
+    expect(command.args).toContain("read-only");
+    expect(command.args).not.toContain("danger-full-access");
+  });
 
   it("isolates a DeepSeek Leader from user-global and Maple MCP configuration", () => {
     const isolatedHome = "C:\\maple\\managers\\project-1\\deepseek-codex-home";

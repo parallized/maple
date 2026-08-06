@@ -998,6 +998,19 @@ h3 {
   table-layout: fixed;
 }
 
+/* ── 调试同频连接图：同 SID 同色细虚线，归拢到各自 x 轴竖线轨道 ── */
+.task-table-wrap {
+  position: relative;
+}
+
+.sid-link-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2;
+}
+
 @keyframes task-row-enter {
   from {
     transform: translateY(8px);
@@ -1075,7 +1088,9 @@ h3 {
 
 .task-row td.col-task,
 .task-row td.col-status,
+.task-row td.col-subtasks,
 .task-row td.col-lastMention,
+.task-row td.col-duration,
 .task-row td.col-actions {
   white-space: nowrap;
   overflow: hidden;
@@ -1093,7 +1108,9 @@ h3 {
   isolation: isolate;
 }
 
+.task-row td.col-subtasks,
 .task-row td.col-lastMention,
+.task-row td.col-duration,
 .task-row td.col-tags {
   position: relative;
   z-index: 1;
@@ -1111,7 +1128,7 @@ h3 {
 
 /* 锚点自带 transform 会形成独立层叠上下文，会困住条带的 z-index：
    hover 时把锚点整体抬到内容单元格（z1）之上，条带才能真正压住并
-   blur「上次提及 / 标签」等内容；删除按钮（z6）仍在其上。 */
+   blur「子任务 / 时间 / 标签」等内容；删除按钮（z6）仍在其上。 */
 .task-row:hover td.col-status .status-strip-anchor {
   z-index: 5;
 }
@@ -1141,13 +1158,8 @@ h3 {
   opacity: 1;
 }
 
-/* 行拖拽手柄：6 个点，无卡片设计。 */
+/* 行拖拽手柄：与删除按钮同款 ui-btn ghost 小图标按钮，点阵 grip 图标。 */
 .row-drag-handle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 18px;
   cursor: grab;
   opacity: 0;
   transition: opacity 0.15s ease;
@@ -1163,17 +1175,6 @@ h3 {
 
 .row-drag-handle:hover {
   opacity: 1;
-}
-
-.row-drag-handle::before {
-  content: "";
-  width: 14px;
-  height: 18px;
-  background-image: radial-gradient(circle, currentColor 1.1px, transparent 1.4px);
-  background-size: 6px 6px;
-  background-position: 1px 1px;
-  background-repeat: repeat;
-  color: var(--color-secondary);
 }
 
 /* 拖拽中的行弱化；落点行用品牌色浅底提示插入位置。 */
@@ -1315,6 +1316,54 @@ h3 {
 .task-row:hover .task-open-btn {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* ── 子任务进度列：细轨 + 计数，低噪声、不打断行节奏 ── */
+.subtasks-meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+}
+
+.subtasks-meter-track {
+  width: 30px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-base-content) 12%, transparent);
+  overflow: hidden;
+}
+
+.subtasks-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 70%, transparent);
+  transition: width 0.25s ease;
+}
+
+.subtasks-meter-fill.complete {
+  background: color-mix(in srgb, var(--color-success) 80%, transparent);
+}
+
+.subtasks-meter-count {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 标题内报告计数：弱化的图标 + 数字，提示该任务已有执行产出 ── */
+.task-reports-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-secondary);
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 调试表头「导出」：比「调试」更亮的纯文字，无卡片 / 按钮样式。 */
