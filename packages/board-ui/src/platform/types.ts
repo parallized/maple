@@ -5,6 +5,7 @@ import type {
   McpTaskUpdatedEvent,
   McpWorkerFinishedEvent,
   Project,
+  RunnerModelSettings,
   RunnerSummary,
   Task,
   TaskArtifact,
@@ -204,6 +205,12 @@ export interface BoardPlatform {
   loadAcceptanceSettings?(): Promise<AcceptanceSettings | null>;
   /** 写入验收设置；失败应抛错，由 UI 回滚。 */
   saveAcceptanceSettings?(next: AcceptanceSettings): Promise<void>;
+
+  // ── 执行端模型偏好与工具刷新（仅 Server-backed 平台实现）──
+  /** 保存单个执行端的模型偏好；字段缺省表示不修改，null 表示恢复跟随工作区默认。 */
+  saveRunnerModelSettings?(runnerId: string, next: Partial<RunnerModelSettings>): Promise<RunnerModelSettings>;
+  /** 请求该执行端主动重探本机可用工具清单；结果由快照轮询带回。 */
+  refreshRunnerTools?(runnerId: string): Promise<void>;
 
   // ── 任务附件（截图;仅 Server-backed 平台实现,未实现时详情面板不渲染画廊）──
   /** 列出任务附件元数据;失败应抛错,由 UI 决定静默或提示。 */

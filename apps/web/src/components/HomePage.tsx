@@ -154,12 +154,14 @@ function HomeNav({
   api,
   theme,
   onToggleTheme,
-  onEnter
+  onEnter,
+  onHow
 }: {
   api: DashboardApi;
   theme: ResolvedTheme;
   onToggleTheme: () => void;
   onEnter: () => void;
+  onHow: () => void;
 }) {
   const navLinkClass =
     "text-[12.5px] text-(--color-secondary) transition-colors hover:text-(--color-base-content)";
@@ -173,9 +175,9 @@ function HomeNav({
         <a href={COPY.githubUrl} target="_blank" rel="noreferrer" className={navLinkClass}>
           {COPY.nav.product}
         </a>
-        <a href={COPY.githubUrl} target="_blank" rel="noreferrer" className={navLinkClass}>
+        <button type="button" onClick={onHow} className={navLinkClass}>
           {COPY.nav.how}
-        </a>
+        </button>
         <a href={COPY.githubUrl} target="_blank" rel="noreferrer" className={`${navLinkClass} flex items-center gap-1`}>
           {COPY.nav.github}
           <Icon icon="mingcute:arrow-right-up-line" className="text-[12px]" />
@@ -372,7 +374,7 @@ function HomeHero({
       </ScrollCurlSurface>
 
       {/* 演示带：Color Bends 流动色带底 + 场景化产品演示 */}
-      <div className="relative mt-16 border-t border-(--color-base-300)">
+      <div data-home-section="how" className="relative mt-16 border-t border-(--color-base-300)">
         <ScrollCurlSurface motion={curlMotion} viewportRef={scrollViewportRef}>
           <ColorBends
             className="absolute inset-0 opacity-85 [mask-image:linear-gradient(to_bottom,black_30%,transparent_92%)]"
@@ -428,6 +430,13 @@ export function HomePage({
 }) {
   const { theme, toggle } = useHomeTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lenisRef = useRef<Lenis | null>(null);
+  /* 工作方式锚点:Lenis 平滑滚动到产品演示带(原生 #anchor 驱动不了自定义滚动容器) */
+  const scrollToHow = useCallback(() => {
+    const target = scrollRef.current?.querySelector<HTMLElement>('[data-home-section="how"]');
+    if (!target) return;
+    lenisRef.current?.scrollTo(target, { offset: -56 });
+  }, []);
   const curlMotion = useMemo(() => createScrollCurlMotion(), []);
   // 进入页面时同步一次，保证与 dashboard 跨页主题一致。
   void authed;
@@ -452,6 +461,7 @@ export function HomePage({
       anchors: false,
       autoRaf: false
     });
+    lenisRef.current = lenis;
     let raf = 0;
     let previousTime: number | null = null;
     curlMotion.reset(wrapper.scrollTop);
@@ -467,6 +477,7 @@ export function HomePage({
     return () => {
       cancelAnimationFrame(raf);
       curlMotion.reset(wrapper.scrollTop);
+      lenisRef.current = null;
       lenis.destroy();
     };
   }, [curlMotion]);
@@ -515,7 +526,7 @@ export function HomePage({
 
   return (
     <div className="relative flex h-screen flex-col overflow-hidden bg-(--color-base-200) font-sans text-(--color-base-content) antialiased">
-      <HomeNav api={api} theme={theme} onToggleTheme={toggle} onEnter={onEnter} />
+      <HomeNav api={api} theme={theme} onToggleTheme={toggle} onEnter={onEnter} onHow={scrollToHow} />
       <div
         ref={scrollRef}
         data-home-scroll-viewport="true"

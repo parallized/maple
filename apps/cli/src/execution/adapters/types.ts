@@ -1,5 +1,12 @@
 import type { LogStream, RunLogEntry, TokenUsage, WorkerKind } from "@maple/protocol";
 
+/** Worker 执行沙箱档位；仅 codex 系 Worker 有真实档位，其余 Worker 默认处于各自最高放行档。 */
+export type SandboxLevel =
+  | "read-only"
+  | "workspace-write"
+  | "danger-full-access"
+  | "sandbox-bypass";
+
 export interface WorkerCommand {
   executable: string;
   args: string[];
@@ -23,6 +30,8 @@ export interface AgentCommandOptions {
   windowsSandboxBypass?: boolean;
   /** 宿主侧放行：worker 会话使用 danger-full-access（任务需要 git 写操作等场景）。 */
   fullAccess?: boolean;
+  /** 显式整体绕过内层沙箱与审批（自动提权到最高档时使用，效果等同 windowsSandboxBypass）。 */
+  bypassSandbox?: boolean;
 }
 
 /** Agent 启动前的宿主级预检结果；note 存在时才需要展示。 */
@@ -66,5 +75,14 @@ export interface CodingAgentAdapter {
     additionalWritableDirectories?: string[];
     windowsSandboxBypass?: boolean;
   }): Promise<AgentRunPreparation | void>;
+  /**
+   * 本 Worker 可用的沙箱提权阶梯（首项即初始档位）。
+   * 未实现时视为仅支持初始档位，不做自动提权。
+   */
+  sandboxLevels?(input: {
+    readOnly?: boolean;
+    fullAccess?: boolean;
+    windowsSandboxBypass?: boolean;
+  }): SandboxLevel[];
   createOutputParser(): AgentOutputParser;
 }

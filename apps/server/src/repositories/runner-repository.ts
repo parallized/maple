@@ -1,10 +1,12 @@
 import type { Database } from "bun:sqlite";
+import { WORKER_KINDS } from "@maple/protocol";
 import type {
   CreatePairingResponse,
   ExchangePairingRequest,
   ExchangePairingResponse,
   Runner,
   RunnerCapability,
+  UpdateRunnerModelSettingsRequest,
   WorkerInventoryItem,
   WorkerKind
 } from "@maple/protocol";
@@ -106,7 +108,8 @@ export class RunnerRepository {
     if (!token) return null;
     const row = this.database
       .query(
-        `SELECT id, workspace_id, name, hostname, platform, version, supported_workers, worker_inventory, capabilities, last_seen_at, created_at,
+        `SELECT id, workspace_id, name, hostname, platform, version, supported_workers, worker_inventory, capabilities,
+                default_worker, leader_worker, last_seen_at, created_at,
                 (SELECT group_concat(project_id) FROM project_bindings WHERE runner_id = runners.id) AS project_ids
          FROM runners WHERE token_hash = ? AND revoked_at IS NULL`
       )
@@ -149,7 +152,8 @@ export class RunnerRepository {
   getById(runnerId: string, workspaceId?: string): Runner | null {
     const row = this.database
       .query(
-        `SELECT id, workspace_id, name, hostname, platform, version, supported_workers, worker_inventory, capabilities, last_seen_at, created_at,
+        `SELECT id, workspace_id, name, hostname, platform, version, supported_workers, worker_inventory, capabilities,
+                default_worker, leader_worker, last_seen_at, created_at,
                 (SELECT group_concat(project_id) FROM project_bindings WHERE runner_id = runners.id) AS project_ids
          FROM runners WHERE id = ? AND revoked_at IS NULL${workspaceId ? " AND workspace_id = ?" : ""}`
       )
@@ -161,7 +165,8 @@ export class RunnerRepository {
     const offlineBefore = subtractSeconds(nowIso(), this.offlineSeconds);
     const rows = this.database
       .query(
-        `SELECT id, workspace_id, name, hostname, platform, version, supported_workers, worker_inventory, capabilities, last_seen_at, created_at,
+        `SELECT id, workspace_id, name, hostname, platform, version, supported_workers, worker_inventory, capabilities,
+                default_worker, leader_worker, last_seen_at, created_at,
                 (SELECT group_concat(project_id) FROM project_bindings WHERE runner_id = runners.id) AS project_ids
          FROM runners
          WHERE revoked_at IS NULL${workspaceId ? " AND workspace_id = ?" : ""}
@@ -171,6 +176,42 @@ export class RunnerRepository {
       )
       .all(...(workspaceId ? [workspaceId, offlineBefore] : [offlineBefore])) as RunnerRow[];
     return rows.map((row) => toRunner(row, offlineBefore));
+  }
+
+  /** 读取该执行端的模型覆盖；不存在的执行端返回空覆盖（跟随工作区默认）。 */
+  getModelOverrides(runnerId: string): { defaultWorker: WorkerKind | null; leaderWorker: WorkerKind | null } {
+    const row = this.database
+      .query("SELECT default_worker, leader_worker FROM runners WHERE id = ? AND revoked_at IS NULL")
+      .get(runnerId) as { default_worker: string | null; leader_worker: string | null } | null;
+    if (!row) return { defaultWorker: null, leaderWorker: null };
+    return {
+      defaultWorker: parseRunnerWorkerOverride(row.default_worker),
+      leaderWorker: parseRunnerWorkerOverride(row.leader_worker)
+    };
+  }
+
+  updateModels(
+    runnerId: string,
+    workspaceId: string,
+    input: UpdateRunnerModelSettingsRequest
+  ): Runner | null {
+    const current = this.database
+      .query(
+        `SELECT default_worker, leader_worker FROM runners
+         WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`
+      )
+      .get(runnerId, workspaceId) as { default_worker: string | null; leader_worker: string | null } | null;
+    if (!current) return null;
+    const defaultWorker = input.defaultWorker === undefined ? current.default_worker : input.defaultWorker;
+    const leaderWorker = input.leaderWorker === undefined ? current.leader_worker : input.leaderWorker;
+    this.database.run(
+      `UPDATE runners
+       SET default_worker = ?, leader_worker = ?
+       WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`,
+      [defaultWorker, leaderWorker, runnerId, workspaceId]
+    );
+    touchRevision(this.database);
+    return this.getById(runnerId, workspaceId);
   }
 
   revoke(runnerId: string, workspaceId: string): boolean {
@@ -186,4 +227,9 @@ export class RunnerRepository {
     });
     return revoke.immediate();
   }
+}
+
+function parseRunnerWorkerOverride(raw: string | null): WorkerKind | null {
+  if (!raw) return null;
+  return (WORKER_KINDS as readonly string[]).includes(raw) ? (raw as WorkerKind) : null;
 }

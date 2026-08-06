@@ -14,6 +14,7 @@ import {
   stringValue
 } from "./output-parser";
 import { prepareCodexWindowsSandbox } from "../windows-sandbox";
+import { sandboxElevationLadder } from "../sandbox-elevation";
 
 function itemEvents(value: Record<string, unknown>) {
   const item = nestedRecord(value, "item");
@@ -128,7 +129,7 @@ export const codexAdapter: CodingAgentAdapter = {
         ...(reasoningEffort ? ["--config", `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`] : []),
         ...(mcpCommand ? ["--config", `mcp_servers.maple.command=${JSON.stringify(mcpCommand)}`] : []),
         ...(mcpCommand && mcpArgs ? ["--config", `mcp_servers.maple.args=${mcpArgs}`] : []),
-        ...(options?.windowsSandboxBypass
+        ...(options?.windowsSandboxBypass || options?.bypassSandbox
           ? ["--dangerously-bypass-approvals-and-sandbox"]
           : options?.readOnly
             ? ["--sandbox", "read-only"]
@@ -150,6 +151,9 @@ export const codexAdapter: CodingAgentAdapter = {
       additionalWritableDirectories,
       bypass: windowsSandboxBypass
     });
+  },
+  sandboxLevels(input) {
+    return sandboxElevationLadder(input);
   },
   createOutputParser: () => createCodexOutputParser()
 };

@@ -38,6 +38,28 @@ function claimedCommand(): ClaimRunnerCommandResponse {
   return { command: runnerCommand(), leaseToken: LEASE_TOKEN, retryAfterMs: 0 };
 }
 
+function refreshCommand(): ClaimRunnerCommandResponse {
+  const now = new Date().toISOString();
+  return {
+    command: {
+      id: "command-refresh",
+      runnerId: RUNNER_ID,
+      type: "refresh_worker_inventory",
+      status: "claimed",
+      resultProjectId: null,
+      resultBindingId: null,
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      claimedAt: now,
+      completedAt: null
+    },
+    leaseToken: LEASE_TOKEN,
+    retryAfterMs: 0
+  };
+}
+
 class FakeRunnerCommandApi implements RunnerCommandApi {
   readonly registrations: RegisterProjectRequest[] = [];
   readonly completions: Array<{ commandId: string; input: CompleteRunnerCommandRequest }> = [];
@@ -228,5 +250,33 @@ describe("runner directory selection command", () => {
       error: "执行端未能注册所选项目目录。"
     });
     expect(JSON.stringify(api.completions)).not.toContain(missingPath.replaceAll("\\", "\\\\"));
+  });
+});
+
+describe("runner refresh inventory command", () => {
+  it("re-probes by notifying the loop and completes without a directory result", async () => {
+    const fixture = createFixture();
+    const api = new FakeRunnerCommandApi();
+    let refreshRequested = false;
+
+    const config = await handleRunnerCommand({
+      api,
+      claim: refreshCommand(),
+      configPath: fixture.configPath,
+      signal: new AbortController().signal,
+      output: output(),
+      onRefreshInventory: () => {
+        refreshRequested = true;
+      }
+    });
+
+    expect(refreshRequested).toBe(true);
+    expect(api.completions).toEqual([
+      {
+        commandId: "command-refresh",
+        input: { leaseToken: LEASE_TOKEN, outcome: "succeeded" }
+      }
+    ]);
+    expect(config.runner?.id).toBe(RUNNER_ID);
   });
 });

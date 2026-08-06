@@ -27,6 +27,8 @@ export interface HandleRunnerCommandOptions {
   signal: AbortSignal;
   output: RunnerCommandOutput;
   directoryPicker?: DirectoryPicker;
+  /** 刷新工具清单命令完成后的回调（Runner 据此立即重探并上报）。 */
+  onRefreshInventory?: () => void;
 }
 
 async function complete(
@@ -42,6 +44,19 @@ export async function handleRunnerCommand(options: HandleRunnerCommandOptions): 
   const { command, leaseToken } = options.claim;
   if (!command || !leaseToken) return loadConfig(options.configPath);
   if (options.signal.aborted) return loadConfig(options.configPath);
+
+  if (command.type === "refresh_worker_inventory") {
+    options.output.info("[maple] 看板请求刷新本机可用工具清单，正在重新探测…");
+    options.onRefreshInventory?.();
+    try {
+      await complete(options.api, command.id, leaseToken, { outcome: "succeeded" });
+    } catch (error) {
+      options.output.warn(
+        `[maple] 工具清单已重探，但状态回传失败：${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+    return loadConfig(options.configPath);
+  }
 
   if (command.type !== "select_project_directory") {
     await complete(options.api, command.id, leaseToken, {

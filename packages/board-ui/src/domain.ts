@@ -97,6 +97,16 @@ export type RunnerSummary = {
   supportedWorkers?: WorkerKind[];
   /** CLI 解析出的 Worker 默认模型；不包含任何凭据或本机配置路径。 */
   workerInventory?: RunnerWorkerInventoryItem[];
+  /** 看板为该执行端单独配置的默认执行工具；缺省/为 null 时跟随工作区默认。 */
+  defaultWorker?: WorkerKind | null;
+  /** 看板为该执行端单独配置的 Leader PM 工具；缺省/为 null 时跟随工作区默认。 */
+  leaderWorker?: WorkerKind | null;
+};
+
+/** 单个执行端（runner）的模型偏好；null 表示跟随工作区默认。 */
+export type RunnerModelSettings = {
+  defaultWorker: WorkerKind | null;
+  leaderWorker: WorkerKind | null;
 };
 
 export type TaskReport = {

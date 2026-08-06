@@ -61,6 +61,8 @@ export interface RunnerRow {
   supported_workers?: string | null;
   worker_inventory?: string | null;
   capabilities?: string | null;
+  default_worker?: string | null;
+  leader_worker?: string | null;
   last_seen_at: string;
   created_at: string;
   project_ids?: string | null;
@@ -256,6 +258,11 @@ function parseRunnerCapabilities(raw: string | null | undefined): RunnerCapabili
   }
 }
 
+function parseRunnerModelOverride(raw: string | null | undefined): WorkerKind | undefined {
+  if (!raw) return undefined;
+  return (WORKER_KINDS as readonly string[]).includes(raw) ? (raw as WorkerKind) : undefined;
+}
+
 export function toRunner(row: RunnerRow, offlineBefore: string): Runner {
   return {
     id: row.id,
@@ -270,7 +277,9 @@ export function toRunner(row: RunnerRow, offlineBefore: string): Runner {
     projectIds: row.project_ids ? row.project_ids.split(",").filter(Boolean) : [],
     supportedWorkers: parseSupportedWorkers(row.supported_workers),
     workerInventory: parseWorkerInventory(row.worker_inventory),
-    capabilities: parseRunnerCapabilities(row.capabilities)
+    capabilities: parseRunnerCapabilities(row.capabilities),
+    defaultWorker: parseRunnerModelOverride(row.default_worker),
+    leaderWorker: parseRunnerModelOverride(row.leader_worker)
   };
 }
 

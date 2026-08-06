@@ -1,8 +1,16 @@
 import type { RunLogEntry, TokenUsage, WorkerKind } from "@maple/protocol";
 import { readDeepSeekApiKey } from "../credentials/deepseek";
 import { getCodingAgentAdapter } from "./adapters/registry";
-import type { AgentOutputParser, AgentRunEventDraft } from "./adapters/types";
-import { detectPermissionBlocker } from "./permission-blocker";
+import type { AgentOutputParser, AgentRunEventDraft, SandboxLevel } from "./adapters/types";
+import {
+  detectPermissionBlock,
+  type PermissionBlock
+} from "./permission-blocker";
+import {
+  applySandboxLevel,
+  initialSandboxLevel,
+  sandboxLevelLabel
+} from "./sandbox-elevation";
 import {
   forceTerminateProcessTree,
   reapCompletedProcessTree,
@@ -44,6 +52,12 @@ export interface ProcessExecutionOptions {
   additionalWritableDirectories?: string[];
   /** 宿主侧放行：worker 会话使用 danger-full-access（需要 git 写操作等场景）。 */
   fullAccess?: boolean;
+  /** 显式整体绕过内层沙箱与审批（自动提权到最高档时使用）。 */
+  bypassSandbox?: boolean;
+  /** 覆盖当前进程是否运行在 Codex Windows 沙箱会话内的探测结果（默认自动探测）。 */
+  windowsSandboxBypass?: boolean;
+  /** 执行被沙箱/权限策略拦截时自动提权重试（仅 Worker，Leader 只读会话不做）。 */
+  autoElevate?: boolean;
   /** Server 下发的单次运行凭据；只保留在当前任务内存中。 */
   deepSeekApiKey?: string;
   /** 跳过启动前宿主预检（测试或调用方已自行处理宿主环境时使用）。 */
@@ -63,9 +77,26 @@ export interface ProcessExecutionResult {
   usage: TokenUsage | null;
   sessionId: string | null;
   sessionUnavailable: boolean;
+  /** 沙箱/权限策略拦截分类；仅在检测到时存在，用于向用户解释失败原因。 */
+  permissionBlock?: PermissionBlock | null;
 }
 
 export type WorkerExecutor = (options: ProcessExecutionOptions) => Promise<ProcessExecutionResult>;
+
+interface WorkerRunOutcome extends ProcessExecutionResult {
+  rawOutput: string;
+  operationalOutput: string;
+  assistantOutput: string;
+  permissionBlock: PermissionBlock | null;
+}
+
+/** 把某个沙箱档位落到整次执行参数上。 */
+function withSandboxLevel(
+  options: ProcessExecutionOptions,
+  level: SandboxLevel
+): ProcessExecutionOptions {
+  return { ...options, ...applySandboxLevel(options, level) };
+}
 
 function executionEnvironment(
   workerKind: WorkerKind,
@@ -176,12 +207,48 @@ function explicitCancellationMessage(signal: AbortSignal): string | null {
   return message || null;
 }
 
+/**
+ * 执行 Worker / Leader 会话；当执行被沙箱或权限策略拦截时按适配器提供的提权阶梯
+ * 自动升级到更高档位重试（默认完全放行，仅在权限收紧时才有可提档位）。
+ * 外层沙箱导致的出网受限无法通过内层提权解决，会保留最后的 network 分类引导宿主侧处理。
+ */
 export async function executeWorker(options: ProcessExecutionOptions): Promise<ProcessExecutionResult> {
+  const adapter = getCodingAgentAdapter(options.workerKind);
+  const levelContext = {
+    readOnly: options.readOnly,
+    fullAccess: options.fullAccess,
+    windowsSandboxBypass: options.windowsSandboxBypass ?? isCodexSandboxSession()
+  };
+  const ladder = adapter.sandboxLevels?.(levelContext) ?? [initialSandboxLevel(levelContext)];
+  const autoElevate = options.autoElevate === true && !options.readOnly && ladder.length > 1;
+
+  let outcome = await executeWorkerOnce(withSandboxLevel(options, ladder[0]));
+  for (let index = 1; autoElevate && index < ladder.length; index += 1) {
+    if (outcome.success || !outcome.permissionBlock || outcome.sessionUnavailable) break;
+    if (options.signal.aborted || Boolean(options.forceSignal?.aborted)) break;
+    const from = sandboxLevelLabel(ladder[index - 1]);
+    const to = sandboxLevelLabel(ladder[index]);
+    await options.onLog({
+      stream: "system",
+      sequence: 0,
+      occurredAt: new Date().toISOString(),
+      kind: "warning",
+      level: "warning",
+      status: "progress",
+      title: "Worker 沙箱自动提权",
+      content: `${adapter.label} 执行被沙箱或权限策略拦截，已自动从「${from}」提权到「${to}」重试。`
+    });
+    outcome = await executeWorkerOnce(withSandboxLevel(options, ladder[index]));
+  }
+  return outcome;
+}
+
+async function executeWorkerOnce(options: ProcessExecutionOptions): Promise<WorkerRunOutcome> {
   const shell = options.shell ?? "direct";
   const adapter = getCodingAgentAdapter(options.workerKind);
   const parser = adapter.createOutputParser();
   const workerEnv = executionEnvironment(options.workerKind, options.deepSeekApiKey);
-  const windowsSandboxBypass = isCodexSandboxSession();
+  const windowsSandboxBypass = options.windowsSandboxBypass ?? isCodexSandboxSession();
   const command = buildResolvedWorkerCommand(
     options.workerKind,
     options.prompt,
@@ -196,6 +263,7 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
       resumeSessionId: options.resumeSessionId,
       additionalWritableDirectories: options.additionalWritableDirectories,
       fullAccess: options.fullAccess,
+      bypassSandbox: options.bypassSandbox,
       windowsSandboxBypass
     }
   );
@@ -303,7 +371,11 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
       error: message,
       usage: resolveFinalUsage(),
       sessionId: options.resumeSessionId ?? null,
-      sessionUnavailable: false
+      sessionUnavailable: false,
+      permissionBlock: null,
+      rawOutput: "",
+      operationalOutput: "",
+      assistantOutput: ""
     };
   }
 
@@ -395,16 +467,21 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
         error: null,
         usage: resolveFinalUsage(),
         sessionId: observedSessionId ?? options.resumeSessionId ?? null,
-        sessionUnavailable: false
+        sessionUnavailable: false,
+        permissionBlock: null,
+        rawOutput,
+        operationalOutput,
+        assistantOutput
       };
     }
     await streamConsumption;
     const exitCode = await subprocess.exited;
-    const permissionBlocker = exitCode === 0 && !stopped()
-      ? detectPermissionBlocker({ operationalOutput, assistantOutput })
+    const permissionBlock = exitCode === 0 && !stopped()
+      ? detectPermissionBlock({ operationalOutput, assistantOutput })
       : null;
-    const success = exitCode === 0 && !stopped() && !permissionBlocker;
-    const sandboxFailure = success || permissionBlocker
+    const permissionBlocker = permissionBlock?.message ?? null;
+    const success = exitCode === 0 && !stopped() && !permissionBlock;
+    const sandboxFailure = success || permissionBlock
       ? null
       : describeWindowsSandboxFailure(rawOutput);
     const report = reportCollector.value();
@@ -439,7 +516,11 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
           : permissionBlocker ?? sandboxFailure ?? redact(tail(rawOutput, 4_000)),
       usage: resolveFinalUsage(),
       sessionId: observedSessionId ?? options.resumeSessionId ?? null,
-      sessionUnavailable: Boolean(options.resumeSessionId) && !success && sessionUnavailable(rawOutput)
+      sessionUnavailable: Boolean(options.resumeSessionId) && !success && sessionUnavailable(rawOutput),
+      permissionBlock,
+      rawOutput,
+      operationalOutput,
+      assistantOutput
     };
   } catch (error) {
     if (subprocess) {
@@ -472,7 +553,11 @@ export async function executeWorker(options: ProcessExecutionOptions): Promise<P
       error: message,
       usage: resolveFinalUsage(),
       sessionId: observedSessionId ?? options.resumeSessionId ?? null,
-      sessionUnavailable: Boolean(options.resumeSessionId) && sessionUnavailable(`${rawOutput}\n${message}`)
+      sessionUnavailable: Boolean(options.resumeSessionId) && sessionUnavailable(`${rawOutput}\n${message}`),
+      permissionBlock: null,
+      rawOutput,
+      operationalOutput,
+      assistantOutput
     };
   } finally {
     options.signal.removeEventListener("abort", abort);

@@ -139,7 +139,7 @@ export type RunnerState = "online" | "offline";
 export type ExecutionConnection = "connected" | "interrupted";
 export const TODO_EXECUTION_PHASES = ["queued", "planning", "running"] as const;
 export type TodoExecutionPhase = (typeof TODO_EXECUTION_PHASES)[number];
-export type RunnerCommandType = "select_project_directory";
+export type RunnerCommandType = "select_project_directory" | "refresh_worker_inventory";
 export type RunnerCommandStatus = "pending" | "claimed" | "succeeded" | "cancelled" | "failed" | "expired";
 export type AttemptState = "claimed" | "running" | "succeeded" | "failed" | "abandoned";
 export type LogStream = "stdout" | "stderr" | "system";
@@ -224,6 +224,16 @@ export interface Runner {
   workerInventory?: WorkerInventoryItem[];
   /** CLI 明确声明的可选协议能力，避免新版 Server 误用旧 CLI。 */
   capabilities?: RunnerCapability[];
+  /** 看板为该执行端单独配置的默认执行工具；缺省时跟随工作区默认。 */
+  defaultWorker?: WorkerKind;
+  /** 看板为该执行端单独配置的 Leader PM 工具；缺省时跟随工作区默认。 */
+  leaderWorker?: WorkerKind;
+}
+
+/** 看板为单个执行端（runner）单独维护的模型偏好；null 表示跟随工作区默认。 */
+export interface RunnerModelSettings {
+  defaultWorker: WorkerKind | null;
+  leaderWorker: WorkerKind | null;
 }
 
 export interface RunnerCommand {

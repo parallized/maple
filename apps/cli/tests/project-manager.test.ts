@@ -15,7 +15,12 @@ import {
   runProjectManager,
   type ProjectManagerDiagnosticEvent
 } from "../src/manager/project-manager";
-import { DEFAULT_MANAGER_TIMEOUT_MS, runManagerAgentTurn } from "../src/manager/agent-turn";
+import {
+  DEFAULT_MANAGER_HARD_TIMEOUT_MS,
+  DEFAULT_MANAGER_IDLE_TIMEOUT_MS,
+  DEFAULT_MANAGER_TIMEOUT_MS,
+  runManagerAgentTurn
+} from "../src/manager/agent-turn";
 import { buildWorkerCommand } from "../src/execution/worker-command";
 import { AgentSessionStore } from "../src/session/store";
 
@@ -96,8 +101,10 @@ function managerJob(): ProjectManagerJob {
 }
 
 describe("Project manager dispatch", () => {
-  it("limits a Leader turn to 30 seconds and reports its own timeout cause", async () => {
+  it("stops a Leader turn after it stays silent past the idle timeout", async () => {
+    expect(DEFAULT_MANAGER_IDLE_TIMEOUT_MS).toBe(30_000);
     expect(DEFAULT_MANAGER_TIMEOUT_MS).toBe(30_000);
+    expect(DEFAULT_MANAGER_HARD_TIMEOUT_MS).toBe(120_000);
     const executor: WorkerExecutor = async (options) => await new Promise((resolve) => {
       const finish = () => resolve({
         success: false,
@@ -121,7 +128,90 @@ describe("Project manager dispatch", () => {
       buildPrompt: () => "route",
       executor,
       timeoutMs: 5
-    })).rejects.toThrow("Leader PM 执行超过 1 秒，已自动停止本次派单。");
+    })).rejects.toThrow("Leader PM 已连续 1 秒无动静，已自动停止本次派单。");
+  });
+
+  it("keeps a Leader turn alive while it keeps producing output", async () => {
+    const executor: WorkerExecutor = async (options) => await new Promise((resolve) => {
+      const startedAt = Date.now();
+      const interval = setInterval(() => {
+        void options.onLog({
+          sequence: 0,
+          occurredAt: new Date().toISOString(),
+          stream: "stdout",
+          kind: "assistant",
+          level: "info",
+          status: "progress",
+          title: "思考中",
+          content: "Leader 仍在输出，不应按空闲超时终止。"
+        });
+        if (Date.now() - startedAt >= 180) {
+          clearInterval(interval);
+          resolve({
+            success: true,
+            exitCode: 0,
+            summary: "{}",
+            error: null,
+            usage: null,
+            sessionId: null,
+            sessionUnavailable: false
+          });
+        }
+      }, 10);
+    });
+
+    await runManagerAgentTurn({
+      projectId: "project-1",
+      managerWorkerKind: "codex",
+      managerWorkspace: ".",
+      signal: new AbortController().signal,
+      shell: "direct",
+      buildPrompt: () => "route",
+      executor,
+      timeoutMs: 60,
+      hardTimeoutMs: 400
+    });
+  });
+
+  it("hard-stops a busy Leader turn that keeps outputting but never finishes", async () => {
+    const executor: WorkerExecutor = async (options) => await new Promise((resolve) => {
+      const interval = setInterval(() => {
+        void options.onLog({
+          sequence: 0,
+          occurredAt: new Date().toISOString(),
+          stream: "stdout",
+          kind: "assistant",
+          level: "info",
+          status: "progress",
+          title: "输出中",
+          content: "看似有动静，实则一直未完成。"
+        });
+      }, 5);
+      options.signal.addEventListener("abort", () => {
+        clearInterval(interval);
+        resolve({
+          success: false,
+          exitCode: null,
+          summary: "",
+          error: typeof options.signal.reason === "string" ? options.signal.reason : "cancelled",
+          usage: null,
+          sessionId: null,
+          sessionUnavailable: false
+        });
+      }, { once: true });
+    });
+
+    await expect(runManagerAgentTurn({
+      projectId: "project-1",
+      managerWorkerKind: "codex",
+      managerWorkspace: ".",
+      signal: new AbortController().signal,
+      shell: "direct",
+      buildPrompt: () => "route",
+      executor,
+      timeoutMs: 100,
+      hardTimeoutMs: 60
+    })).rejects.toThrow("Leader PM 执行超过 1 秒，已强制停止本次派单。");
   });
 
   it("keeps an external CLI stop distinct from a Leader timeout", async () => {

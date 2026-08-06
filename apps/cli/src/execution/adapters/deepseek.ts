@@ -1,6 +1,7 @@
 import type { CodingAgentAdapter } from "./types";
 import { CODEX_AUTOMATION_PREFIX, createCodexOutputParser } from "./codex";
 import { prepareCodexWindowsSandbox } from "../windows-sandbox";
+import { sandboxElevationLadder } from "../sandbox-elevation";
 
 const DEFAULT_MODEL = "deepseek-v4-flash";
 const PROVIDER_ID = "maple_deepseek";
@@ -68,7 +69,7 @@ export const deepSeekAdapter: CodingAgentAdapter = {
         `model_providers.${PROVIDER_ID}.supports_websockets=false`,
         ...(mcpCommand ? ["--config", `mcp_servers.maple.command=${tomlString(mcpCommand)}`] : []),
         ...(mcpCommand && mcpArgs ? ["--config", `mcp_servers.maple.args=${mcpArgs}`] : []),
-        ...(options?.windowsSandboxBypass
+        ...(options?.windowsSandboxBypass || options?.bypassSandbox
           ? ["--dangerously-bypass-approvals-and-sandbox"]
           : options?.readOnly
             ? ["--sandbox", "read-only"]
@@ -90,6 +91,9 @@ export const deepSeekAdapter: CodingAgentAdapter = {
       additionalWritableDirectories,
       bypass: windowsSandboxBypass
     });
+  },
+  sandboxLevels(input) {
+    return sandboxElevationLadder(input);
   },
   createOutputParser: () => createCodexOutputParser("DeepSeek")
 };

@@ -1,13 +1,244 @@
 import { Icon } from "@iconify/react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FadeContent } from "../components/ReactBits";
 import { DeepSeekConnectionDialog } from "../components/DeepSeekConnectionDialog";
 import { WorkerConfigCard, type WorkerProbe } from "../components/WorkerConfigCard";
 import { WorkerLogo } from "../components/WorkerLogo";
+import { RunnerPlatformIcon } from "../components/RunnerPlatformIcon";
 import { EXTERNAL_EDITOR_OPTIONS, WORKER_KINDS, type AiLanguage, type ExternalEditorApp, type ThemeMode, type UiFont, type UiLanguage } from "../lib/constants";
-import type { AcceptanceSettings, DeepSeekConnectionStatus, DetailMode, ScreenshotCompressionPreset, WorkerKind } from "../domain";
+import type {
+  AcceptanceSettings,
+  DeepSeekConnectionStatus,
+  DetailMode,
+  RunnerModelSettings,
+  RunnerSummary,
+  ScreenshotCompressionPreset,
+  WorkerKind
+} from "../domain";
 import type { InstallTargetId } from "../lib/install-targets";
 import { usePlatform } from "../platform/context";
+
+type RunnerModelCardProps = {
+  runner: RunnerSummary;
+  globalBaseWorker: WorkerKind;
+  globalLeaderWorker: WorkerKind;
+  selectableWorkers: Array<{ kind: WorkerKind; label: string }>;
+  uiLanguage: UiLanguage;
+  onSave: (runnerId: string, next: Partial<RunnerModelSettings>) => Promise<void> | void;
+  onRefresh: (runnerId: string) => Promise<void> | void;
+};
+
+function workerLabel(kind: WorkerKind): string {
+  return WORKER_KINDS.find((worker) => worker.kind === kind)?.label ?? kind;
+}
+
+/** 单个执行端（Runner）的模型配置卡：工具清单 + 执行工具 / 领导模型 + 主动刷新。 */
+function RunnerModelCard({
+  runner,
+  globalBaseWorker,
+  globalLeaderWorker,
+  selectableWorkers,
+  uiLanguage,
+  onSave,
+  onRefresh,
+}: RunnerModelCardProps) {
+  const t = (zh: string, en: string) => (uiLanguage === "en" ? en : zh);
+  const [saving, setSaving] = useState<"defaultWorker" | "leaderWorker" | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+
+  const offline = runner.state === "offline";
+  const inventory = runner.workerInventory ?? [];
+  const availableKinds = new Set<WorkerKind>(
+    inventory.length > 0
+      ? inventory.filter((item) => item.available).map((item) => item.kind)
+      : (runner.supportedWorkers ?? [])
+  );
+  const hasToolReport = inventory.length > 0 || (runner.supportedWorkers?.length ?? 0) > 0;
+  const defaultWorker = runner.defaultWorker ?? null;
+  const leaderWorker = runner.leaderWorker ?? null;
+  const effectiveDefaultWorker = defaultWorker ?? globalBaseWorker;
+  const effectiveLeaderWorker = leaderWorker ?? globalLeaderWorker;
+  const defaultWorkerMissing = hasToolReport && !availableKinds.has(effectiveDefaultWorker);
+  const leaderWorkerMissing = hasToolReport && !availableKinds.has(effectiveLeaderWorker);
+
+  // 下拉选项 = 可选模型全集；执行端已配置了集外模型（如未连接的 DeepSeek）时也补进来保证能回显。
+  const options = useMemo(() => {
+    const byKind = new Map<WorkerKind, { kind: WorkerKind; label: string }>(
+      selectableWorkers.map((worker) => [worker.kind, worker])
+    );
+    for (const kind of [defaultWorker, leaderWorker]) {
+      if (!kind || byKind.has(kind)) continue;
+      const known = WORKER_KINDS.find((worker) => worker.kind === kind);
+      if (known) byKind.set(kind, known);
+    }
+    return [...byKind.values()];
+  }, [selectableWorkers, defaultWorker, leaderWorker]);
+
+  async function handleSave(field: "defaultWorker" | "leaderWorker", value: string): Promise<void> {
+    const next = value === "" ? null : (value as WorkerKind);
+    setSaving(field);
+    setError("");
+    try {
+      await onSave(runner.id, { [field]: next });
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : t("保存失败，请稍后重试。", "Failed to save, try again later.")
+      );
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleRefresh(): Promise<void> {
+    setRefreshing(true);
+    setError("");
+    try {
+      await onRefresh(runner.id);
+    } catch (refreshError) {
+      setError(
+        refreshError instanceof Error
+          ? refreshError.message
+          : t("刷新失败，请确认该执行端在线。", "Refresh failed. Make sure the runner is online.")
+      );
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function select(
+    field: "defaultWorker" | "leaderWorker",
+    value: WorkerKind | null,
+    globalDefault: WorkerKind,
+    label: string
+  ) {
+    return (
+      <div className="flex flex-col gap-1.5 min-w-0">
+        <span className="text-[12px] font-semibold text-base-content/85">{label}</span>
+        <select
+          value={value ?? ""}
+          disabled={offline || saving !== null}
+          onChange={(event) => void handleSave(field, event.currentTarget.value)}
+          className="ui-input h-9 bg-base-300/10 border-base-300/10 text-[12px] disabled:opacity-45"
+        >
+          <option value="">
+            {t(`跟随默认（${workerLabel(globalDefault)}）`, `Follow default (${workerLabel(globalDefault)})`)}
+          </option>
+          {options.map((worker) => (
+            <option key={worker.kind} value={worker.kind}>{worker.label}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[14px] border border-[color-mix(in_srgb,var(--color-base-300)_45%,transparent)] bg-(--color-base-100) flex flex-col gap-3 p-4">
+      {/* 头部：平台图标 + 名称 / 主机名 + 状态 + 刷新 */}
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className={`w-8 h-8 rounded-[10px] bg-(--color-base-200) flex items-center justify-center flex-none ${offline ? "opacity-50 grayscale" : ""}`}>
+          <RunnerPlatformIcon platform={runner.platform} className="text-[18px]" />
+        </span>
+        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[13px] font-bold text-base-content/90 truncate">{runner.name}</span>
+            <span className={`flex-none inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${offline ? "bg-base-300/20 text-muted/60" : "bg-emerald-500/10 text-emerald-500/85"}`}>
+              <span className={`size-1.5 rounded-full ${offline ? "bg-muted/40" : "bg-emerald-500"}`} />
+              {offline ? t("离线", "Offline") : t("在线", "Online")}
+            </span>
+          </div>
+          <span className="text-[11px] text-muted/50 truncate font-mono">{runner.hostname}</span>
+        </div>
+        <button
+          type="button"
+          className={`ui-btn ui-btn--xs ui-btn--outline ui-icon-btn flex-none ${refreshing ? "opacity-60" : ""}`.trim()}
+          disabled={offline || refreshing}
+          onClick={() => void handleRefresh()}
+          aria-label={t("刷新工具清单", "Refresh tools")}
+          title={t("刷新工具清单", "Refresh tools")}
+        >
+          <Icon
+            icon={refreshing ? "mingcute:loading-3-line" : "mingcute:refresh-3-line"}
+            className={`text-[14px] ${refreshing ? "animate-spin" : ""}`}
+          />
+        </button>
+      </div>
+
+      {/* 工具清单 */}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] font-bold text-muted/40 uppercase tracking-[0.15em]">
+          {t("本机可用工具", "Available tools")}
+        </span>
+        {hasToolReport && availableKinds.size > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {[...availableKinds].map((kind) => {
+              const model = inventory.find((item) => item.kind === kind);
+              return (
+                <span
+                  key={kind}
+                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-base-300/15 text-[11px] text-muted/80"
+                >
+                  <WorkerLogo kind={kind} size={12} />
+                  {model?.modelName ?? workerLabel(kind)}
+                </span>
+              );
+            })}
+          </div>
+        ) : hasToolReport ? (
+          <span className="text-[11px] text-muted/50">
+            {t("未检测到可用工具，可点击右上角刷新重新探测。", "No tools detected yet. Use refresh on the right to re-probe.")}
+          </span>
+        ) : (
+          <span className="text-[11px] text-muted/50">
+            {t("尚未上报工具清单，点击右上角刷新重新获取。", "Tool list not reported yet. Use refresh on the right to fetch it.")}
+          </span>
+        )}
+      </div>
+
+      {/* 模型选择 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {select("defaultWorker", defaultWorker, globalBaseWorker, t("执行工具", "Worker"))}
+        {select("leaderWorker", leaderWorker, globalLeaderWorker, t("领导模型", "Leader"))}
+      </div>
+
+      {/* 生效提示 + 缺失告警 */}
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] text-muted/60">
+          {t("生效：", "Effective: ")}
+          <span className="font-semibold text-base-content/80">{workerLabel(effectiveDefaultWorker)}</span>
+          <span className="text-muted/45">
+            {defaultWorker === null ? ` · ${t("跟随默认", "default")}` : ` · ${t("本端单独设置", "runner override")}`}
+          </span>
+          <span className="mx-1.5 text-muted/30">/</span>
+          <span className="font-semibold text-base-content/80">{workerLabel(effectiveLeaderWorker)}</span>
+          <span className="text-muted/45">
+            {leaderWorker === null ? ` · ${t("跟随默认", "default")}` : ` · ${t("本端单独设置", "runner override")}`}
+          </span>
+          {saving ? (
+            <span className="ml-1.5 inline-flex items-center gap-1 text-muted/60">
+              <Icon icon="mingcute:loading-3-line" className="text-[12px] animate-spin" />
+              {t("保存中…", "Saving…")}
+            </span>
+          ) : null}
+        </span>
+        {defaultWorkerMissing || leaderWorkerMissing ? (
+          <span className="text-[11px] text-red-500/75 flex items-center gap-1">
+            <Icon icon="mingcute:alert-line" className="text-[12px] flex-none" />
+            {t("该执行端未检测到当前配置的模型，请选择本机已安装的工具。", "The selected model is not detected on this runner. Choose an installed tool.")}
+          </span>
+        ) : null}
+        {error ? (
+          <span className="text-[11px] text-red-500/75 flex items-center gap-1">
+            <Icon icon="mingcute:alert-line" className="text-[12px] flex-none" />
+            {error}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 /** 平台层注入的额外设置页签(如 Web 端的账户/工作区/安全),内容自行渲染,样式与内置页签保持一致。 */
 export type SettingsExtraTab = {
@@ -36,6 +267,8 @@ type SettingsViewProps = {
     available: boolean;
   }>;
   installProbes: Partial<Record<InstallTargetId, WorkerProbe>>;
+  /** 已连接/离线执行端列表；按 runner 单独配置模型时使用。 */
+  runners: RunnerSummary[];
   onThemeChange: (mode: ThemeMode) => void;
   onUiFontChange: (font: UiFont) => void;
   onUiLanguageChange: (language: UiLanguage) => void;
@@ -45,6 +278,10 @@ type SettingsViewProps = {
   onExternalEditorAppChange: (app: ExternalEditorApp) => void;
   onSaveConstitution: (worker: string, leader: string) => Promise<void> | void;
   onDetailModeChange: (mode: DetailMode) => void;
+  /** 保存单个执行端的模型偏好；字段缺省表示不修改，null 表示恢复跟随工作区默认。 */
+  onSaveRunnerModel: (runnerId: string, next: Partial<RunnerModelSettings>) => Promise<void> | void;
+  /** 请求执行端主动重探本机可用工具清单。 */
+  onRefreshRunnerTools: (runnerId: string) => Promise<void> | void;
   workerRetryIntervalSeconds: number;
   workerRetryMaxAttempts: number;
   workerConcurrency: number;
@@ -83,6 +320,7 @@ export function SettingsView({
   leaderConstitution,
   workerAvailability,
   installProbes,
+  runners,
   onThemeChange,
   onUiFontChange,
   onUiLanguageChange,
@@ -94,6 +332,8 @@ export function SettingsView({
   onLeaderWorkerChange,
   onSaveConstitution,
   onDetailModeChange,
+  onSaveRunnerModel,
+  onRefreshRunnerTools,
   workerRetryIntervalSeconds,
   workerRetryMaxAttempts,
   workerConcurrency,
@@ -181,6 +421,9 @@ export function SettingsView({
 
   // ── 验收设置（Server-backed 平台才支持，读取/写回走 platform 可选方法）──
   const canEditAcceptance = typeof platform.loadAcceptanceSettings === "function" && typeof platform.saveAcceptanceSettings === "function";
+  // ── 按执行端配置模型（Server-backed 平台才支持）──
+  const canManageRunnerModels = typeof platform.saveRunnerModelSettings === "function"
+    && typeof platform.refreshRunnerTools === "function";
   const [acceptance, setAcceptance] = useState<AcceptanceSettings | null>(null);
   const [acceptanceLoading, setAcceptanceLoading] = useState(false);
   const [acceptanceSaving, setAcceptanceSaving] = useState(false);
@@ -592,13 +835,13 @@ export function SettingsView({
                     <section>
                       <h3 className="text-[10px] font-bold text-muted/40 uppercase tracking-[0.2em] mb-8 px-1 flex items-center gap-2">
                         <Icon icon="mingcute:ai-line" className="text-sm" />
-                        {t("Coding 工具", "Worker Model")}
+                        {t("Coding 工具 · 全局默认", "Worker Model · Default")}
                       </h3>
                       <div className="flex flex-col gap-4 px-1">
                         <div className="flex flex-col gap-1.5">
                           <span className="text-[14px] font-bold text-base-content/90">{t("默认执行工具", "Default Executor")}</span>
                           <span className="text-[12px] text-muted/50 leading-relaxed max-w-[420px]">
-                            {t("Coding 工具负责干活，新建任务默认交由它执行，可在任务列表中随时调整。", "The worker model does the work. New tasks are assigned to it by default.")}
+                            {t("Coding 工具负责干活，新建任务默认交由它执行。未单独配置的执行端都会使用这里的默认值。", "The worker model does the work. New tasks use this default unless a runner has its own config.")}
                           </span>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -624,13 +867,13 @@ export function SettingsView({
                     <section>
                       <h3 className="text-[10px] font-bold text-muted/40 uppercase tracking-[0.2em] mb-8 px-1 flex items-center gap-2">
                         <Icon icon="mingcute:command-line" className="text-sm" />
-                        {t("领导模型", "Leader Model")}
+                        {t("领导模型 · 全局默认", "Leader Model · Default")}
                       </h3>
                       <div className="flex flex-col gap-4 px-1">
                         <div className="flex flex-col gap-1.5">
                           <span className="text-[14px] font-bold text-base-content/90">{t("项目经理工具", "Project Manager")}</span>
                           <span className="text-[12px] text-muted/50 leading-relaxed max-w-[420px]">
-                            {t("必选项。领导模型是所有工作的发起者：诊断项目、把目标拆成任务树、派单给 Worker、收口验收，整个项目的统领与项目管理都由它出面。", "Required. The leader model initiates all work: it diagnoses the project, breaks goals into task trees, dispatches workers and closes out reviews.")}
+                            {t("必选项。领导模型是所有工作的发起者：诊断项目、把目标拆成任务树、派单给 Worker、收口验收。未单独配置的执行端都会使用这里的默认值。", "Required. The leader model initiates all work: diagnoses the project, breaks goals into task trees, dispatches workers and closes out reviews. Runners without their own config use this default.")}
                           </span>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -652,6 +895,35 @@ export function SettingsView({
                         </div>
                       </div>
                     </section>
+
+                    {canManageRunnerModels && runners.length > 0 ? (
+                      <section>
+                        <h3 className="text-[10px] font-bold text-muted/40 uppercase tracking-[0.2em] mb-2 px-1 flex items-center gap-2">
+                          <Icon icon="mingcute:laptop-line" className="text-sm" />
+                          {t("按执行端配置", "Per Runner")}
+                        </h3>
+                        <p className="text-xs text-muted/60 leading-relaxed mt-0 mb-6 px-1">
+                          {t(
+                            "不同电脑上安装的模型可能不同。为每个执行端单独指定执行工具与领导模型；未单独配置的执行端自动跟随上方默认设置。",
+                            "Different machines may have different models installed. Assign a worker and leader model per runner; runners without their own config follow the defaults above."
+                          )}
+                        </p>
+                        <div className="flex flex-col gap-3 px-1">
+                          {runners.map((runner) => (
+                            <RunnerModelCard
+                              key={runner.id}
+                              runner={runner}
+                              globalBaseWorker={baseWorker}
+                              globalLeaderWorker={leaderWorker}
+                              selectableWorkers={selectableModelWorkers}
+                              uiLanguage={uiLanguage}
+                              onSave={onSaveRunnerModel}
+                              onRefresh={onRefreshRunnerTools}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    ) : null}
                   </>
                 )}
 

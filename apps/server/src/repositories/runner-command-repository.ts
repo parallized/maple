@@ -105,11 +105,11 @@ export class RunnerCommandRepository {
       const expired = this.expire(now);
       const claimed = this.database
         .query(
-          `SELECT id FROM runner_commands
+          `SELECT id, type FROM runner_commands
            WHERE id = ? AND runner_id = ? AND status = 'claimed'
              AND lease_token_hash = ? AND lease_expires_at > ?`
         )
-        .get(commandId, runnerId, hashSecret(input.leaseToken), now) as { id: string } | null;
+        .get(commandId, runnerId, hashSecret(input.leaseToken), now) as { id: string; type: string } | null;
       if (!claimed) {
         if (expired > 0) touchRevision(this.database);
         return null;
@@ -119,18 +119,20 @@ export class RunnerCommandRepository {
       let bindingId: string | null = null;
       let error: string | null = null;
       if (input.outcome === "succeeded") {
-        if (!input.projectId || !input.bindingId) return null;
-        const binding = this.database
-          .query(
-            `SELECT id FROM project_bindings
-             WHERE id = ? AND project_id = ? AND runner_id = ?`
-          )
-          .get(input.bindingId, input.projectId, runnerId) as { id: string } | null;
-        if (!binding) return null;
-        projectId = input.projectId;
-        bindingId = input.bindingId;
+        if (claimed.type === "select_project_directory") {
+          if (!input.projectId || !input.bindingId) return null;
+          const binding = this.database
+            .query(
+              `SELECT id FROM project_bindings
+               WHERE id = ? AND project_id = ? AND runner_id = ?`
+            )
+            .get(input.bindingId, input.projectId, runnerId) as { id: string } | null;
+          if (!binding) return null;
+          projectId = input.projectId;
+          bindingId = input.bindingId;
+        }
       } else if (input.outcome === "failed") {
-        error = input.error?.trim().slice(0, 1_000) || "执行端未能完成目录选择。";
+        error = input.error?.trim().slice(0, 1_000) || "执行端未能完成该命令。";
       }
 
       const status = input.outcome;

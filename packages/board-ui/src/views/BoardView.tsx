@@ -1078,15 +1078,6 @@ const TaskRow = React.forwardRef<HTMLTableRowElement, TaskRowProps>(({
             >
               {task.title || "(无标题)"}
             </span>
-            {task.reports.length > 0 ? (
-              <span
-                className="task-reports-chip"
-                title={`${task.reports.length} 份执行报告`}
-              >
-                <Icon icon="mingcute:file-line" className="text-[11px]" />
-                {task.reports.length}
-              </span>
-            ) : null}
             <button
               type="button"
               className="task-open-btn ui-btn ui-btn--xs ui-btn--outline shrink-0 gap-1 text-(--color-primary)"

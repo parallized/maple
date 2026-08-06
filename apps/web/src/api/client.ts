@@ -19,6 +19,8 @@ import type {
   Todo,
   TodoDetailResponse,
   UpdateAcceptanceSettingsRequest,
+  UpdateRunnerModelSettingsRequest,
+  UpdateRunnerModelSettingsResponse,
   UpdateUserPreferencesRequest,
   UpdateWorkspaceExecutionSettingsRequest,
   UpdateProfileRequest,
@@ -163,6 +165,13 @@ export class DashboardApi {
 
   createRunnerCommand(runnerId: string, input: CreateRunnerCommandRequest): Promise<RunnerCommand> {
     return this.request("POST", `/api/runners/${encodeURIComponent(runnerId)}/commands`, input);
+  }
+
+  updateRunnerModels(
+    runnerId: string,
+    input: UpdateRunnerModelSettingsRequest
+  ): Promise<UpdateRunnerModelSettingsResponse> {
+    return this.request("PATCH", `/api/runners/${encodeURIComponent(runnerId)}/models`, input);
   }
 
   revokeRunner(runnerId: string): Promise<{ revoked: true }> {

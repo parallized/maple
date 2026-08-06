@@ -193,6 +193,17 @@ export function workerFullAccessFromEnv(
   return !(value === "0" || value === "false" || value === "no" || value === "off");
 }
 
+/**
+ * MAPLE_WORKER_AUTO_ELEVATE 默认开启：Worker 执行被沙箱/权限策略拦截时自动提权重试。
+ * 显式设为 0 / false / no / off 时关闭。
+ */
+export function workerAutoElevateFromEnv(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  const value = env.MAPLE_WORKER_AUTO_ELEVATE?.trim().toLowerCase();
+  return !(value === "0" || value === "false" || value === "no" || value === "off");
+}
+
 export class RunnerLoop {
   private readonly active = new Set<Promise<void>>();
   private commandTask: Promise<void> | null = null;
@@ -210,9 +221,12 @@ export class RunnerLoop {
   private readonly ownsOutbox: boolean;
   private readonly workerShell: WorkerShell;
   private readonly workerFullAccess: boolean;
+  private readonly workerAutoElevate: boolean;
   private readonly playwrightExecutable: string | null;
   /** 空闲 Worker 槽位序号，执行 Todo 时占用、收尾后归还。 */
   private readonly freeSlots: number[];
+  /** 收到刷新工具清单命令后置位，下一次循环立即重探并上报。 */
+  private refreshInventoryRequested = false;
   private connectionMessage = "";
   private readonly attemptControllers = new Map<string, AttemptController>();
   private forceTerminationRequested = false;
@@ -238,6 +252,7 @@ export class RunnerLoop {
     this.ownsOutbox = options.outbox === undefined;
     this.workerShell = options.workerShell ?? "direct";
     this.workerFullAccess = workerFullAccessFromEnv();
+    this.workerAutoElevate = workerAutoElevateFromEnv();
     this.playwrightExecutable = options.playwrightExecutable === undefined
       ? resolvePlaywrightExecutable()
       : options.playwrightExecutable;
@@ -272,6 +287,10 @@ export class RunnerLoop {
     let serverDeepSeekConfigured = false;
     while (!signal.aborted && !this.forceTerminationRequested) {
       try {
+        if (this.refreshInventoryRequested) {
+          this.refreshInventoryRequested = false;
+          heartbeatAt = 0;
+        }
         const claimWakeSignal = this.claimWakeController.signal;
         const nextCredentialRevision = deepSeekCredentialRevision();
         if (nextCredentialRevision !== credentialRevision) {
@@ -523,6 +542,7 @@ export class RunnerLoop {
           resumeSessionId,
           additionalWritableDirectories: screenshotDirectory ? [screenshotDirectory] : undefined,
           fullAccess: this.workerFullAccess,
+          autoElevate: this.workerAutoElevate,
           deepSeekApiKey: job.attempt.workerKind === "deepseek"
             ? job.runtimeProviderCredentials?.deepseekApiKey
             : undefined,
@@ -743,7 +763,11 @@ export class RunnerLoop {
       configPath: this.configPath,
       signal,
       output: this.output,
-      directoryPicker: this.directoryPicker
+      directoryPicker: this.directoryPicker,
+      onRefreshInventory: () => {
+        this.refreshInventoryRequested = true;
+        this.wakeClaimLoop();
+      }
     })
       .then((config) => {
         this.config = config;

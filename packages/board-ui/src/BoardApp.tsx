@@ -78,6 +78,7 @@ import type {
   McpTagCatalogUpdatedEvent,
   McpWorkerFinishedEvent,
   Project,
+  RunnerModelSettings,
   RunnerSummary,
   Task,
   TaskStatus,
@@ -783,6 +784,16 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
     if (platform.loadExecutionSettings) return;
     saveLocalReminderPlayMaple(reminderPlayMaple);
   }, [platform, reminderPlayMaple]);
+
+  async function saveRunnerModel(runnerId: string, next: Partial<RunnerModelSettings>): Promise<void> {
+    if (!platform.saveRunnerModelSettings) return;
+    await platform.saveRunnerModelSettings(runnerId, next);
+  }
+
+  async function refreshRunnerTools(runnerId: string): Promise<void> {
+    if (!platform.refreshRunnerTools) return;
+    await platform.refreshRunnerTools(runnerId);
+  }
 
   // ── 完成提醒：任务进入「已完成」时按开关在 Maple 内播放音频 ──
   const lastTaskStatusRef = useRef<Map<string, string>>(new Map());
@@ -2190,6 +2201,7 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
                     leaderConstitution={leaderConstitution}
                     workerAvailability={workerAvailability}
                     installProbes={installProbes}
+                    runners={runners}
                     onThemeChange={setThemeState}
                     onUiFontChange={setUiFont}
                     onUiLanguageChange={setUiLanguage}
@@ -2199,6 +2211,8 @@ export function BoardApp({ platform, sidebarFooter, settingsExtraTabs, version, 
                     onExternalEditorAppChange={setExternalEditorApp}
                     onSaveConstitution={saveConstitution}
                     onDetailModeChange={setDetailMode}
+                    onSaveRunnerModel={saveRunnerModel}
+                    onRefreshRunnerTools={refreshRunnerTools}
                       workerRetryIntervalSeconds={workerRetryConfig.intervalSeconds}
                       workerRetryMaxAttempts={workerRetryConfig.maxAttempts}
                       workerConcurrency={workerConcurrency}

@@ -158,6 +158,8 @@ CREATE TABLE IF NOT EXISTS runners (
   supported_workers TEXT NOT NULL DEFAULT '[]',
   worker_inventory TEXT,
   capabilities TEXT NOT NULL DEFAULT '[]',
+  default_worker TEXT,
+  leader_worker TEXT,
   last_seen_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   revoked_at TEXT
@@ -435,6 +437,8 @@ function migrate(database: Database): void {
   ensureColumn(database, "runners", "revoked_at", "TEXT");
   ensureColumn(database, "runners", "worker_inventory", "TEXT");
   ensureColumn(database, "runners", "capabilities", "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(database, "runners", "default_worker", "TEXT");
+  ensureColumn(database, "runners", "leader_worker", "TEXT");
   ensureColumn(database, "pairing_codes", "workspace_id", "TEXT");
   ensureColumn(database, "todo_logs", "sequence", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(database, "todo_logs", "occurred_at", "TEXT");

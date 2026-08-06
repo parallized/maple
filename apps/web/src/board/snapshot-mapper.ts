@@ -164,6 +164,12 @@ export function mapSnapshotToRunners(snapshot: DashboardSnapshot): RunnerSummary
             reasoningEffort: item.reasoningEffort
           }]
         : []
-    ))
+    )),
+    defaultWorker: runner.defaultWorker !== undefined && BOARD_WORKER_KINDS.has(runner.defaultWorker)
+      ? (runner.defaultWorker as BoardWorkerKind)
+      : null,
+    leaderWorker: runner.leaderWorker !== undefined && BOARD_WORKER_KINDS.has(runner.leaderWorker)
+      ? (runner.leaderWorker as BoardWorkerKind)
+      : null
   }));
 }

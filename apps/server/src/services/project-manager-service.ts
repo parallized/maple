@@ -207,6 +207,10 @@ export class ProjectManagerService {
     const project = this.projects.getById(claim.project_id);
     const binding = this.projects.getBinding(claim.binding_id);
     if (!todo || !project || !binding) throw new Error("项目经理任务的数据不完整");
+    const runnerExecutionSettings = this.settings.getExecutionForRunner(runner.workspaceId, {
+      defaultWorker: runner.defaultWorker ?? null,
+      leaderWorker: runner.leaderWorker ?? null
+    });
     return {
       job: {
         todo,
@@ -215,7 +219,7 @@ export class ProjectManagerService {
         workflows: this.listWorkflows(project.id),
         history: this.listHistory(project.id, todo.id),
         availableWorkers,
-        executionSettings: this.settings.getExecution(runner.workspaceId),
+        executionSettings: runnerExecutionSettings,
         attemptId: claim.attemptId,
         leaseToken: claim.leaseToken,
         leaseSeconds: this.leaseSeconds

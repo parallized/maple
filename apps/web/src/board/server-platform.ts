@@ -455,6 +455,31 @@ export function createServerPlatform(api: DashboardApi, options?: ServerPlatform
       }
     },
 
+    async saveRunnerModelSettings(runnerId, next) {
+      try {
+        const response = await api.updateRunnerModels(runnerId, next);
+        void pollSnapshot();
+        return {
+          defaultWorker: response.runner.defaultWorker ?? null,
+          leaderWorker: response.runner.leaderWorker ?? null
+        };
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+
+    async refreshRunnerTools(runnerId) {
+      try {
+        await api.createRunnerCommand(runnerId, { type: "refresh_worker_inventory" });
+        // 命令下发后执行端会立即重探并上报；稍等一拍让快照带回最新清单。
+        setTimeout(() => void pollSnapshot(), 300);
+      } catch (error) {
+        handleApiError(error);
+        throw error;
+      }
+    },
+
     async loadReminderAudio() {
       try {
         const blob = await api.workspaceReminderAudio();

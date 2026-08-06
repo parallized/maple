@@ -10,6 +10,7 @@ import {
   type ScreenshotCompressionPreset,
   type UpdateAcceptanceSettingsRequest,
   type UpdateWorkspaceExecutionSettingsRequest,
+  type WorkerKind,
   type WorkspaceExecutionSettings
 } from "@maple/protocol";
 import { touchRevision } from "../database/revision";
@@ -137,6 +138,25 @@ export class SettingsRepository {
       reminderAudioMime: values.get(REMINDER_AUDIO_MIME_KEY) || null,
       reminderPlayCli: values.get(REMINDER_PLAY_CLI_KEY) === "true",
       reminderPlayMaple: values.get(REMINDER_PLAY_MAPLE_KEY) === "true"
+    };
+  }
+
+  /**
+   * 工作区执行设置在单个执行端上的生效版本：执行端若配置了模型覆盖，
+   * 则用覆盖值替换 defaultWorker / leaderWorker，其余设置沿用工作区默认。
+   */
+  getExecutionForRunner(
+    workspaceId: string,
+    overrides: { defaultWorker: WorkerKind | null; leaderWorker: WorkerKind | null }
+  ): WorkspaceExecutionSettings {
+    const base = this.getExecution(workspaceId);
+    const defaultWorker = overrides.defaultWorker ?? base.defaultWorker;
+    const leaderWorker = overrides.leaderWorker ?? base.leaderWorker;
+    return {
+      ...base,
+      defaultWorker,
+      baseWorker: defaultWorker,
+      leaderWorker
     };
   }
 

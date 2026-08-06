@@ -1353,19 +1353,6 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 标题内报告计数：弱化的图标 + 数字，提示该任务已有执行产出 ── */
-.task-reports-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  font-size: 11px;
-  line-height: 1;
-  color: var(--color-secondary);
-  opacity: 0.7;
-  font-variant-numeric: tabular-nums;
-}
-
 /* 调试表头「导出」：比「调试」更亮的纯文字，无卡片 / 按钮样式。 */
 .debug-export-link {
   margin-left: 2px;

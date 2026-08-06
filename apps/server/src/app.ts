@@ -800,12 +800,30 @@ export function createServerApp(options: CreateServerAppOptions) {
         const { workspaceId } = webAccess(request, true);
         const runner = runners.getById(params.runnerId, workspaceId);
         if (!runner) return notFound("执行端不存在。");
-        if (runner.state !== "online") return conflict("执行端当前离线，无法打开目录选择器。");
+        if (runner.state !== "online") return conflict("执行端当前离线，无法下发命令。");
         return runnerCommands.create(params.runnerId, body, config.runnerCommandTtlSeconds);
       },
       {
         body: t.Object({
-          type: t.Literal("select_project_directory")
+          type: t.Union([
+            t.Literal("select_project_directory"),
+            t.Literal("refresh_worker_inventory")
+          ])
+        })
+      }
+    )
+    .patch(
+      "/api/runners/:runnerId/models",
+      ({ request, params, body }) => {
+        const { workspaceId } = webAccess(request, true);
+        const runner = runners.updateModels(params.runnerId, workspaceId, body);
+        if (!runner) return notFound("执行端不存在。");
+        return { runner };
+      },
+      {
+        body: t.Object({
+          defaultWorker: t.Optional(t.Union([t.Null(), workerKindSchema])),
+          leaderWorker: t.Optional(t.Union([t.Null(), workerKindSchema]))
         })
       }
     )

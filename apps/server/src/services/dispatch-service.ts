@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import {
   DEFAULT_SCREENSHOT_COMPRESSION_PRESET,
+  WORKER_KINDS,
   isScreenshotCompressionPreset
 } from "@maple/protocol";
 import type {
@@ -13,6 +14,7 @@ import type {
   ScreenshotCompressionPreset,
   StartJobRequest
 } from "@maple/protocol";
+import type { WorkerKind } from "@maple/protocol";
 import { touchRevision } from "../database/revision";
 import { hashSecret, createSecret } from "../lib/crypto";
 import { addSeconds, nowIso } from "../lib/time";
@@ -59,7 +61,13 @@ export class DispatchService {
       .get(runnerId) as { workspace_id: string } | null;
     if (!runnerWorkspace) return null;
     const acceptanceSettings = this.settings.getAcceptance(runnerWorkspace.workspace_id);
-    const executionSettings = this.settings.getExecution(runnerWorkspace.workspace_id);
+    const runnerModels = this.database
+      .query("SELECT default_worker, leader_worker FROM runners WHERE id = ? AND revoked_at IS NULL")
+      .get(runnerId) as { default_worker: string | null; leader_worker: string | null } | null;
+    const executionSettings = this.settings.getExecutionForRunner(runnerWorkspace.workspace_id, {
+      defaultWorker: parseStoredWorker(runnerModels?.default_worker),
+      leaderWorker: parseStoredWorker(runnerModels?.leader_worker)
+    });
     const claimTransaction = this.database.transaction((): ClaimedIdentifiers | null => {
       const now = nowIso();
       const candidate = this.database
@@ -386,4 +394,9 @@ export class DispatchService {
     if (!todo || !attempt) throw new Error("任务执行状态读取失败");
     return { todo, attempt };
   }
+}
+
+function parseStoredWorker(value: string | null | undefined): WorkerKind | null {
+  if (!value) return null;
+  return (WORKER_KINDS as readonly string[]).includes(value) ? (value as WorkerKind) : null;
 }

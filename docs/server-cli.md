@@ -132,6 +132,19 @@ CLI 每次启动都会自检 MCP 配置。内置 `maple mcp` 只暴露当前进�
 
 Playwright 包、启动器和 Chromium 缓存均在 `~/.maple/runtime/playwright`，不会在项目目录生成依赖、配置或浏览器缓存。设置 `MAPLE_SKIP_PLAYWRIGHT_INSTALL=1` 可跳过安装。
 
+## Worker 沙箱与自动提权
+
+Worker 由本机 CLI 拉起，沙箱档位按 Worker 类型收口：
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `MAPLE_WORKER_FULL_ACCESS` | `1` | Worker 会话默认 `danger-full-access`（需要 git 写操作等场景）；设为 `0` 时退回 `workspace-write` |
+| `MAPLE_WORKER_AUTO_ELEVATE` | `1` | 检测到沙箱/权限策略拦截时自动提权一档重试（工作区可写 → 完全放行 → 绕过沙箱）；设为 `0` 可关闭 |
+
+只有 codex 系 Worker（codex / deepseek）存在真实沙箱档位；claude、gemini、kimi、glm、opencode、iflow 默认已处于各自最高放行档，不做重复提权。
+
+若 Maple CLI 本身运行在外层受限沙箱（如 Codex Windows 沙箱会话）内，内层 Worker 无论提到哪一档都会受外层网络约束（SSH、外部 TCP、本地代理报 `Operation not permitted`）。此时 Maple 会把失败归类为“出网受限”并给出宿主侧引导：在非沙箱会话中运行 Maple，或在宿主沙箱中放行网络后让 Worker 重试。
+
 ## 公网部署
 
 仓库提供 Docker、Compose 和 Caddy HTTPS 配置：

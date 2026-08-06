@@ -13,6 +13,7 @@ import type {
   Runner,
   RunnerCapability,
   RunnerCommand,
+  RunnerCommandType,
   RunnerProviderConnectionState,
   RunnerRunRecord,
   RunLogKind,
@@ -167,7 +168,17 @@ export interface RunnerHeartbeatResponse {
 }
 
 export interface CreateRunnerCommandRequest {
-  type: "select_project_directory";
+  type: RunnerCommandType;
+}
+
+/** 看板为单个执行端保存模型偏好；字段缺省表示不修改，null 表示恢复跟随工作区默认。 */
+export interface UpdateRunnerModelSettingsRequest {
+  defaultWorker?: WorkerKind | null;
+  leaderWorker?: WorkerKind | null;
+}
+
+export interface UpdateRunnerModelSettingsResponse {
+  runner: Runner;
 }
 
 export interface RunnerCommandListResponse {
