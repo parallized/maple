@@ -18,7 +18,7 @@ MapleCode 决定创造的秩序。
 
 MapleCode 规划工作、梳理依赖，并把每项任务分配给 Codex、Claude、DeepSeek，以及你已经在使用的编码 Agent。
 
-![MapleCode](README图片/PixPin_2026-08-06_09-10-29.webp)
+![MapleCode](docs/img/PixPin_2026-08-06_09-10-29.webp)
 
 ## 能力亮点
 
@@ -34,13 +34,13 @@ Maple 使用最优雅的方式同时适配无限种 CLI / GUI，像操作系统�
 
 不仅提供预热信息，还能决定指令去向——无副作用的 Worker 并行与串行抉择。同时开 2 个窗口解决 A、B 问题时，偶尔会不小心把 B 问题的信息发给 A。Maple 自动把指令交给上下文最足、缓存最优的窗口，至多 16 个 Session 并行，开发效率与 Token 节省真实双赢。
 
-![Leader / Worker 双线同步](README图片/PixPin_2026-08-06_09-10-42.webp)
+![Leader / Worker 双线同步](docs/img/PixPin_2026-08-06_09-10-42.webp)
 
 **原生、随时随地、多设备、多人协作**
 
 打开 CLI 作为 Runner 常驻开发机，Web 看板在服务端。手机和浏览器都能随时随地加任务、查状态，支持多租户与多工作区，结合 Playwright 可直观验收。
 
-![原生、随时随地、多设备、多人协作](README图片/PixPin_2026-08-06_09-10-54.webp)
+![原生、随时随地、多设备、多人协作](docs/img/PixPin_2026-08-06_09-10-54.webp)
 
 **克制的安全模型**
 
