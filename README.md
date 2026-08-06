@@ -10,7 +10,7 @@ MapleCode 决定创造的秩序。
 [![GitHub Stars](https://img.shields.io/github/stars/parallized/maple?style=flat-square)](https://github.com/parallized/maple/stargazers)
 [![Website](https://img.shields.io/badge/Website-maplecode.art-7a63e8?style=flat-square)](https://maplecode.art)
 
-[官网 · 在线 Demo 预览](https://maplecode.art) · [进入控制台](https://maplecode.art) · [使用文档](docs/server-cli.md)
+[官网 · 在线 Demo 预览](https://maplecode.art) · [进入控制台](https://maplecode.art/dashboard) · [使用文档](https://maplecode.art/docs)
 
 </div>
 
