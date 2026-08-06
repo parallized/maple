@@ -59,7 +59,7 @@ Runner Token 保持最小权限，密码经 Argon2id 哈希，云端 Provider �
 
 Maple 依赖于你本机的各种 AI 服务包括 Codex, Claude 等等，建议在安装 Maple 期间把 AI 服务调通
 
-### 本地运行
+### 本地运行或连接 Maple 官方服务
 
 1. 安装 Maple（同一安装脚本会同时安装 CLI 与本地一体版，期间可询问是否安装 Playwright 截图功能）
 
@@ -75,9 +75,13 @@ macOS / Linux：
 curl -fsSL https://maplecode.art/install.sh | sh
 ```
 
-2. 运行 `maple-local` 启动本地服务，在弹出的浏览器页面直接进入看板开始工作
+2. 运行 `maple` 启动服务后选择本地启动或是连接官方 Maple 服务，登录并确认后，当前工作区将获得这台 CLI；不要确认来源不明的请求。
+3. 如使用本地运行，不使用官方服务，希望跳过 TUI 选择，直接启动 Runner，可执行 `maple-local`
+4. 在网页添加业务和需求，Maple CLI 将会自动分发、拉起 Worker 执行并截图结果
 
-### 客户端 + 服务端
+> 忘记掉 Claude, Codex, Kimi, Gemini, Grok...忘记掉上下文窗口，忘记掉缓存，忘记掉切 Provider 还要重启终端，把精力专注在手头的任务上，在业务播种与收获中全力以赴地享受
+
+### 客户端 + 服务端（特殊自部署选用）
 
 1. 安装 Maple CLI
 
@@ -87,13 +91,7 @@ irm https://maplecode.art/install.ps1 | iex
 curl -fsSL https://maplecode.art/install.sh | sh
 ```
 
-2. 登录 MapleCode 官方，并绑定你的 CLI 至工作区
-
-- 运行 `maple` 后，CLI 会打开浏览器。登录并确认后，当前工作区将获得这台 CLI；不要确认来源不明的请求。
-
-3. 在网页添加业务和需求，Maple CLI 将会自动分发、拉起 Worker 执行并截图结果
-
-> 忘记掉 Claude, Codex, Kimi, Gemini, Grok...忘记掉上下文窗口，忘记掉缓存，忘记掉切 Provider 还要重启终端，把精力专注在手头的任务上，在业务播种与收获中全力以赴地享受
+2. 绑定自己部署的 Maple Server 地址
 
 ## 关键信息
 
@@ -112,6 +110,6 @@ curl -fsSL https://maplecode.art/install.sh | sh
 别再把时间花在整理任务、切换 Agent 和追问进度上。<br/>
 Maple 会规划工作、梳理依赖，把任务交给合适的 Coding Agent，并汇总结果与验收——让你专注于真正值得创造的事。
 
-**为那些想法比窗口更多的人而造。**
+**为了想法比窗口更多的人而造。**
 
 </div>
